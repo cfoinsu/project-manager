@@ -1,0 +1,65 @@
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { join } from 'path';
+import { initDatabase } from './db.js';
+
+import authRoutes from './routes/auth.js';
+import assignmentRoutes from './routes/assignments.js';
+import projectRoutes from './routes/projects.js';
+import workloadRoutes from './routes/workload.js';
+import commentRoutes from './routes/comments.js';
+import doclibRoutes from './routes/doclib.js';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Enable CORS for frontend requests
+app.use(cors({
+  origin: '*', // Allow all origins for local testing and Tauri integration
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.use(express.json());
+
+// Request logger middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  if (req.method === 'POST' || req.method === 'PUT') {
+    console.log('  Body:', req.body);
+  }
+  next();
+});
+
+// Initialize SQLite schemas and demo seed data
+initDatabase().then(() => {
+  console.log('SQLite local.db initialization checked.');
+}).catch(err => {
+  console.error('Database initialization failed:', err);
+});
+
+// Setup API routes
+app.use('/auth', authRoutes);
+app.use('/assignments', assignmentRoutes);
+app.use('/projects', projectRoutes);
+app.use('/workload', workloadRoutes);
+app.use('/comments', commentRoutes);
+app.use('/doclib', doclibRoutes);
+
+// Static files: uploaded documents (direct file serving)
+app.use('/uploads', express.static(join(new URL('.', import.meta.url).pathname.slice(1), 'uploads')));
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date() });
+});
+
+// Start listening
+app.listen(PORT, () => {
+  console.log(`===================================================`);
+  console.log(`Project Atlas Backend ERP running on port ${PORT}`);
+  console.log(`===================================================`);
+});
