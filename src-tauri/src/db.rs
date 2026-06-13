@@ -544,6 +544,7 @@ pub fn db_create_project(
         struct TempDoc {
             name: String,
             r#type: String,
+            template_doc_id: Option<String>,
         }
 
         #[derive(Deserialize)]

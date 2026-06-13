@@ -457,3 +457,25 @@ export const selectFolderNative = async (): Promise<string | null> => {
     });
   }
 };
+
+export const createDirectory = async (path: string): Promise<void> => {
+  if (isTauri()) {
+    // @ts-ignore
+    const { invoke } = await import('@tauri-apps/api');
+    return (invoke as any)('create_directory', { path }) as Promise<void>;
+  } else {
+    console.log(`[Browser Mode] 폴더 생성 요청: ${path}`);
+    return Promise.resolve();
+  }
+};
+
+export const writeFileBytes = async (path: string, bytes: Uint8Array): Promise<void> => {
+  if (isTauri()) {
+    // @ts-ignore
+    const { invoke } = await import('@tauri-apps/api');
+    return (invoke as any)('write_file_bytes', { path, bytes: Array.from(bytes) }) as Promise<void>;
+  } else {
+    console.log(`[Browser Mode] 파일 쓰기 요청 (바이트): ${path} (크기: ${bytes.length} bytes)`);
+    return Promise.resolve();
+  }
+};

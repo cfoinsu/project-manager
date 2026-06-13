@@ -1329,6 +1329,41 @@ export const downloadDocument = async (id: string, filename: string): Promise<vo
   }
 };
 
+// 파일 다운로드 (바이트 추출)
+export const downloadDocumentBytes = async (id: string): Promise<Uint8Array> => {
+  try {
+    const token = localStorage.getItem('pa_token');
+    const response = await fetch(`${getApiBaseUrl()}/doclib/${id}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+
+    if (!response.ok) throw new Error('다운로드 실패');
+
+    const arrayBuffer = await response.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
+  } catch (error: any) {
+    if (error.message.includes('Failed to fetch') || error.message.includes('Load failed')) {
+      console.warn('Express server is offline. Running local file download bytes fallback.');
+      
+      const fileDataUrl = localStorage.getItem(`pa_fallback_doc_content_${id}`);
+      if (fileDataUrl) {
+        const arr = fileDataUrl.split(',');
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        return u8arr;
+      } else {
+        const encoder = new TextEncoder();
+        return encoder.encode(`이 파일은 오프라인 로컬 데모 모드에서 생성된 가상 파일입니다.\nID: ${id}\n\n실제 첨부파일을 사용하시려면 Express 백엔드 서버를 구동해 주세요.`);
+      }
+    }
+    throw error;
+  }
+};
+
 // 메타데이터 수정
 export const updateDocument = async (
   id: string,

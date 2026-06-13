@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import { 
   Plus, 
@@ -12,11 +12,25 @@ import {
 } from 'lucide-react';
 import type { TempConfig, TempProcess } from '../types';
 import { CustomSelect } from './CustomSelect';
+import { getDocuments, type DocTemplate } from '../utils/api';
 
 export const TemplateManagement: React.FC = () => {
   const { templates, addTemplateAction } = useProjectStore();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(templates[0]?.id || null);
   const [isCreating, setIsCreating] = useState(false);
+  const [docTemplates, setDocTemplates] = useState<DocTemplate[]>([]);
+
+  useEffect(() => {
+    const loadDocTemplates = async () => {
+      try {
+        const docs = await getDocuments();
+        setDocTemplates(docs);
+      } catch (e) {
+        console.error('Failed to load document templates:', e);
+      }
+    };
+    loadDocTemplates();
+  }, []);
 
   // Form states for creation
   const [name, setName] = useState('');
@@ -106,6 +120,22 @@ export const TemplateManagement: React.FC = () => {
     const extMatch = val.match(/\.([a-zA-Z0-9]+)$/);
     if (extMatch) {
       next[pIdx].required_docs[dIdx].type = extMatch[1];
+    }
+    setProcesses(next);
+  };
+
+  const handleDocTemplateChange = (pIdx: number, dIdx: number, val: string) => {
+    const next = [...processes];
+    next[pIdx].required_docs[dIdx].template_doc_id = val || undefined;
+    
+    // Auto fill name and type if empty
+    const linkedTemplate = docTemplates.find(dt => dt.id === val);
+    if (linkedTemplate && !next[pIdx].required_docs[dIdx].name) {
+      next[pIdx].required_docs[dIdx].name = linkedTemplate.original_name;
+      const extMatch = linkedTemplate.original_name.match(/\.([a-zA-Z0-9]+)$/);
+      if (extMatch) {
+        next[pIdx].required_docs[dIdx].type = extMatch[1];
+      }
     }
     setProcesses(next);
   };
@@ -366,6 +396,18 @@ export const TemplateManagement: React.FC = () => {
                                 required
                                 className="flex-1 text-xs px-3.5 py-2 bg-toss-gray-50 dark:bg-slate-850 border border-toss-gray-200/50 dark:border-slate-800 rounded-xl focus:outline-none font-semibold"
                               />
+                              <CustomSelect
+                                value={doc.template_doc_id || ''}
+                                onChange={(e) => handleDocTemplateChange(pIdx, dIdx, e.target.value)}
+                                className="text-xs px-3 py-2 bg-toss-gray-50 dark:bg-slate-850 border border-toss-gray-200/50 dark:border-slate-800 rounded-xl focus:outline-none font-semibold cursor-pointer max-w-[200px]"
+                              >
+                                <option value="">(양식 연동 안함)</option>
+                                {docTemplates.map(dt => (
+                                  <option key={dt.id} value={dt.id}>
+                                    {dt.original_name}
+                                  </option>
+                                ))}
+                              </CustomSelect>
                               <span className="text-xs uppercase font-bold text-toss-gray-400 bg-toss-gray-100 dark:bg-slate-800 px-2.5 py-2 rounded-xl shrink-0 select-none">
                                 {doc.type} 파일
                               </span>
@@ -449,9 +491,14 @@ export const TemplateManagement: React.FC = () => {
                         ) : (
                           <div className="flex flex-col gap-1.5">
                             {proc.required_docs.map((d, idx) => (
-                              <div key={idx} className="flex justify-between items-center text-xs p-2 rounded-xl bg-toss-gray-50 dark:bg-slate-850">
-                                <span className="font-bold text-toss-gray-700 dark:text-slate-300 truncate max-w-[160px]">{d.name}</span>
-                                <span className="text-xs uppercase font-black text-toss-gray-450 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-toss-gray-150 dark:border-slate-700">
+                              <div key={idx} className="flex justify-between items-center text-xs p-2 rounded-xl bg-toss-gray-50 dark:bg-slate-850 gap-2">
+                                <div className="flex flex-col min-w-0">
+                                  <span className="font-bold text-toss-gray-700 dark:text-slate-300 truncate max-w-[160px]">{d.name}</span>
+                                  {d.template_doc_id && (
+                                    <span className="text-[10px] text-toss-blue font-bold mt-0.5">양식 연동됨</span>
+                                  )}
+                                </div>
+                                <span className="text-xs uppercase font-black text-toss-gray-455 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-toss-gray-150 dark:border-slate-700 shrink-0">
                                   {d.type}
                                 </span>
                               </div>

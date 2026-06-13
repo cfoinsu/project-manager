@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import type { Project, Process, Task, Document, Template, FolderNode } from '../types';
+import type { Project, Process, Task, Document, Template, FolderNode, TempConfig } from '../types';
 import * as db from '../utils/db';
-import { scanDirectory } from '../utils/tauriBridge';
+import { scanDirectory, createDirectory, writeFileBytes } from '../utils/tauriBridge';
+import { downloadDocumentBytes } from '../utils/api';
 
 interface ProjectState {
   projects: Project[];
@@ -126,6 +127,47 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     try {
       const project = await db.createProject(name, path, code, templateId, startDate, endDate, description);
       await get().loadProjects();
+
+      // If a template is provided, physically create directories and copy template documents
+      if (templateId) {
+        const templates = get().templates;
+        const template = templates.find(t => t.id === templateId);
+        if (template) {
+          try {
+            const config: TempConfig = JSON.parse(template.config_json);
+            
+            // 1. Create the project root folder physically
+            await createDirectory(project.path);
+            
+            // 2. Iterate processes to create process folders and copy documents
+            for (const tempProc of config.processes) {
+              const processFolderPath = `${project.path}\\${tempProc.name}`;
+              await createDirectory(processFolderPath);
+              
+              // 3. Populate documents
+              for (const tempDoc of tempProc.required_docs) {
+                const filePath = `${processFolderPath}\\${tempDoc.name}`;
+                if (tempDoc.template_doc_id) {
+                  try {
+                    const bytes = await downloadDocumentBytes(tempDoc.template_doc_id);
+                    await writeFileBytes(filePath, bytes);
+                  } catch (downloadErr) {
+                    console.error(`Failed to download template for ${tempDoc.name}:`, downloadErr);
+                    // Fallback to empty file
+                    await writeFileBytes(filePath, new Uint8Array());
+                  }
+                } else {
+                  // No template linked, generate empty placeholder file
+                  await writeFileBytes(filePath, new Uint8Array());
+                }
+              }
+            }
+          } catch (e) {
+            console.error('Error auto-generating template folder structure:', e);
+          }
+        }
+      }
+
       return project;
     } finally {
       set({ loading: false });

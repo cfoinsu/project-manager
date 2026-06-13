@@ -151,6 +151,21 @@ fn open_file(path: String) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+fn create_directory(path: String) -> Result<(), String> {
+    let target_path = Path::new(&path);
+    std::fs::create_dir_all(target_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_file_bytes(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    let target_path = Path::new(&path);
+    if let Some(parent) = target_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(target_path, bytes).map_err(|e| e.to_string())
+}
+
 mod db;
 
 fn main() {
@@ -166,6 +181,8 @@ fn main() {
             scan_directory,
             open_in_explorer,
             open_file,
+            create_directory,
+            write_file_bytes,
             db::db_get_projects,
             db::db_create_project,
             db::db_delete_project,

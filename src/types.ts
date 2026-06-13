@@ -176,6 +176,7 @@ export interface TempTask {
 export interface TempDoc {
   name: string;
   type: string;
+  template_doc_id?: string;
 }
 
 export interface TempProcess {
