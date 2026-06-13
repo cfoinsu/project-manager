@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import type { Project } from '../types';
 import { REGION_CODES, PROJECT_TYPE_CODES } from '../types';
-import { selectFolderNative } from '../utils/tauriBridge';
+import { selectFolderNative, isTauri } from '../utils/tauriBridge';
 import { generateProjectCode, getProcesses } from '../utils/db';
 import { RangeDatePicker } from './RangeDatePicker';
 import { CustomSelect } from './CustomSelect';
@@ -211,6 +211,15 @@ export const DashboardView: React.FC = () => {
     
     const code = generatedCode;
     const project = await addProject(name, path, code, selectedTemplateId || undefined, startDate, endDate);
+
+    if (selectedTemplateId) {
+      if (isTauri()) {
+        alert(`프로젝트가 생성되었습니다!\n폴더 구조와 연동된 문서 양식이 아래 경로에 물리적으로 배포 완료되었습니다:\n${path}`);
+      } else {
+        alert(`프로젝트가 생성되었습니다!\n\n⚠️ 웹 브라우저 모드 안내:\n물리적인 로컬 폴더 및 파일 작성은 PC 로컬 자원에 접근할 수 있는 '데스크톱 앱' 버전에서만 가능합니다. 현재 웹 브라우저 환경이므로 DB 상의 프로젝트 구조만 자동 설정되었습니다.`);
+      }
+    }
+
     setName('');
     setPath('');
     setSelectedTemplateId('');
