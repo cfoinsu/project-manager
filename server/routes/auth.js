@@ -78,16 +78,18 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: '아이디 또는 비밀번호가 일치하지 않습니다.' });
     }
 
-    // Device hash check
-    if (!user.device_hash) {
-      // First login - registration required
-      return res.json({
-        status: 'device_registration_required',
-        userId: user.id
-      });
-    } else {
-      if (!deviceHash || user.device_hash !== deviceHash) {
-        return res.status(403).json({ message: '등록되지 않은 PC입니다. 관리자에게 문의하세요.' });
+    // Device hash check (skip if DISABLE_DEVICE_AUTH environment variable is true)
+    if (process.env.DISABLE_DEVICE_AUTH !== 'true') {
+      if (!user.device_hash) {
+        // First login - registration required
+        return res.json({
+          status: 'device_registration_required',
+          userId: user.id
+        });
+      } else {
+        if (!deviceHash || user.device_hash !== deviceHash) {
+          return res.status(403).json({ message: '등록되지 않은 PC입니다. 관리자에게 문의하세요.' });
+        }
       }
     }
 

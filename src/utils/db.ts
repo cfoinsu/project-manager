@@ -1,7 +1,17 @@
 import { isTauri } from './tauriBridge';
 import type { Project, Process, Task, Document, Template, TempConfig } from '../types';
+import { apiRequest } from './api';
 
 const isTauriMode = isTauri();
+
+const getServerMode = (): boolean => {
+  try {
+    const token = localStorage.getItem('pa_token');
+    return !!token && !token.startsWith('mock-jwt-token-for-');
+  } catch {
+    return false;
+  }
+};
 
 // Helper to dynamically load Tauri invoke function with type-safety bypass
 const getInvoke = async (): Promise<any> => {
@@ -103,7 +113,10 @@ if (!isTauriMode) {
 // -------------------------------------------------------------
 
 export const getProjects = async (): Promise<Project[]> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    const data = await apiRequest('/projects');
+    return data.projects || [];
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_get_projects');
   } else {
@@ -148,7 +161,13 @@ export const createProject = async (
   endDate?: string,
   description?: string
 ): Promise<Project> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    const data = await apiRequest('/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name, path, code, templateId, startDate, endDate, description })
+    });
+    return data.project;
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_create_project', { name, path, code, templateId, startDate, endDate, description });
   } else {
@@ -244,7 +263,9 @@ export const createProject = async (
 };
 
 export const deleteProject = async (id: string): Promise<void> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    await apiRequest(`/projects/${id}`, { method: 'DELETE' });
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_delete_project', { id });
   } else {
@@ -267,9 +288,11 @@ export const deleteProject = async (id: string): Promise<void> => {
     localStorage.setItem('pa_documents', JSON.stringify(documents));
   }
 };
-
 export const getProcesses = async (projectId: string): Promise<Process[]> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    const data = await apiRequest(`/processes?project_id=${projectId}`);
+    return data.processes || [];
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_get_processes', { projectId });
   } else {
@@ -279,7 +302,12 @@ export const getProcesses = async (projectId: string): Promise<Process[]> => {
 };
 
 export const saveProcesses = async (processesList: Process[]): Promise<void> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    await apiRequest('/processes/save', {
+      method: 'POST',
+      body: JSON.stringify({ processes: processesList })
+    });
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_save_processes', { processes: processesList });
   } else {
@@ -297,7 +325,10 @@ export const saveProcesses = async (processesList: Process[]): Promise<void> => 
 };
 
 export const getTasks = async (processId: string): Promise<Task[]> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    const data = await apiRequest(`/tasks?process_id=${processId}`);
+    return data.tasks || [];
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_get_tasks', { processId });
   } else {
@@ -307,7 +338,12 @@ export const getTasks = async (processId: string): Promise<Task[]> => {
 };
 
 export const saveTasks = async (tasksList: Task[]): Promise<void> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    await apiRequest('/tasks/save', {
+      method: 'POST',
+      body: JSON.stringify({ tasks: tasksList })
+    });
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_save_tasks', { tasks: tasksList });
   } else {
@@ -325,7 +361,10 @@ export const saveTasks = async (tasksList: Task[]): Promise<void> => {
 };
 
 export const getDocuments = async (projectId: string): Promise<Document[]> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    const data = await apiRequest(`/projects/${projectId}/documents`);
+    return data.documents || [];
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_get_documents', { projectId });
   } else {
@@ -335,7 +374,12 @@ export const getDocuments = async (projectId: string): Promise<Document[]> => {
 };
 
 export const saveDocuments = async (documentsList: Document[]): Promise<void> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    await apiRequest('/projects/documents/save', {
+      method: 'POST',
+      body: JSON.stringify({ documents: documentsList })
+    });
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_save_documents', { documents: documentsList });
   } else {
@@ -353,7 +397,10 @@ export const saveDocuments = async (documentsList: Document[]): Promise<void> =>
 };
 
 export const getTemplates = async (): Promise<Template[]> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    const data = await apiRequest('/projects/templates/list');
+    return data.templates || [];
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_get_templates');
   } else {
@@ -363,7 +410,13 @@ export const getTemplates = async (): Promise<Template[]> => {
 };
 
 export const saveTemplate = async (name: string, description: string, configJson: string, id?: string): Promise<Template> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    const data = await apiRequest('/projects/templates/save', {
+      method: 'POST',
+      body: JSON.stringify({ id, name, description, configJson })
+    });
+    return data.template;
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_save_template', { id, name, description, configJson });
   } else {
@@ -392,7 +445,12 @@ export const saveTemplate = async (name: string, description: string, configJson
 };
 
 export const updateProjectHealth = async (id: string, healthScore: number): Promise<void> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    await apiRequest(`/projects/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ health_score: healthScore })
+    });
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_update_project_health', { id, healthScore });
   } else {
@@ -410,7 +468,12 @@ export const updateProject = async (
   id: string,
   updates: { name?: string; code?: string; status?: string; start_date?: string; end_date?: string; description?: string }
 ): Promise<void> => {
-  if (isTauriMode) {
+  if (getServerMode()) {
+    await apiRequest(`/projects/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+  } else if (isTauriMode) {
     const invoke = await getInvoke();
     return invoke('db_update_project', { id, ...updates });
   } else {

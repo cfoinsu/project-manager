@@ -262,6 +262,181 @@ export const initDatabase = async () => {
       )
     `);
 
+    // 7. Create Processes Table (공정 관리)
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS processes (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        sort_order INTEGER NOT NULL,
+        progress REAL NOT NULL DEFAULT 0.0,
+        status TEXT NOT NULL DEFAULT '대기',
+        start_date TEXT NOT NULL DEFAULT '',
+        end_date TEXT NOT NULL DEFAULT '',
+        difficulty TEXT NOT NULL DEFAULT '보통',
+        FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 8. Create Tasks Table (업무 관리)
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        process_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        assignee TEXT DEFAULT '',
+        status TEXT NOT NULL DEFAULT '대기',
+        priority TEXT NOT NULL DEFAULT '보통',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        start_date TEXT NOT NULL DEFAULT '',
+        end_date TEXT NOT NULL DEFAULT '',
+        start_time TEXT NOT NULL DEFAULT '',
+        end_time TEXT NOT NULL DEFAULT '',
+        FOREIGN KEY(process_id) REFERENCES processes(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 9. Create Subtasks Table (세부 체크리스트)
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS subtasks (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 10. Create Worklogs Table (업무 이력 등록)
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS worklogs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        hours REAL,
+        log_date TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        author_name TEXT NOT NULL,
+        author_department TEXT,
+        author_position TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 11. Create Documents Table (산출물 파일 및 현황 매핑)
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS documents (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        path TEXT NOT NULL,
+        type TEXT NOT NULL,
+        size INTEGER NOT NULL DEFAULT 0,
+        page_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 12. Create Folders Metadata Table (공유 디렉토리 스캔 캐시)
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS folders_metadata (
+        project_id TEXT PRIMARY KEY,
+        tree_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 13. Create Project Templates Table (공정 템플릿 라이브러리)
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        config_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    `);
+
+    // Seed default template
+    const templatesCount = await dbGet('SELECT COUNT(*) as count FROM templates');
+    if (templatesCount.count === 0) {
+      console.log('Seeding default project template...');
+      const defaultWebTemplateConfig = {
+        processes: [
+          {
+            name: "01_기획",
+            description: "요구사항 정의 및 화면 설계",
+            tasks: [
+              { title: "요구사항 분석 및 정리", description: "고객 요구사항을 파악하고 분석 문서화", priority: "높음" },
+              { title: "메뉴 구조 설계 (IA)", description: "사이트 구조 마인드맵 및 IA 설계", priority: "보통" },
+              { title: "화면 정의서 작성", description: "주요 화면 와이어프레임 설계", priority: "긴급" }
+            ],
+            required_docs: [
+              { name: "요구사항정의서.docx", type: "docx" },
+              { name: "IA.xlsx", type: "xlsx" }
+            ]
+          },
+          {
+            name: "02_디자인",
+            description: "UI/UX 디자인 시안 제작",
+            tasks: [
+              { title: "메인 디자인 시안 확정", description: "메인 페이지 및 주요 키 비주얼 디자인", priority: "긴급" },
+              { title: "아이콘 및 이미지 에셋 추출", description: "퍼블리싱용 그래픽 에셋 분리 및 저장", priority: "보통" }
+            ],
+            required_docs: [
+              { name: "디자인_시안.psd", type: "psd" },
+              { name: "logo.png", type: "png" }
+            ]
+          },
+          {
+            name: "03_개발",
+            description: "웹 퍼블리싱 및 기능 구현",
+            tasks: [
+              { title: "HTML/CSS 마크업", description: "반응형 디자인 구조 퍼블리싱", priority: "높음" },
+              { title: "프론트엔드 로직 개발", description: "React 및 상태 관리 모듈 개발", priority: "긴급" },
+              { title: "백엔드 API 연동", description: "서버 통신 데이터 바인딩", priority: "보통" }
+            ],
+            required_docs: [
+              { name: "index.html", type: "html" },
+              { name: "App.tsx", type: "tsx" }
+            ]
+          },
+          {
+            name: "04_산출물",
+            description: "검수, 배포 및 매뉴얼 전달",
+            tasks: [
+              { title: "QA 버그 수정", description: "기능 검수 및 결함 대응", priority: "긴급" },
+              { title: "프로덕션 배포", description: "서버 환경 설정 및 배포 완료", priority: "높음" },
+              { title: "운영 가이드 및 설명서 작성", description: "인계 문서 작성 완료", priority: "보통" }
+            ],
+            required_docs: [
+              { name: "QA_보고서.pdf", type: "pdf" },
+              { name: "설명서.txt", type: "txt" },
+              { name: "버전관리.txt", type: "txt" }
+            ]
+          }
+        ]
+      };
+      const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      await dbRun(
+        'INSERT INTO templates (id, name, description, config_json, created_at) VALUES (?, ?, ?, ?, ?)',
+        [
+          'template-default-web',
+          '표준 웹 개발 템플릿',
+          '기획부터 디자인, 퍼블리싱, 개발, 배포까지 전 과정을 포함하는 기본 웹 구축 템플릿',
+          JSON.stringify(defaultWebTemplateConfig),
+          nowStr
+        ]
+      );
+    }
+
     console.log('SQLite tables initialized successfully.');
 
     // Seed default users if users table is empty

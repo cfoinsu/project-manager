@@ -10,6 +10,11 @@ import projectRoutes from './routes/projects.js';
 import workloadRoutes from './routes/workload.js';
 import commentRoutes from './routes/comments.js';
 import doclibRoutes from './routes/doclib.js';
+import processRoutes from './routes/processes.js';
+import taskRoutes from './routes/tasks.js';
+import subtaskRoutes from './routes/subtasks.js';
+import worklogRoutes from './routes/worklogs.js';
+import emergencyRoutes from './routes/emergency.js';
 
 dotenv.config();
 
@@ -48,6 +53,11 @@ app.use('/projects', projectRoutes);
 app.use('/workload', workloadRoutes);
 app.use('/comments', commentRoutes);
 app.use('/doclib', doclibRoutes);
+app.use('/processes', processRoutes);
+app.use('/tasks', taskRoutes);
+app.use('/subtasks', subtaskRoutes);
+app.use('/worklogs', worklogRoutes);
+app.use('/emergency', emergencyRoutes);
 
 // Static files: uploaded documents (direct file serving)
 app.use('/uploads', express.static(join(new URL('.', import.meta.url).pathname.slice(1), 'uploads')));

@@ -24,6 +24,18 @@
     *   사용하고 계신 깃허브 계정이 `ninehyzzel-prog`가 맞는지 확인합니다.
     *   비밀번호 대신 **Personal Access Token (Classic)**을 발급받아 Git 자격 증명에 등록해 주어야 할 수 있습니다. (깃허브 [Settings] -> [Developer Settings] -> [Personal Access Tokens]에서 발급 가능)
 
+### 3) 사용자 식별 정보 미설정 오류 (Author identity unknown)
+*   새로운 컴퓨터에서 `git commit`을 처음 실행할 때 발생하는 설정 오류입니다. 깃허브에 커밋을 기록할 사용자의 이름과 이메일 정보가 누락되어 발생합니다.
+*   **조치 방법**:
+    터미널에 아래 두 명령어를 한 줄씩 입력하여 사용자를 등록한 뒤, 다시 커밋을 실행합니다.
+    ```bash
+    # 본인의 깃허브 이메일 등록
+    git config --global user.email "your_email@example.com"
+    
+    # 본인의 닉네임 또는 이름 등록
+    git config --global user.name "your_username"
+    ```
+
 ---
 
 ## 2. Git & GitHub의 기본 개념
