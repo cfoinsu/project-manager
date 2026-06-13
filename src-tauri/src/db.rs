@@ -69,6 +69,15 @@ pub struct Template {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FolderTemplate {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub structure_json: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct User {
     pub id: String,
     pub username: String,
@@ -208,6 +217,18 @@ pub fn init_db(db_path: &PathBuf) -> Result<()> {
             name TEXT NOT NULL,
             description TEXT,
             config_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    // Create Folder Templates Table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS folder_templates (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            structure_json TEXT NOT NULL,
             created_at TEXT NOT NULL
         )",
         [],
@@ -875,6 +896,73 @@ pub fn db_save_template(
         config_json,
         created_at: now,
     })
+}
+
+#[tauri::command]
+pub fn db_get_folder_templates(app_handle: tauri::AppHandle) -> Result<Vec<FolderTemplate>, String> {
+    let db_path = get_db_path(&app_handle);
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    
+    let mut stmt = conn
+        .prepare("SELECT id, name, description, structure_json, created_at FROM folder_templates ORDER BY created_at DESC")
+        .map_err(|e| e.to_string())?;
+        
+    let temp_iter = stmt
+        .query_map([], |row| {
+            Ok(FolderTemplate {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                structure_json: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+        
+    let mut templates = Vec::new();
+    for temp in temp_iter {
+        templates.push(temp.map_err(|e| e.to_string())?);
+    }
+    Ok(templates)
+}
+
+#[tauri::command]
+pub fn db_save_folder_template(
+    app_handle: tauri::AppHandle,
+    id: Option<String>,
+    name: String,
+    description: Option<String>,
+    structure_json: String,
+) -> Result<FolderTemplate, String> {
+    let db_path = get_db_path(&app_handle);
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    
+    let temp_id = id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    conn.execute(
+        "INSERT OR REPLACE INTO folder_templates (id, name, description, structure_json, created_at) VALUES (?, ?, ?, ?, ?)",
+        params![temp_id, name, description, structure_json, now],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(FolderTemplate {
+        id: temp_id,
+        name,
+        description,
+        structure_json,
+        created_at: now,
+    })
+}
+
+#[tauri::command]
+pub fn db_delete_folder_template(app_handle: tauri::AppHandle, id: String) -> Result<(), String> {
+    let db_path = get_db_path(&app_handle);
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    
+    conn.execute("DELETE FROM folder_templates WHERE id = ?", params![id])
+        .map_err(|e| e.to_string())?;
+        
+    Ok(())
 }
 
 #[tauri::command]

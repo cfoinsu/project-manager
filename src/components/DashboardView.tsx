@@ -25,7 +25,7 @@ import { RangeDatePicker } from './RangeDatePicker';
 import { CustomSelect } from './CustomSelect';
 
 export const DashboardView: React.FC = () => {
-  const { projects, templates, addProject, removeProject, updateProjectInfo, selectProject, setView, setPendingTab } = useProjectStore();
+  const { projects, templates, folderTemplates, addProject, removeProject, updateProjectInfo, selectProject, setView, setPendingTab } = useProjectStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [projectStatusFilter, setProjectStatusFilter] = useState<'전체' | '대기' | '진행중' | '완료'>('전체');
   
@@ -161,6 +161,7 @@ export const DashboardView: React.FC = () => {
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [selectedFolderTemplateId, setSelectedFolderTemplateId] = useState('');
   const [regionCode, setRegionCode] = useState('');
   const [typeCode, setTypeCode] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -210,19 +211,30 @@ export const DashboardView: React.FC = () => {
     if (!name || !path || !regionCode) return;
     
     const code = generatedCode;
-    const project = await addProject(name, path, code, selectedTemplateId || undefined, startDate, endDate);
+    const project = await addProject(
+      name, 
+      path, 
+      code, 
+      selectedTemplateId || undefined, 
+      selectedFolderTemplateId || undefined, 
+      startDate, 
+      endDate
+    );
 
-    if (selectedTemplateId) {
+    if (selectedFolderTemplateId) {
       if (isTauri()) {
         alert(`프로젝트가 생성되었습니다!\n폴더 구조와 연동된 문서 양식이 아래 경로에 물리적으로 배포 완료되었습니다:\n${path}`);
       } else {
         alert(`프로젝트가 생성되었습니다!\n\n⚠️ 웹 브라우저 모드 안내:\n물리적인 로컬 폴더 및 파일 작성은 PC 로컬 자원에 접근할 수 있는 '데스크톱 앱' 버전에서만 가능합니다. 현재 웹 브라우저 환경이므로 DB 상의 프로젝트 구조만 자동 설정되었습니다.`);
       }
+    } else {
+      alert(`프로젝트가 생성되었습니다!`);
     }
 
     setName('');
     setPath('');
     setSelectedTemplateId('');
+    setSelectedFolderTemplateId('');
     setRegionCode('');
     setTypeCode('');
     setStartDate('');
@@ -333,6 +345,7 @@ export const DashboardView: React.FC = () => {
       setName('');
       setPath('');
       setSelectedTemplateId('');
+      setSelectedFolderTemplateId('');
       setRegionCode('');
       setTypeCode('');
       setStartDate('');
@@ -899,7 +912,35 @@ export const DashboardView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Project Period */}
+                {/* Select Process Template */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">적용할 프로세스 템플릿 (공정 및 일정 연동)</label>
+                <CustomSelect
+                  value={selectedTemplateId}
+                  onChange={(e) => setSelectedTemplateId(e.target.value)}
+                  className="toss-input cursor-pointer text-xs"
+                >
+                  <option value="">적용할 프로세스 템플릿 선택 (선택사항)</option>
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </CustomSelect>
+              </div>
+
+              {/* Select Folder Template */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">적용할 폴더 양식 (물리 폴더 및 서류 자동 생성)</label>
+                <CustomSelect
+                  value={selectedFolderTemplateId}
+                  onChange={(e) => setSelectedFolderTemplateId(e.target.value)}
+                  className="toss-input cursor-pointer text-xs"
+                >
+                  <option value="">적용할 폴더 양식 선택 (선택사항)</option>
+                  {folderTemplates.map(ft => (
+                    <option key={ft.id} value={ft.id}>{ft.name}</option>
+                  ))}
+                </CustomSelect>
+              </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">프로젝트 기간</label>
                 <RangeDatePicker

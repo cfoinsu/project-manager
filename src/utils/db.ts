@@ -1,5 +1,5 @@
 import { isTauri } from './tauriBridge';
-import type { Project, Process, Task, Document, Template, TempConfig } from '../types';
+import type { Project, Process, Task, Document, Template, TempConfig, FolderTemplate } from '../types';
 import { apiRequest } from './api';
 
 const isTauriMode = isTauri();
@@ -489,5 +489,73 @@ export const updateProject = async (
       projects[idx].updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
       localStorage.setItem('pa_projects', JSON.stringify(projects));
     }
+  }
+};
+
+export const getFolderTemplates = async (): Promise<FolderTemplate[]> => {
+  if (getServerMode()) {
+    const data = await apiRequest('/projects/folder_templates/list');
+    return data.templates || [];
+  } else if (isTauriMode) {
+    const invoke = await getInvoke();
+    return invoke('db_get_folder_templates');
+  } else {
+    const templates = localStorage.getItem('pa_folder_templates');
+    return templates ? JSON.parse(templates) : [];
+  }
+};
+
+export const saveFolderTemplate = async (
+  name: string,
+  description: string,
+  structureJson: string,
+  id?: string
+): Promise<FolderTemplate> => {
+  if (getServerMode()) {
+    const data = await apiRequest('/projects/folder_templates/save', {
+      method: 'POST',
+      body: JSON.stringify({ id, name, description, structureJson })
+    });
+    return data.template;
+  } else if (isTauriMode) {
+    const invoke = await getInvoke();
+    return invoke('db_save_folder_template', { id, name, description, structure_json: structureJson });
+  } else {
+    const templates: FolderTemplate[] = JSON.parse(localStorage.getItem('pa_folder_templates') || '[]');
+    const tempId = id || 'foldertemp-' + Math.random().toString(36).substr(2, 9);
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    const newTemplate: FolderTemplate = {
+      id: tempId,
+      name,
+      description,
+      structure_json: structureJson,
+      created_at: nowStr
+    };
+
+    const idx = templates.findIndex(t => t.id === tempId);
+    if (idx > -1) {
+      templates[idx] = newTemplate;
+    } else {
+      templates.push(newTemplate);
+    }
+
+    localStorage.setItem('pa_folder_templates', JSON.stringify(templates));
+    return newTemplate;
+  }
+};
+
+export const deleteFolderTemplate = async (id: string): Promise<void> => {
+  if (getServerMode()) {
+    await apiRequest(`/projects/folder_templates/${id}`, {
+      method: 'DELETE'
+    });
+  } else if (isTauriMode) {
+    const invoke = await getInvoke();
+    return invoke('db_delete_folder_template', { id });
+  } else {
+    const templates: FolderTemplate[] = JSON.parse(localStorage.getItem('pa_folder_templates') || '[]');
+    const filtered = templates.filter(t => t.id !== id);
+    localStorage.setItem('pa_folder_templates', JSON.stringify(filtered));
   }
 };

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Project, Process, Task, Document, Template, FolderNode, TempConfig } from '../types';
+import type { Project, Process, Task, Document, Template, FolderNode, FolderTemplate, FolderTemplateNode } from '../types';
 import * as db from '../utils/db';
 import { scanDirectory, createDirectory, writeFileBytes } from '../utils/tauriBridge';
 import { downloadDocumentBytes } from '../utils/api';
@@ -11,6 +11,7 @@ interface ProjectState {
   tasks: Record<string, Task[]>; // Key: processId
   documents: Document[];
   templates: Template[];
+  folderTemplates: FolderTemplate[];
   currentView: string;
   loading: boolean;
   rootNode: FolderNode | null;
@@ -21,9 +22,10 @@ interface ProjectState {
   // Actions
   loadProjects: () => Promise<void>;
   loadTemplates: () => Promise<void>;
+  loadFolderTemplates: () => Promise<void>;
   selectProject: (project: Project | null) => Promise<void>;
   setView: (view: string) => void;
-  addProject: (name: string, path: string, code: string, templateId?: string, startDate?: string, endDate?: string, description?: string) => Promise<Project>;
+  addProject: (name: string, path: string, code: string, templateId?: string, folderTemplateId?: string, startDate?: string, endDate?: string, description?: string) => Promise<Project>;
   removeProject: (id: string) => Promise<void>;
   updateProjectInfo: (id: string, updates: { name?: string; code?: string; status?: string; start_date?: string; end_date?: string; description?: string }) => Promise<void>;
   
@@ -39,6 +41,8 @@ interface ProjectState {
   // Sync & Analysis Actions
   scanAndSync: () => Promise<void>;
   addTemplateAction: (name: string, description: string, configJson: string) => Promise<void>;
+  addFolderTemplateAction: (name: string, description: string, structureJson: string) => Promise<void>;
+  removeFolderTemplateAction: (id: string) => Promise<void>;
 
   // Navigation hint: which tab to open when switching views
   pendingTab: string | null;
@@ -52,6 +56,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   tasks: {},
   documents: [],
   templates: [],
+  folderTemplates: [],
   currentView: 'dashboard',
   loading: false,
   rootNode: null,
@@ -67,11 +72,21 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     try {
       const projects = await db.getProjects();
       const templates = await db.getTemplates();
-      set({ projects, templates });
+      const folderTemplates = await db.getFolderTemplates();
+      set({ projects, templates, folderTemplates });
     } catch (e) {
-      console.error('Failed to load projects/templates:', e);
+      console.error('Failed to load projects/templates/folderTemplates:', e);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  loadFolderTemplates: async () => {
+    try {
+      const folderTemplates = await db.getFolderTemplates();
+      set({ folderTemplates });
+    } catch (e) {
+      console.error('Failed to load folder templates:', e);
     }
   },
 
@@ -122,48 +137,89 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   setView: (view) => set({ currentView: view }),
 
-  addProject: async (name, path, code, templateId, startDate, endDate, description) => {
+  addProject: async (name, path, code, templateId, folderTemplateId, startDate, endDate, description) => {
     set({ loading: true });
     try {
       const project = await db.createProject(name, path, code, templateId, startDate, endDate, description);
       await get().loadProjects();
 
-      // If a template is provided, physically create directories and copy template documents
-      if (templateId) {
-        const templates = get().templates;
-        const template = templates.find(t => t.id === templateId);
-        if (template) {
+      // If a folder template is provided, physically create directories and copy template documents
+      if (folderTemplateId) {
+        const folderTemplates = get().folderTemplates;
+        const folderTemplate = folderTemplates.find(t => t.id === folderTemplateId);
+        if (folderTemplate) {
           try {
-            const config: TempConfig = JSON.parse(template.config_json);
+            const nodes: FolderTemplateNode[] = JSON.parse(folderTemplate.structure_json);
             
             // 1. Create the project root folder physically
             await createDirectory(project.path);
             
-            // 2. Iterate processes to create process folders and copy documents
-            for (const tempProc of config.processes) {
-              const processFolderPath = `${project.path}\\${tempProc.name}`;
-              await createDirectory(processFolderPath);
-              
-              // 3. Populate documents
-              for (const tempDoc of tempProc.required_docs) {
-                const filePath = `${processFolderPath}\\${tempDoc.name}`;
-                if (tempDoc.template_doc_id) {
-                  try {
-                    const bytes = await downloadDocumentBytes(tempDoc.template_doc_id);
-                    await writeFileBytes(filePath, bytes);
-                  } catch (downloadErr) {
-                    console.error(`Failed to download template for ${tempDoc.name}:`, downloadErr);
-                    // Fallback to empty file
-                    await writeFileBytes(filePath, new Uint8Array());
+            // 2. Define recursive generator function for physical folder/files
+            const generateStructure = async (currentPath: string, nodeList: FolderTemplateNode[]) => {
+              for (const node of nodeList) {
+                const nodePath = `${currentPath}\\${node.name}`;
+                if (node.is_dir) {
+                  // Create directory
+                  await createDirectory(nodePath);
+                  // Recursively generate children
+                  if (node.children && node.children.length > 0) {
+                    await generateStructure(nodePath, node.children);
                   }
                 } else {
-                  // No template linked, generate empty placeholder file
-                  await writeFileBytes(filePath, new Uint8Array());
+                  // Create file
+                  if (node.template_doc_id) {
+                    try {
+                      const bytes = await downloadDocumentBytes(node.template_doc_id);
+                      await writeFileBytes(nodePath, bytes);
+                    } catch (downloadErr) {
+                      console.error(`Failed to download template for ${node.name}:`, downloadErr);
+                      // Fallback to empty file
+                      await writeFileBytes(nodePath, new Uint8Array());
+                    }
+                  } else {
+                    // No template linked, generate empty placeholder file
+                    await writeFileBytes(nodePath, new Uint8Array());
+                  }
                 }
               }
+            };
+            
+            // Start recursive physical generation
+            await generateStructure(project.path, nodes);
+
+            // 3. Generate document requirements in the database for tracking
+            const docRecords: Document[] = [];
+            const collectDocRequirements = (currentRelPath: string, nodeList: FolderTemplateNode[]) => {
+              for (const node of nodeList) {
+                const nodeRelPath = currentRelPath ? `${currentRelPath}\\${node.name}` : node.name;
+                if (node.is_dir) {
+                  if (node.children) {
+                    collectDocRequirements(nodeRelPath, node.children);
+                  }
+                } else {
+                  const docId = 'doc-' + Math.random().toString(36).substr(2, 9);
+                  const ext = node.name.split('.').pop() || 'docx';
+                  docRecords.push({
+                    id: docId,
+                    project_id: project.id,
+                    name: node.name,
+                    path: `${project.path}\\${nodeRelPath}`,
+                    type: ext,
+                    size: 0,
+                    page_count: 0,
+                    updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19)
+                  });
+                }
+              }
+            };
+
+            collectDocRequirements('', nodes);
+            if (docRecords.length > 0) {
+              await db.saveDocuments(docRecords);
             }
+
           } catch (e) {
-            console.error('Error auto-generating template folder structure:', e);
+            console.error('Error auto-generating folder structure from template:', e);
           }
         }
       }
@@ -462,5 +518,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   addTemplateAction: async (name, description, configJson) => {
     await db.saveTemplate(name, description, configJson);
     await get().loadTemplates();
+  },
+
+  addFolderTemplateAction: async (name, description, structureJson) => {
+    await db.saveFolderTemplate(name, description, structureJson);
+    await get().loadFolderTemplates();
+  },
+
+  removeFolderTemplateAction: async (id) => {
+    await db.deleteFolderTemplate(id);
+    await get().loadFolderTemplates();
   }
 }));

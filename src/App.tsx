@@ -21,6 +21,7 @@ import { DocumentManagement } from './components/DocumentManagement';
 import { ProjectAnalysis } from './components/ProjectAnalysis';
 import { ReportGeneration } from './components/ReportGeneration';
 import { TemplateManagement } from './components/TemplateManagement';
+import { FolderTemplateManagement } from './components/FolderTemplateManagement';
 import { SettingsView } from './components/SettingsView';
 import { ScheduleCalendarView } from './components/ScheduleCalendarView';
 
@@ -140,7 +141,7 @@ function App() {
     if (currentView === 'users' && currentUser?.role !== 'admin') {
       return <DashboardView />;
     }
-    if (currentView === 'templates' && currentUser?.role === 'member') {
+    if ((currentView === 'templates' || currentView === 'folder_templates') && currentUser?.role === 'member') {
       return <DashboardView />;
     }
 
@@ -155,6 +156,8 @@ function App() {
         return <DocumentLibraryView />;
       case 'templates':
         return <TemplateManagement />;
+      case 'folder_templates':
+        return <FolderTemplateManagement />;
       case 'settings':
         return <SettingsView />;
       case 'calendar':
@@ -437,17 +440,31 @@ function App() {
             )}
 
             {currentUser?.role !== 'member' && (
-              <button
-                onClick={() => setView('templates')}
-                className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
-                  currentView === 'templates'
-                    ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
-                    : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
-                }`}
-              >
-                <ClipboardList className="w-4.5 h-4.5" />
-                <span>폴더 양식 라이브러리</span>
-              </button>
+              <>
+                <button
+                  onClick={() => setView('templates')}
+                  className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
+                    currentView === 'templates'
+                      ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
+                      : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
+                  }`}
+                >
+                  <ClipboardList className="w-4.5 h-4.5" />
+                  <span>프로세스 템플릿 보관함</span>
+                </button>
+
+                <button
+                  onClick={() => setView('folder_templates')}
+                  className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
+                    currentView === 'folder_templates'
+                      ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
+                      : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
+                  }`}
+                >
+                  <FolderOpen className="w-4.5 h-4.5" />
+                  <span>폴더 양식 라이브러리</span>
+                </button>
+              </>
             )}
 
             <button

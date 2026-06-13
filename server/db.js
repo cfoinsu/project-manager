@@ -364,6 +364,17 @@ export const initDatabase = async () => {
       )
     `);
 
+    // Create Folder Templates Table
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS folder_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        structure_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    `);
+
     // Seed default template
     const templatesCount = await dbGet('SELECT COUNT(*) as count FROM templates');
     if (templatesCount.count === 0) {

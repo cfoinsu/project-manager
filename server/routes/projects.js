@@ -202,4 +202,89 @@ router.post('/documents/save', verifyToken, async (req, res) => {
   }
 });
 
+// 6. GET /projects/templates/list - 프로세스 템플릿 목록 조회
+router.get('/templates/list', verifyToken, async (req, res) => {
+  try {
+    const templates = await dbAll('SELECT * FROM templates ORDER BY created_at DESC');
+    return res.json({ templates });
+  } catch (error) {
+    console.error('Fetch templates failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 7. POST /projects/templates/save - 프로세스 템플릿 저장
+router.post('/templates/save', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
+  const { id, name, description, configJson } = req.body;
+
+  if (!name || !configJson) {
+    return res.status(400).json({ message: '이름(name)과 설정(configJson)은 필수 항목입니다.' });
+  }
+
+  try {
+    const tempId = id || 'temp-' + Math.random().toString(36).substr(2, 9);
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    await dbRun(
+      'INSERT OR REPLACE INTO templates (id, name, description, config_json, created_at) VALUES (?, ?, ?, ?, ?)',
+      [tempId, name, description || '', configJson, nowStr]
+    );
+
+    const template = await dbGet('SELECT * FROM templates WHERE id = ?', [tempId]);
+    return res.json({ template });
+  } catch (error) {
+    console.error('Save template failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 8. GET /projects/folder_templates/list - 폴더 양식 목록 조회
+router.get('/folder_templates/list', verifyToken, async (req, res) => {
+  try {
+    const templates = await dbAll('SELECT * FROM folder_templates ORDER BY created_at DESC');
+    return res.json({ templates });
+  } catch (error) {
+    console.error('Fetch folder templates failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 9. POST /projects/folder_templates/save - 폴더 양식 저장
+router.post('/folder_templates/save', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
+  const { id, name, description, structureJson } = req.body;
+
+  if (!name || !structureJson) {
+    return res.status(400).json({ message: '이름(name)과 구조(structureJson)는 필수 항목입니다.' });
+  }
+
+  try {
+    const tempId = id || 'foldertemp-' + Math.random().toString(36).substr(2, 9);
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    await dbRun(
+      'INSERT OR REPLACE INTO folder_templates (id, name, description, structure_json, created_at) VALUES (?, ?, ?, ?, ?)',
+      [tempId, name, description || '', structureJson, nowStr]
+    );
+
+    const template = await dbGet('SELECT * FROM folder_templates WHERE id = ?', [tempId]);
+    return res.json({ template });
+  } catch (error) {
+    console.error('Save folder template failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 10. DELETE /projects/folder_templates/:id - 폴더 양식 삭제
+router.delete('/folder_templates/:id', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await dbRun('DELETE FROM folder_templates WHERE id = ?', [id]);
+    return res.json({ message: '폴더 양식이 삭제되었습니다.' });
+  } catch (error) {
+    console.error('Delete folder template failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
 export default router;

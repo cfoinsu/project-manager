@@ -165,6 +165,21 @@ export interface Template {
   created_at: string;
 }
 
+export interface FolderTemplateNode {
+  name: string;
+  is_dir: boolean;
+  template_doc_id?: string; // links to DocTemplate
+  children?: FolderTemplateNode[];
+}
+
+export interface FolderTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  structure_json: string; // JSON string of FolderTemplateNode[]
+  created_at: string;
+}
+
 export interface TempTask {
   title: string;
   description?: string;
