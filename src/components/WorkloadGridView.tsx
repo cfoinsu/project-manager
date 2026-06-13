@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as api from '../utils/api';
 import { useAuthStore } from '../store/authStore';
+import { useProjectStore } from '../store/projectStore';
 import type { Workload, Assignment } from '../types';
 import {
   Zap, RefreshCw, CheckCircle, AlertTriangle, Clock,
@@ -45,11 +46,16 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
   projectId, assignments, onSelectCell, selectedWorkloadId
 }) => {
   const { serverMode } = useAuthStore();
+  const { projects } = useProjectStore();
+  const project = projects.find(p => p.id === projectId);
+
   const [workloads, setWorkloads] = useState<Workload[]>([]);
   const [loading, setLoading] = useState(false);
   const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [generatingAll, setGeneratingAll] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0); // 현재 표시 구간 오프셋 (8주 단위)
   const [editingCell, setEditingCell] = useState<{ id: string; value: number } | null>(null);
+  const isEditingRef = useRef<string | null>(null);
 
   const fetchWorkloads = useCallback(async () => {
     if (!projectId) return;
@@ -68,8 +74,45 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
     fetchWorkloads();
   }, [fetchWorkloads]);
 
-  // 모든 주 목록 추출 (전체 기간)
-  const allWeeks = [...new Set(workloads.map(w => w.week_start))].sort();
+  // 프로젝트 기간 또는 워크로드 기반 주 목록 추출 (전체 기간)
+  const allWeeks = useMemo(() => {
+    let startStr = project?.start_date;
+    let endStr = project?.end_date;
+
+    // 프로젝트 기간이 없는 경우 워크로드 데이터 기준 또는 기본값으로 생성
+    if (!startStr || !endStr) {
+      if (workloads.length > 0) {
+        return [...new Set(workloads.map(w => w.week_start))].sort();
+      }
+      const today = new Date();
+      startStr = today.toISOString().split('T')[0];
+      const future = new Date();
+      future.setDate(future.getDate() + 56); // 8주
+      endStr = future.toISOString().split('T')[0];
+    }
+
+    const getMonday = (dateStr: string) => {
+      const d = new Date(dateStr);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const mon = new Date(d.setDate(diff));
+      return mon.toISOString().split('T')[0];
+    };
+
+    const startMonday = new Date(getMonday(startStr));
+    const endMonday = new Date(getMonday(endStr));
+    const weeks: string[] = [];
+    let current = new Date(startMonday);
+
+    let count = 0;
+    while (current <= endMonday && count < 104) { // 최대 2개년 제한
+      weeks.push(current.toISOString().split('T')[0]);
+      current.setDate(current.getDate() + 7);
+      count++;
+    }
+
+    return weeks;
+  }, [project, workloads]);
 
   // 표시할 주 (8주 단위 슬라이딩)
   const VISIBLE_WEEKS = 8;
@@ -112,15 +155,41 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
     }
   };
 
+  // 전체 인력 워크로드 일괄 생성
+  const handleGenerateAll = async () => {
+    setGeneratingAll(true);
+    try {
+      await Promise.all(assignments.map(a => api.generateWorkload(serverMode, a.id)));
+      await fetchWorkloads();
+    } catch (err) {
+      console.error('전체 워크로드 생성 실패:', err);
+    } finally {
+      setGeneratingAll(false);
+    }
+  };
+
   // workload ratio 인라인 수정
   const handleCellEdit = async (wl: Workload, newRatio: number) => {
+    if (isEditingRef.current !== wl.id) return;
+    isEditingRef.current = null; // Mark as done editing immediately
+    setEditingCell(null);
+
+    // If ratio hasn't changed, do nothing
+    if (wl.work_ratio === newRatio) {
+      return;
+    }
+
+    const oldRatio = wl.work_ratio;
+    // Optimistic UI Update
+    setWorkloads(prev => prev.map(w => w.id === wl.id ? { ...w, work_ratio: newRatio } : w));
+
     try {
       await api.updateWorkload(serverMode, wl.id, { work_ratio: newRatio });
-      setWorkloads(prev => prev.map(w => w.id === wl.id ? { ...w, work_ratio: newRatio } : w));
     } catch (err) {
       console.error('워크로드 수정 실패:', err);
+      // Revert on error
+      setWorkloads(prev => prev.map(w => w.id === wl.id ? { ...w, work_ratio: oldRatio } : w));
     }
-    setEditingCell(null);
   };
 
   // status 토글 (UI에서 책불도 기능 예약)
@@ -142,7 +211,7 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
   return (
     <div className="flex flex-col gap-4">
       {/* 헤더 */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between select-none">
         <div className="flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-toss-blue" />
           <span className="text-sm font-bold text-gray-800">주간 작업량 그리드</span>
@@ -150,16 +219,32 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
         </div>
         <div className="flex items-center gap-2">
           {/* 범례 */}
-          <div className="flex items-center gap-3 text-xs text-gray-500 mr-2">
+          <div className="flex items-center gap-3 text-xs text-gray-500 mr-2 flex-wrap">
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-emerald-400 inline-block" />~50%</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-toss-blue inline-block" />~80%</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" />~100%</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-500 inline-block" />과부하</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-505 bg-red-500 inline-block" />과부하</span>
           </div>
+
+          {/* 전체 워크로드 생성 단추 */}
+          <button
+            type="button"
+            onClick={handleGenerateAll}
+            disabled={generatingAll}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-toss-blue hover:bg-blue-600 text-white rounded-lg text-xs font-bold transition-all cursor-pointer border-none shadow-sm mr-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {generatingAll ? (
+              <RefreshCw className="w-3 h-3 animate-spin" />
+            ) : (
+              <Zap className="w-3 h-3 text-yellow-300 fill-yellow-300" />
+            )}
+            <span>전체 워크로드 생성</span>
+          </button>
+
           <button
             onClick={() => setWeekOffset(o => Math.max(0, o - 1))}
             disabled={weekOffset === 0}
-            className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer bg-white"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
@@ -169,13 +254,13 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
           <button
             onClick={() => setWeekOffset(o => Math.min(maxPages - 1, o + 1))}
             disabled={weekOffset >= maxPages - 1}
-            className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer bg-white"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={fetchWorkloads}
-            className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-all"
+            className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-all cursor-pointer bg-white"
             title="새로고침"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -183,36 +268,10 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
         </div>
       </div>
 
-      {/* Assignment 생성 버튼 영역 */}
-      <div className="flex flex-wrap gap-2">
-        {assignments.map(a => {
-          const hasWorkload = workloads.some(w => w.assignment_id === a.id);
-          return (
-            <button
-              key={a.id}
-              onClick={() => handleGenerate(a.id)}
-              disabled={generatingId === a.id}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                hasWorkload
-                  ? 'border-gray-200 text-gray-500 hover:bg-gray-50'
-                  : 'border-toss-blue text-toss-blue bg-blue-50 hover:bg-blue-100'
-              }`}
-            >
-              {generatingId === a.id ? (
-                <RefreshCw className="w-3 h-3 animate-spin" />
-              ) : (
-                <Zap className="w-3 h-3" />
-              )}
-              {a.user_name} 워크로드 {hasWorkload ? '재생성' : '생성'}
-            </button>
-          );
-        })}
-      </div>
-
       {/* 주간 그리드 테이블 */}
       {allWeeks.length === 0 ? (
         <div className="text-center py-12 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
-          워크로드 생성 버튼을 눌러 주간 작업량을 생성하세요.
+          프로젝트 기간을 설정하거나 배정을 진행하여 주간 작업량을 로드하세요.
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200">
@@ -248,14 +307,52 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
                       }`}
                     >
                       {/* 인력 정보 셀 */}
-                      <td className="px-4 py-3 sticky left-0 bg-inherit z-10 border-r border-gray-100">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-bold text-gray-800">{userInfo.name}</span>
-                          <span className="text-gray-400 text-xs">{assign.role}</span>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <span className="px-1.5 py-0.5 bg-blue-50 text-toss-blue rounded text-xs font-semibold">
-                              배정 {assign.allocation_percent}%
-                            </span>
+                      <td className="px-4 py-3 sticky left-0 bg-inherit z-10 border-r border-gray-100 min-w-[170px]">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-col gap-0.5 min-w-0 text-left">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-extrabold text-toss-gray-850 dark:text-slate-200 text-xs truncate">
+                                {userInfo.name}
+                              </span>
+                              <span className="text-[10px] text-toss-gray-400 dark:text-slate-500 font-bold shrink-0">
+                                {assign.role}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className="px-1.5 py-0.5 bg-sky-500/10 text-toss-blue rounded-[4px] text-[10px] font-black shrink-0">
+                                배정 {assign.allocation_percent}%
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 인라인 생성 및 재생성 버튼 */}
+                          <div className="shrink-0">
+                            {assignWls.length === 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => handleGenerate(assign.id)}
+                                disabled={generatingId === assign.id}
+                                className="flex items-center gap-1 px-2 py-1 bg-toss-blue hover:bg-blue-600 text-white rounded-lg text-[10px] font-black transition-all cursor-pointer border-none shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="작업량 생성"
+                              >
+                                {generatingId === assign.id ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Zap className="w-3 h-3 text-yellow-300 fill-yellow-300" />
+                                )}
+                                <span>생성</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleGenerate(assign.id)}
+                                disabled={generatingId === assign.id}
+                                className="p-1 rounded bg-toss-gray-100 hover:bg-toss-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-toss-gray-500 hover:text-toss-blue transition-all cursor-pointer border border-toss-gray-200 dark:border-slate-700 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="워크로드 재생성"
+                              >
+                                <RefreshCw className={`w-3.5 h-3.5 ${generatingId === assign.id ? 'animate-spin' : ''}`} />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -264,9 +361,9 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
                       {visibleWeeks.map(week => {
                         const wl = assignWls.find(w => w.week_start === week);
                         const ratio = wl ? wl.work_ratio : 0;
-                        // 이 사용자의 이 주 전체 합산 (모든 프로젝트)
-                        const cellTotal = getCellTotal(userId, week);
-                        const isOver = cellTotal > 100;
+                        // use server-calculated cross-project overload if available, otherwise fallback to local calculation
+                        const isOver = wl ? (wl.is_overloaded !== undefined ? wl.is_overloaded : getCellTotal(userId, week) > 100) : false;
+                        const cellTotal = wl ? (wl.total_ratio !== undefined ? wl.total_ratio : getCellTotal(userId, week)) : 0;
                         const isEditing = editingCell?.id === wl?.id;
                         const isSelected = wl && selectedWorkloadId === wl.id;
 
@@ -278,6 +375,11 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
                                   isSelected ? 'ring-2 ring-toss-blue ring-offset-1' : ''
                                 }`}
                                 onClick={() => onSelectCell && onSelectCell(wl)}
+                                onDoubleClick={e => {
+                                  e.stopPropagation();
+                                  isEditingRef.current = wl.id;
+                                  setEditingCell({ id: wl.id, value: ratio });
+                                }}
                               >
                                 {/* 비율 바 */}
                                 <div className="relative h-9 rounded-lg overflow-hidden bg-gray-100">
@@ -294,25 +396,23 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
                                         defaultValue={ratio}
                                         autoFocus
                                         onClick={e => e.stopPropagation()}
+                                        onDoubleClick={e => e.stopPropagation()}
                                         onKeyDown={e => {
                                           if (e.key === 'Enter') {
                                             handleCellEdit(wl, Number((e.target as HTMLInputElement).value));
                                           } else if (e.key === 'Escape') {
+                                            isEditingRef.current = null;
                                             setEditingCell(null);
                                           }
                                         }}
                                         onBlur={e => handleCellEdit(wl, Number(e.target.value))}
-                                        className="w-10 text-center text-xs font-bold bg-white/90 rounded border border-toss-blue outline-none z-20 relative"
+                                        className="w-10 text-center text-xs font-bold bg-white/90 rounded border border-toss-blue outline-none z-20 relative px-1 py-0.5"
                                       />
                                     ) : (
                                       <span
                                         className={`text-xs font-bold relative z-10 ${
-                                          ratio > 40 ? 'text-white' : 'text-gray-600'
+                                          ratio > 40 ? 'text-white' : 'text-gray-650 text-gray-600'
                                         }`}
-                                        onDoubleClick={e => {
-                                          e.stopPropagation();
-                                          setEditingCell({ id: wl.id, value: ratio });
-                                        }}
                                         title="더블클릭으로 수정"
                                       >
                                         {ratio}%
@@ -341,8 +441,8 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
                                   <div>작업량: <span className="text-amber-300">{ratio}%</span></div>
                                   <div>예상: {wl.expected_hours?.toFixed(1) || '-'}시간</div>
                                   <div>상태: {wl.status === 'done' ? '✅ 완료' : '📋 예정'}</div>
-                                  {isOver && <div className="text-red-400 font-bold">⚠ 이 주 총합 {cellTotal}% (과부하)</div>}
-                                  <div className="text-gray-400 text-xs mt-0.5">더블클릭: 수정 / 클릭: 댓글</div>
+                                  <div className="text-red-400 font-bold">⚠ 이 주 누적 총합: {cellTotal}% {isOver ? '(과부하)' : ''}</div>
+                                  <div className="text-gray-400 text-xs mt-0.5">더블클릭: 수정 / 클릭: 피드백 선택</div>
                                 </div>
                               </div>
                             ) : (

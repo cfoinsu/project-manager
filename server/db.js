@@ -221,6 +221,9 @@ export const initDatabase = async () => {
         assignment_id TEXT,
         workload_id TEXT,
         content TEXT NOT NULL,
+        parent_id TEXT,
+        updated_at TEXT,
+        reactions TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -228,6 +231,19 @@ export const initDatabase = async () => {
         FOREIGN KEY(workload_id) REFERENCES workload(id) ON DELETE SET NULL
       )
     `);
+
+    const commentColumnsToAlter = [
+      'ALTER TABLE comments ADD COLUMN parent_id TEXT',
+      'ALTER TABLE comments ADD COLUMN updated_at TEXT',
+      'ALTER TABLE comments ADD COLUMN reactions TEXT'
+    ];
+    for (const sql of commentColumnsToAlter) {
+      try {
+        await dbRun(sql);
+      } catch (e) {
+        // Ignore errors if columns already exist
+      }
+    }
 
     // 6. Create Document Templates Table (서류 양식 라이브러리)
     await dbRun(`
@@ -280,6 +296,11 @@ export const initDatabase = async () => {
       console.log('  - Manager: manager / manager123');
       console.log('  - Member: member / member123');
     }
+    
+    // Ensure default seeded users have department and role info populated
+    await dbRun("UPDATE users SET department = '경영지원부', position = '대표', job_role = 'PM' WHERE id = 'user-admin-1' AND department IS NULL");
+    await dbRun("UPDATE users SET department = '개발부', position = '팀장', job_role = 'PL' WHERE id = 'user-manager-1' AND department IS NULL");
+    await dbRun("UPDATE users SET department = '디자인부', position = '사원', job_role = '디자이너' WHERE id = 'user-member-1' AND department IS NULL");
     
     // Seed default projects if projects table is empty
     const projectsCount = await dbGet('SELECT COUNT(*) as count FROM projects');

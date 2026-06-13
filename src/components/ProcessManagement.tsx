@@ -119,28 +119,28 @@ const EditModal: React.FC<EditModalProps> = ({ proc, projectStartDate, projectEn
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-500 dark:text-slate-400">진행 상태</label>
-              <select
+              <CustomSelect
                 value={status}
                 onChange={e => setStatus(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-toss-blue/30 cursor-pointer"
+                className="w-full text-sm font-bold bg-slate-50 dark:bg-slate-800"
               >
                 <option value="대기">대기</option>
                 <option value="진행중">진행중</option>
                 <option value="완료">완료</option>
-              </select>
+              </CustomSelect>
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-500 dark:text-slate-400">난이도</label>
-              <select
+              <CustomSelect
                 value={difficulty}
                 onChange={e => setDifficulty(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-toss-blue/30 cursor-pointer"
+                className="w-full text-sm font-bold bg-slate-50 dark:bg-slate-800"
               >
                 <option value="낮음">낮음</option>
                 <option value="보통">보통</option>
                 <option value="높음">높음</option>
                 <option value="매우높음">매우높음</option>
-              </select>
+              </CustomSelect>
             </div>
           </div>
 

@@ -674,8 +674,56 @@ export const generateWorkload = async (serverMode: boolean, assignment_id: strin
       body: JSON.stringify({ assignment_id })
     });
   }
+
   // fallback: 로컬 생성 시뮬레이션
-  return { message: '서버 모드에서만 워크로드 생성이 가능합니다.', workloads: [] };
+  const getMonday = (date: Date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const mon = new Date(d.setDate(diff));
+    return mon.toISOString().split('T')[0];
+  };
+
+  try {
+    const assigns = JSON.parse(localStorage.getItem('pa_fallback_assignments') || '[]');
+    const assign = assigns.find((a: any) => a.id === assignment_id);
+    if (!assign) {
+      throw new Error('배정 내역을 찾을 수 없습니다.');
+    }
+
+    const start = new Date(assign.start_date || new Date());
+    const end = new Date(assign.end_date || new Date());
+    const mondayStart = new Date(getMonday(start));
+    const mondayEnd = new Date(getMonday(end));
+
+    const generatedWls: any[] = [];
+    let current = new Date(mondayStart);
+
+    while (current <= mondayEnd) {
+      const weekStartStr = current.toISOString().split('T')[0];
+      const wlId = `wl-${Math.random().toString(36).substr(2, 9)}`;
+      generatedWls.push({
+        id: wlId,
+        assignment_id: assignment_id,
+        user_id: assign.user_id,
+        project_id: assign.project_id,
+        week_start: weekStartStr,
+        work_ratio: assign.allocation_percent || 100,
+        expected_hours: ((assign.allocation_percent || 100) / 100) * 40,
+        status: 'planned'
+      });
+      current.setDate(current.getDate() + 7);
+    }
+
+    let stored = JSON.parse(localStorage.getItem('pa_fallback_workloads') || '[]');
+    stored = stored.filter((w: any) => w.assignment_id !== assignment_id);
+    stored.push(...generatedWls);
+    localStorage.setItem('pa_fallback_workloads', JSON.stringify(stored));
+
+    return { message: '워크로드가 성공적으로 생성되었습니다.', workloads: generatedWls };
+  } catch (err: any) {
+    throw new Error(err.message || '워크로드 생성 중 오류가 발생했습니다.');
+  }
 };
 
 export const getWorkloads = async (
@@ -689,10 +737,28 @@ export const getWorkloads = async (
   }
   // Fallback: localStorage
   const stored = JSON.parse(localStorage.getItem('pa_fallback_workloads') || '[]');
-  if (params.project_id) return stored.filter((w: any) => w.project_id === params.project_id);
-  if (params.user_id) return stored.filter((w: any) => w.user_id === params.user_id);
-  if (params.assignment_id) return stored.filter((w: any) => w.assignment_id === params.assignment_id);
-  return stored;
+  
+  // Calculate true overload from the full stored array
+  const totalRatioMap: Record<string, number> = {};
+  for (const w of stored) {
+    const key = `${w.user_id}__${w.week_start}`;
+    totalRatioMap[key] = (totalRatioMap[key] || 0) + w.work_ratio;
+  }
+  
+  let filtered = stored;
+  if (params.project_id) filtered = stored.filter((w: any) => w.project_id === params.project_id);
+  else if (params.user_id) filtered = stored.filter((w: any) => w.user_id === params.user_id);
+  else if (params.assignment_id) filtered = stored.filter((w: any) => w.assignment_id === params.assignment_id);
+
+  return filtered.map((w: any) => {
+    const key = `${w.user_id}__${w.week_start}`;
+    const tot = totalRatioMap[key] || 0;
+    return {
+      ...w,
+      total_ratio: tot,
+      is_overloaded: tot > 100
+    };
+  });
 };
 
 export const updateWorkload = async (
@@ -732,9 +798,18 @@ export const getComments = async (
     return data.comments || [];
   }
   const stored = JSON.parse(localStorage.getItem('pa_fallback_comments') || '[]');
-  if (params.assignment_id) return stored.filter((c: any) => c.assignment_id === params.assignment_id);
-  if (params.project_id) return stored.filter((c: any) => c.project_id === params.project_id);
-  return stored;
+  let filtered = stored;
+  if (params.workload_id) {
+    filtered = stored.filter((c: any) => c.workload_id === params.workload_id);
+  } else if (params.assignment_id) {
+    filtered = stored.filter((c: any) => c.assignment_id === params.assignment_id);
+  } else if (params.project_id) {
+    filtered = stored.filter((c: any) => c.project_id === params.project_id);
+  }
+  return filtered.map((c: any) => ({
+    ...c,
+    reactions: c.reactions || {}
+  }));
 };
 
 export const createComment = async (
@@ -769,6 +844,7 @@ export const createComment = async (
     author_position: user?.position || null,
     author_job_role: user?.job_role || null,
     parent_id: payload.parent_id || null,
+    reactions: {},
     created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
     updated_at: null
   };
@@ -805,7 +881,6 @@ export const migrateComments = (): void => {
   }
 };
 
-
 export const deleteComment = async (serverMode: boolean, id: string): Promise<void> => {
   if (serverMode) {
     await apiRequest(`/comments/${id}`, { method: 'DELETE' });
@@ -837,6 +912,50 @@ export const updateComment = async (
     };
     localStorage.setItem('pa_fallback_comments', JSON.stringify(stored));
     return stored[idx];
+  }
+  throw new Error('댓글을 찾을 수 없습니다.');
+};
+
+export const toggleCommentReaction = async (
+  serverMode: boolean,
+  id: string,
+  emoji: string
+): Promise<any> => {
+  if (serverMode) {
+    const data = await apiRequest(`/comments/${id}/react`, {
+      method: 'POST',
+      body: JSON.stringify({ emoji })
+    });
+    return data;
+  }
+  // Local fallback
+  const stored = JSON.parse(localStorage.getItem('pa_fallback_comments') || '[]');
+  const idx = stored.findIndex((c: any) => c.id === id);
+  if (idx !== -1) {
+    const comment = stored[idx];
+    let reactions = comment.reactions || {};
+    if (typeof reactions === 'string') {
+      try { reactions = JSON.parse(reactions); } catch { reactions = {}; }
+    }
+    const loggedInUser = JSON.parse(localStorage.getItem('pa_logged_in_user') || '{}');
+    const userId = loggedInUser.id || 'local-user';
+
+    if (!reactions[emoji]) {
+      reactions[emoji] = [];
+    }
+    const uidx = reactions[emoji].indexOf(userId);
+    if (uidx > -1) {
+      reactions[emoji].splice(uidx, 1);
+      if (reactions[emoji].length === 0) {
+        delete reactions[emoji];
+      }
+    } else {
+      reactions[emoji].push(userId);
+    }
+    comment.reactions = reactions;
+    stored[idx] = comment;
+    localStorage.setItem('pa_fallback_comments', JSON.stringify(stored));
+    return { id, reactions };
   }
   throw new Error('댓글을 찾을 수 없습니다.');
 };
@@ -990,20 +1109,71 @@ export interface DocTemplate {
 export const uploadDocument = async (
   formData: FormData
 ): Promise<DocTemplate> => {
-  const token = localStorage.getItem('pa_token');
-  const response = await fetch(`${getApiBaseUrl()}/doclib/upload`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData
-  });
+  const file = formData.get('file') as File;
+  const category = (formData.get('category') as string) || '기타';
+  const tags = (formData.get('tags') as string) || '';
+  const description = (formData.get('description') as string) || '';
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.message || `업로드 실패: ${response.status}`);
+  try {
+    const token = localStorage.getItem('pa_token');
+    const response = await fetch(`${getApiBaseUrl()}/doclib/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || `업로드 실패: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.document;
+  } catch (error: any) {
+    if (error.message === 'SERVER_OFFLINE' || error.message.includes('Failed to fetch') || error.message.includes('Load failed')) {
+      console.warn('Express server is offline. Falling back to local storage simulation for uploading.');
+      
+      const { user } = (await import('../store/authStore')).useAuthStore.getState();
+      const id = `doc-${Math.random().toString(36).substr(2, 9)}`;
+      const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      
+      const newDoc: DocTemplate = {
+        id,
+        original_name: file.name,
+        stored_name: `stored-${id}-${file.name}`,
+        category,
+        tags,
+        description,
+        file_size: file.size,
+        mime_type: file.type || 'application/octet-stream',
+        uploaded_by: user?.id || 'local-user',
+        uploader_name: user?.name || '현재 사용자 (Local)',
+        created_at: nowStr
+      };
+
+      // Store file content as Data URL if small (< 2MB)
+      if (file && file.size < 2 * 1024 * 1024) {
+        try {
+          const fileDataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error('파일 읽기 실패'));
+            reader.readAsDataURL(file);
+          });
+          localStorage.setItem(`pa_fallback_doc_content_${id}`, fileDataUrl);
+        } catch (e) {
+          console.warn('Failed to store local file content:', e);
+        }
+      }
+
+      const stored = JSON.parse(localStorage.getItem('pa_fallback_document_templates') || '[]');
+      stored.unshift(newDoc);
+      localStorage.setItem('pa_fallback_document_templates', JSON.stringify(stored));
+
+      return newDoc;
+    }
+    throw error;
   }
-
-  const data = await response.json();
-  return data.document;
 };
 
 // 목록 조회
@@ -1011,9 +1181,90 @@ export const getDocuments = async (params: {
   q?: string;
   category?: string;
 } = {}): Promise<DocTemplate[]> => {
-  const query = new URLSearchParams(params as Record<string, string>).toString();
-  const data = await apiRequest(`/doclib${query ? `?${query}` : ''}`);
-  return data.documents || [];
+  try {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const response = await fetch(`${getApiBaseUrl()}/doclib${query ? `?${query}` : ''}`, {
+      headers: getHeaders()
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.documents || [];
+  } catch (error: any) {
+    if (error.message.includes('Failed to fetch') || error.message.includes('Load failed')) {
+      console.warn('Express server is offline. Falling back to local storage simulation for getDocuments.');
+      
+      let stored = JSON.parse(localStorage.getItem('pa_fallback_document_templates') || '[]');
+      
+      // Seed default document templates if empty
+      if (stored.length === 0) {
+        const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        stored = [
+          {
+            id: 'doc-seed-1',
+            original_name: '표준_근로계약서.docx',
+            stored_name: 'stored-doc-seed-1',
+            category: '계약',
+            tags: '인사, 표준, 2026',
+            description: '2026년 기준 전사 표준 정규직 및 계약직 근로계약서 양식입니다.',
+            file_size: 45200,
+            mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            uploaded_by: 'user-admin-1',
+            uploader_name: '최고 관리자',
+            created_at: nowStr
+          },
+          {
+            id: 'doc-seed-2',
+            original_name: '서비스_기획_상세설계_템플릿.xlsx',
+            stored_name: 'stored-doc-seed-2',
+            category: '기획',
+            tags: '기획, 스펙, 템플릿',
+            description: '화면 설계 및 상세 요구사항 정의를 위한 기획 사양서 템플릿입니다.',
+            file_size: 112000,
+            mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            uploaded_by: 'user-manager-1',
+            uploader_name: '프로젝트 매니저',
+            created_at: nowStr
+          },
+          {
+            id: 'doc-seed-3',
+            original_name: 'UI_디자인_가이드라인_v1.0.pdf',
+            stored_name: 'stored-doc-seed-3',
+            category: '디자인',
+            tags: '디자인, 시스템, 가이드',
+            description: 'Project Atlas 통합 디자인 가이드 및 Figma 컴포넌트 사용 가이드라인입니다.',
+            file_size: 2450000,
+            mime_type: 'application/pdf',
+            uploaded_by: 'user-admin-1',
+            uploader_name: '최고 관리자',
+            created_at: nowStr
+          }
+        ];
+        localStorage.setItem('pa_fallback_document_templates', JSON.stringify(stored));
+      }
+
+      // Filter by category
+      if (params.category && params.category !== '전체') {
+        stored = stored.filter((d: any) => d.category === params.category);
+      }
+
+      // Filter by query
+      if (params.q) {
+        const q = params.q.toLowerCase();
+        stored = stored.filter((d: any) =>
+          d.original_name.toLowerCase().includes(q) ||
+          (d.tags && d.tags.toLowerCase().includes(q)) ||
+          (d.description && d.description.toLowerCase().includes(q))
+        );
+      }
+
+      return stored;
+    }
+    throw error;
+  }
 };
 
 // 다운로드 URL 생성 (브라우저 다운로드)
@@ -1024,22 +1275,58 @@ export const getDocumentDownloadUrl = (id: string): string => {
 
 // 파일 다운로드 (직접 트리거)
 export const downloadDocument = async (id: string, filename: string): Promise<void> => {
-  const token = localStorage.getItem('pa_token');
-  const response = await fetch(`${getApiBaseUrl()}/doclib/${id}/download`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {}
-  });
+  try {
+    const token = localStorage.getItem('pa_token');
+    const response = await fetch(`${getApiBaseUrl()}/doclib/${id}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
 
-  if (!response.ok) throw new Error('다운로드 실패');
+    if (!response.ok) throw new Error('다운로드 실패');
 
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  window.URL.revokeObjectURL(url);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  } catch (error: any) {
+    if (error.message.includes('Failed to fetch') || error.message.includes('Load failed')) {
+      console.warn('Express server is offline. Running local file download.');
+      
+      const fileDataUrl = localStorage.getItem(`pa_fallback_doc_content_${id}`);
+      let blob: Blob;
+      
+      if (fileDataUrl) {
+        // Data URL -> Blob
+        const arr = fileDataUrl.split(',');
+        const mime = arr[0].match(/:(.*?);/)?.[1] || 'application/octet-stream';
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        blob = new Blob([u8arr], { type: mime });
+      } else {
+        // Dummy placeholder
+        blob = new Blob([`이 파일은 오프라인 로컬 데모 모드에서 다운로드된 가상 파일입니다.\n양식명: ${filename}\nID: ${id}\n\n실제 첨부파일을 사용하시려면 Express 백엔드 서버를 구동해 주세요.`], { type: 'text/plain;charset=utf-8' });
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename.endsWith('.txt') || fileDataUrl ? filename : `${filename}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      return;
+    }
+    throw error;
+  }
 };
 
 // 메타데이터 수정
@@ -1047,14 +1334,38 @@ export const updateDocument = async (
   id: string,
   updates: Partial<Pick<DocTemplate, 'original_name' | 'category' | 'tags' | 'description'>>
 ): Promise<DocTemplate> => {
-  const data = await apiRequest(`/doclib/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(updates)
-  });
-  return data.document;
+  try {
+    const data = await apiRequest(`/doclib/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+    return data.document;
+  } catch (error: any) {
+    if (error.message === 'SERVER_OFFLINE' || error.message.includes('Failed to fetch') || error.message.includes('Load failed')) {
+      const stored = JSON.parse(localStorage.getItem('pa_fallback_document_templates') || '[]');
+      const idx = stored.findIndex((d: any) => d.id === id);
+      if (idx !== -1) {
+        stored[idx] = { ...stored[idx], ...updates };
+        localStorage.setItem('pa_fallback_document_templates', JSON.stringify(stored));
+        return stored[idx];
+      }
+      throw new Error('문서를 찾을 수 없습니다.');
+    }
+    throw error;
+  }
 };
 
 // 파일 삭제
 export const deleteDocument = async (id: string): Promise<void> => {
-  await apiRequest(`/doclib/${id}`, { method: 'DELETE' });
+  try {
+    await apiRequest(`/doclib/${id}`, { method: 'DELETE' });
+  } catch (error: any) {
+    if (error.message === 'SERVER_OFFLINE' || error.message.includes('Failed to fetch') || error.message.includes('Load failed')) {
+      const stored = JSON.parse(localStorage.getItem('pa_fallback_document_templates') || '[]');
+      localStorage.setItem('pa_fallback_document_templates', JSON.stringify(stored.filter((d: any) => d.id !== id)));
+      localStorage.removeItem(`pa_fallback_doc_content_${id}`);
+      return;
+    }
+    throw error;
+  }
 };

@@ -2,17 +2,19 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
 import * as api from '../utils/api';
-import type { Assignment, User } from '../types';
+import type { Assignment, User, Workload } from '../types';
 import { 
   Activity, 
-  AlertCircle, 
   Clock, 
   Compass, 
   ArrowRight,
   Users,
-  FileText
+  FileText,
+  Calendar,
+  Database
 } from 'lucide-react';
 import { openInExplorer } from '../utils/tauriBridge';
+import { RangeDatePicker } from './RangeDatePicker';
 
 export const ProjectOverview: React.FC = () => {
   const { 
@@ -32,13 +34,20 @@ export const ProjectOverview: React.FC = () => {
 
   const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [descInput, setDescInput] = useState('');
+  const [isEditingDates, setIsEditingDates] = useState(false);
+  const [startDateInput, setStartDateInput] = useState('');
+  const [endDateInput, setEndDateInput] = useState('');
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [workloads, setWorkloads] = useState<Workload[]>([]);
   const [loadingAssigns, setLoadingAssigns] = useState(false);
+  const [workloadTab, setWorkloadTab] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
   useEffect(() => {
     if (activeProject) {
       setDescInput(activeProject.description || '');
+      setStartDateInput(activeProject.start_date || '');
+      setEndDateInput(activeProject.end_date || '');
     }
   }, [activeProject]);
 
@@ -47,13 +56,15 @@ export const ProjectOverview: React.FC = () => {
       if (!activeProject) return;
       setLoadingAssigns(true);
       try {
-        const [allAssigns, allUsers] = await Promise.all([
+        const [allAssigns, allUsers, wlData] = await Promise.all([
           api.getAssignments(serverMode, user?.role || 'member', user?.id || ''),
-          api.getUsers(serverMode)
+          api.getUsers(serverMode),
+          api.getWorkloads(serverMode, { project_id: activeProject.id })
         ]);
         const projectAssigns = allAssigns.filter(a => a.project_id === activeProject.id);
         setAssignments(projectAssigns);
         setUsers(allUsers);
+        setWorkloads(wlData);
       } catch (e) {
         console.error('Failed to fetch project overview data:', e);
       } finally {
@@ -78,6 +89,19 @@ export const ProjectOverview: React.FC = () => {
       setIsEditingDesc(false);
     } catch (e) {
       console.error('Failed to update project description:', e);
+    }
+  };
+
+  const handleSaveDates = async () => {
+    if (!activeProject) return;
+    try {
+      await updateProjectInfo(activeProject.id, { 
+        start_date: startDateInput, 
+        end_date: endDateInput 
+      });
+      setIsEditingDates(false);
+    } catch (e) {
+      console.error('Failed to update project dates:', e);
     }
   };
 
@@ -128,7 +152,7 @@ export const ProjectOverview: React.FC = () => {
       color = 'text-white bg-toss-red border-toss-red ring-4 ring-toss-red/20 animate-pulse';
     } else {
       label = `종료 (D+${Math.abs(diffDays)})`;
-      color = 'text-toss-gray-455 bg-toss-gray-100 border-toss-gray-200 dark:bg-slate-800 dark:border-slate-700';
+      color = 'text-toss-gray-455 bg-toss-gray-105 border-toss-gray-200 dark:bg-slate-800 dark:border-slate-700';
     }
     
     return { days: diffDays, label, color };
@@ -218,250 +242,781 @@ export const ProjectOverview: React.FC = () => {
       .slice(0, 4);
   }, [tasks]);
 
+  // ─── 차트 데이터 연산 ─────────────────────────────────────────
+
+  // 일간 작업량 (향후 7일간 진행 중인 태스크 건수)
+  const dailyChartData = useMemo(() => {
+    const list = Object.values(tasks).flat();
+    const result: { label: string; count: number }[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+      const dateString = d.toISOString().split('T')[0];
+      const label = `${d.getMonth() + 1}/${d.getDate()}`;
+
+      const count = list.filter(t => {
+        if (t.status === '완료') return false;
+        if (!t.start_date && !t.end_date) return false;
+        const start = t.start_date || t.end_date || '';
+        const end = t.end_date || t.start_date || '';
+        return start <= dateString && dateString <= end;
+      }).length;
+
+      result.push({ label, count });
+    }
+    return result;
+  }, [tasks]);
+
+  // 주간 자원 투입량 (주차별 누적 투입량 비율 합계)
+  const weeklyChartData = useMemo(() => {
+    const weekMap: Record<string, number> = {};
+    workloads.forEach(w => {
+      weekMap[w.week_start] = (weekMap[w.week_start] || 0) + (w.work_ratio || 0);
+    });
+
+    return Object.entries(weekMap)
+      .map(([week, ratio]) => ({
+        label: week.slice(5) + ' 주',
+        ratio
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .slice(0, 5);
+  }, [workloads]);
+
+  // 월간 작업량 (월별 완료/진행/대기 작업량)
+  const monthlyChartData = useMemo(() => {
+    const list = Object.values(tasks).flat();
+    const monthMap: Record<string, { completed: number; ongoing: number; pending: number }> = {};
+
+    list.forEach(t => {
+      const dateStr = t.end_date || t.created_at || '';
+      if (!dateStr) return;
+      const month = dateStr.slice(0, 7); // YYYY-MM
+      if (!monthMap[month]) {
+        monthMap[month] = { completed: 0, ongoing: 0, pending: 0 };
+      }
+
+      if (t.status === '완료') {
+        monthMap[month].completed++;
+      } else if (t.status === '진행중' || t.status === '검토중') {
+        monthMap[month].ongoing++;
+      } else {
+        monthMap[month].pending++;
+      }
+    });
+
+    return Object.entries(monthMap)
+      .map(([month, data]) => ({
+        label: month.slice(5) + '월',
+        ...data
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .slice(0, 6);
+  }, [tasks]);
+
+  // 동심원 링 차트 데이터 연산
+  const rings = useMemo(() => {
+    const timeVal = timeElapsedPercent || 0;
+    const docVal = documentMetrics.percent || 0;
+    
+    // Circumference = 2 * pi * r
+    // Outer: r=65, c=408.4
+    // Middle: r=50, c=314.16
+    // Inner: r=35, c=219.9
+    return {
+      progress: {
+        val: totalProgress,
+        offset: 408.4 * (1 - totalProgress / 100),
+        color: '#3182F6',
+        bg: '#3182F615'
+      },
+      time: {
+        val: timeVal,
+        offset: 314.16 * (1 - timeVal / 100),
+        color: timeVal > 90 ? '#F04452' : '#FFAD0D',
+        bg: timeVal > 90 ? '#F0445215' : '#FFAD0D15'
+      },
+      docs: {
+        val: docVal,
+        offset: 219.9 * (1 - docVal / 100),
+        color: '#00B06C',
+        bg: '#00B06C15'
+      }
+    };
+  }, [totalProgress, timeElapsedPercent, documentMetrics.percent]);
+
   if (!activeProject) {
     return (
-      <div className="cds--flex-1 cds--column-flex items-center justify-center text-toss-gray-455 dark:text-slate-400">
-        프로젝트를 로드할 수 없습니다.
+      <div className="flex flex-col items-center justify-center h-full text-center py-20 select-none">
+        <p className="text-sm text-toss-gray-455 dark:text-slate-500 font-bold">선택된 프로젝트가 없습니다.</p>
       </div>
     );
   }
 
+  const healthScore = activeProject.health_score || 0;
+  const healthRating = healthScore >= 90 ? '안전' : healthScore >= 70 ? '주의' : '위험';
+  const healthColor = 
+    healthScore >= 90 ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' : 
+    healthScore >= 70 ? 'text-amber-500 bg-amber-500/10 border-amber-500/20' : 
+    'text-toss-red bg-toss-red/10 border-toss-red/20';
+
   return (
-    <div className="cds--overview-container animate-slide-up select-none text-left p-6 max-w-7xl mx-auto space-y-6">
+    <div className="cds--overview-container animate-slide-up select-none text-left w-full h-full overflow-y-auto pr-3 space-y-6 scrollbar-thin p-1 pb-12">
       
       {/* Overview Top bar */}
-      <div className="cds--overview-header select-none mb-6">
-        <div className="cds--column-flex text-left">
-          <span className="text-sm font-bold text-toss-blue mb-1">Project Overview</span>
-          <div className="cds--row-flex gap-3">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 select-none shrink-0 border-b border-slate-100 dark:border-slate-800/60 pb-5">
+        <div className="flex flex-col text-left">
+          <span className="text-xs font-black text-toss-blue uppercase tracking-widest">Dashboard Overview</span>
+          <div className="flex items-center gap-2.5 mt-1">
             {activeProject.code && (
-              <span className="cds--pill-badge bg-toss-blue/10 text-toss-blue border border-toss-blue/20 font-mono tracking-widest">
+              <span className="px-2.5 py-0.5 rounded-lg bg-toss-blue/10 text-toss-blue border border-toss-blue/20 font-mono text-xs font-black tracking-widest shrink-0">
                 {activeProject.code}
               </span>
             )}
-            <h1 className="cds--overview-header-title">{activeProject.name} 개요</h1>
+            <h1 className="text-xl font-extrabold text-slate-850 dark:text-slate-100">{activeProject.name} 개요</h1>
             {dDayMetrics && (
-              <span className={`cds--pill-badge border shadow-sm ${dDayMetrics.color}`}>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shadow-sm shrink-0 ${dDayMetrics.color}`}>
                 {dDayMetrics.label}
               </span>
             )}
           </div>
         </div>
+        
         <button
           onClick={scanAndSync}
-          className="cds--btn cds--btn-secondary cds--overview-sync-btn"
+          className="px-4 py-2.5 rounded-xl bg-toss-blue text-white hover:bg-blue-600 transition-all cursor-pointer font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-98"
         >
-          <Activity className="w-4.5 h-4.5 text-toss-blue animate-pulse" />
-          <span>폴더 동기화 및 진단</span>
+          <Activity className="w-4.5 h-4.5 text-white animate-pulse" />
+          <span>폴더 구조 동기화 및 건강도 진단</span>
         </button>
       </div>
 
-      {/* 5 KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        {/* KPI 1: Overall Progress */}
-        <div className="p-5 rounded-[24px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 flex flex-col justify-between min-h-[120px] shadow-sm hover:shadow-md transition-all duration-300 group">
-          <span className="text-xs font-bold text-toss-gray-500 dark:text-slate-400 text-left block">전체 진행률</span>
-          <div className="flex items-baseline justify-between mt-2.5 mb-2.5">
-            <span className="text-2xl font-black text-toss-gray-900 dark:text-gray-100">{totalProgress}%</span>
-            <span className="text-[10px] font-extrabold text-toss-blue">완료 목표</span>
-          </div>
-          <div className="w-full h-2 rounded-full bg-toss-gray-100 dark:bg-slate-800 overflow-hidden">
-            <div className="h-full bg-toss-blue rounded-full transition-all duration-500" style={{ width: `${totalProgress}%` }}></div>
-          </div>
-        </div>
-
-        {/* KPI 2: Project Health Score */}
-        <div className="p-5 rounded-[24px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 flex flex-col justify-between min-h-[120px] shadow-sm hover:shadow-md transition-all duration-300 group">
-          <span className="text-xs font-bold text-toss-gray-500 dark:text-slate-400 text-left block">건강도 지수</span>
-          <div className="flex items-baseline justify-between mt-2.5 mb-2.5">
-            <span className="text-2xl font-black text-toss-gray-900 dark:text-gray-100">{activeProject.health_score}점</span>
-            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
-              activeProject.health_score >= 90 ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/35 dark:text-emerald-400' :
-              activeProject.health_score >= 70 ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/35 dark:text-amber-400' :
-              'bg-rose-50 text-toss-red dark:bg-rose-955/35 dark:text-toss-red'
-            }`}>
-              {activeProject.health_score >= 90 ? '안전' : activeProject.health_score >= 70 ? '주의' : '위험'}
-            </span>
-          </div>
-          <div className="w-full h-2 rounded-full bg-toss-gray-100 dark:bg-slate-800 overflow-hidden">
-            <div 
-              className="h-full rounded-full transition-all duration-500" 
-              style={{ 
-                width: `${activeProject.health_score}%`,
-                backgroundColor: activeProject.health_score >= 90 ? '#00B06C' : activeProject.health_score >= 70 ? '#FFAD0D' : '#F04452'
-              }}
-            ></div>
-          </div>
-        </div>
-
-        {/* KPI 3: Time Elapsed */}
-        <div className="p-5 rounded-[24px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 flex flex-col justify-between min-h-[120px] shadow-sm hover:shadow-md transition-all duration-300 group">
-          <span className="text-xs font-bold text-toss-gray-500 dark:text-slate-400 text-left block">일정 소모율</span>
-          <div className="flex items-baseline justify-between mt-2.5 mb-2.5">
-            <span className="text-2xl font-black text-toss-gray-900 dark:text-gray-100">
-              {timeElapsedPercent !== null ? `${timeElapsedPercent}%` : '미지정'}
-            </span>
-            {dDayMetrics && (
-              <span className="text-[10px] font-black text-toss-red">
-                {dDayMetrics.label}
-              </span>
-            )}
-          </div>
-          <div className="w-full h-2 rounded-full bg-toss-gray-100 dark:bg-slate-800 overflow-hidden">
-            <div 
-              className="h-full rounded-full transition-all duration-500" 
-              style={{ 
-                width: `${timeElapsedPercent || 0}%`,
-                backgroundColor: timeElapsedPercent !== null && timeElapsedPercent > 90 ? '#F04452' : '#3182F6'
-              }}
-            ></div>
-          </div>
-        </div>
-
-        {/* KPI 4: Document Status */}
-        <div className="p-5 rounded-[24px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 flex flex-col justify-between min-h-[120px] shadow-sm hover:shadow-md transition-all duration-300 group">
-          <span className="text-xs font-bold text-toss-gray-500 dark:text-slate-400 text-left block">필수 문서 완료율</span>
-          <div className="flex items-baseline justify-between mt-2.5 mb-2.5">
-            <span className="text-2xl font-black text-toss-gray-900 dark:text-gray-100">{documentMetrics.percent}%</span>
-            <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400">검증 완료</span>
-          </div>
-          <div className="w-full h-2 rounded-full bg-toss-gray-100 dark:bg-slate-800 overflow-hidden">
-            <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${documentMetrics.percent}%` }}></div>
-          </div>
-        </div>
-
-        {/* KPI 5: Structure Suitability */}
-        <div className="p-5 rounded-[24px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 flex flex-col justify-between min-h-[120px] shadow-sm hover:shadow-md transition-all duration-300 group">
-          <span className="text-xs font-bold text-toss-gray-500 dark:text-slate-400 text-left block">구조 적합도</span>
-          <div className="flex items-baseline justify-between mt-2.5 mb-2.5">
-            <span className="text-2xl font-black text-toss-gray-900 dark:text-gray-100">{structureMetrics.percent}%</span>
-            <span className="text-[10px] font-extrabold text-purple-600 dark:text-purple-400">규칙 매칭</span>
-          </div>
-          <div className="w-full h-2 rounded-full bg-toss-gray-100 dark:bg-slate-800 overflow-hidden">
-            <div className="h-full bg-purple-500 rounded-full transition-all duration-500" style={{ width: `${structureMetrics.percent}%` }}></div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3-Column Section: Project Description & Details Summary & Resource Status Board */}
+      {/* 1. 최상단 중요도 지표 3열 그리드 (시각화 링 대시보드 포함) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Card 1: Project Description */}
-        <div className="p-6 rounded-[24px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 flex flex-col justify-between min-h-[240px] shadow-sm hover:shadow-md transition-all duration-300">
-          <div>
-            <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-3">
-              <span className="text-sm font-black text-toss-gray-800 dark:text-gray-200">프로젝트 설명</span>
-              {!isEditingDesc && (
-                <button 
-                  onClick={() => setIsEditingDesc(true)}
-                  className="text-xs font-bold text-toss-blue hover:underline bg-transparent border-none cursor-pointer"
-                >
-                  설명 수정
-                </button>
-              )}
-            </div>
+        {/* Card A: 3중 동심원 헬스 링 대시보드 */}
+        <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col md:flex-row items-center justify-around gap-6 group hover:shadow-md transition-shadow">
+          {/* Radial Activity Rings SVG */}
+          <div className="relative w-44 h-44 shrink-0 flex items-center justify-center">
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 160 160">
+              {/* Outer Track & Ring (Overall Progress) */}
+              <circle cx="80" cy="80" r="65" fill="none" stroke={rings.progress.bg} strokeWidth="10" />
+              <circle 
+                cx="80" cy="80" r="65" fill="none" 
+                stroke={rings.progress.color} strokeWidth="10" strokeLinecap="round"
+                strokeDasharray="408.4" strokeDashoffset={rings.progress.offset}
+                className="transition-all duration-700 ease-out"
+              />
 
-            {isEditingDesc ? (
-              <div className="flex flex-col gap-3">
-                <textarea
-                  value={descInput}
-                  onChange={(e) => setDescInput(e.target.value)}
-                  placeholder="프로젝트의 개요, 목표, 특이사항 등을 상세히 기술해 주세요."
-                  className="w-full h-24 p-3 text-xs rounded-xl border border-gray-200 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-850/50 text-toss-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-toss-blue resize-none scrollbar-thin text-left"
-                />
-                <div className="flex justify-end gap-2">
+              {/* Middle Track & Ring (Timeline Elapsed) */}
+              <circle cx="80" cy="80" r="50" fill="none" stroke={rings.time.bg} strokeWidth="10" />
+              <circle 
+                cx="80" cy="80" r="50" fill="none" 
+                stroke={rings.time.color} strokeWidth="10" strokeLinecap="round"
+                strokeDasharray="314.16" strokeDashoffset={rings.time.offset}
+                className="transition-all duration-700 ease-out"
+              />
+
+              {/* Inner Track & Ring (Required Docs Complete) */}
+              <circle cx="80" cy="80" r="35" fill="none" stroke={rings.docs.bg} strokeWidth="10" />
+              <circle 
+                cx="80" cy="80" r="35" fill="none" 
+                stroke={rings.docs.color} strokeWidth="10" strokeLinecap="round"
+                strokeDasharray="219.9" strokeDashoffset={rings.docs.offset}
+                className="transition-all duration-700 ease-out"
+              />
+            </svg>
+
+            {/* Center Information labels */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none text-center pt-2">
+              <span className="text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight leading-none">
+                {healthScore}
+              </span>
+              <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">HEALTH INDEX</span>
+              <span className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-full border mt-1.5 ${healthColor}`}>
+                {healthRating}
+              </span>
+            </div>
+          </div>
+
+          {/* Legend Details */}
+          <div className="flex flex-col gap-3.5 w-full text-left min-w-0">
+            <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">핵심 성과 메트릭</span>
+            
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-center justify-between text-xs font-bold gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: rings.progress.color }} />
+                  <span className="text-slate-650 dark:text-slate-350 truncate">전체 공정 진행률</span>
+                </div>
+                <span className="text-slate-800 dark:text-slate-100 font-extrabold shrink-0">{totalProgress}%</span>
+              </div>
+
+              <div className="flex items-center justify-between text-xs font-bold gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: rings.time.color }} />
+                  <span className="text-slate-650 dark:text-slate-350 truncate">계획 일정 소모율</span>
+                </div>
+                <span className="text-slate-800 dark:text-slate-100 font-extrabold shrink-0">
+                  {timeElapsedPercent !== null ? `${timeElapsedPercent}%` : '미지정'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-xs font-bold gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: rings.docs.color }} />
+                  <span className="text-slate-650 dark:text-slate-350 truncate">필수 문서 완료율</span>
+                </div>
+                <span className="text-slate-800 dark:text-slate-100 font-extrabold shrink-0">{documentMetrics.percent}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Card B: 프로젝트 요약 정보 */}
+        {isEditingDates ? (
+          <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between min-h-[200px] hover:shadow-md transition-shadow text-left">
+            <div className="w-full">
+              <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-3">
+                <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">프로젝트 일정 설정</span>
+              </div>
+              <div className="flex flex-col gap-3 text-xs font-bold mt-2">
+                <div className="flex flex-col gap-1.5 text-left">
+                  <span className="text-toss-gray-450 dark:text-slate-500 text-[10px]">계약 수행 기간</span>
+                  <RangeDatePicker
+                    startDate={startDateInput}
+                    endDate={endDateInput}
+                    onChange={(start, end) => {
+                      setStartDateInput(start);
+                      setEndDateInput(end);
+                    }}
+                    placeholder="프로젝트 기간 선택"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
                   <button 
                     onClick={() => {
-                      setIsEditingDesc(false);
-                      setDescInput(activeProject.description || '');
+                      setIsEditingDates(false);
+                      setStartDateInput(activeProject.start_date || '');
+                      setEndDateInput(activeProject.end_date || '');
                     }}
-                    className="px-2.5 py-1 text-xs font-bold rounded-lg bg-gray-100 hover:bg-gray-200 text-toss-gray-600 dark:bg-slate-800 dark:text-slate-400 border-none cursor-pointer"
+                    className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-gray-100 hover:bg-gray-250 text-toss-gray-650 dark:bg-slate-800 dark:text-slate-400 border-none cursor-pointer"
                   >
                     취소
                   </button>
                   <button 
-                    onClick={handleSaveDescription}
-                    className="px-2.5 py-1 text-xs font-bold rounded-lg bg-toss-blue hover:bg-toss-blue-hover text-white border-none cursor-pointer"
+                    onClick={handleSaveDates}
+                    className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-toss-blue hover:bg-blue-600 text-white border-none cursor-pointer"
                   >
                     저장
                   </button>
                 </div>
               </div>
-            ) : (
-              <p className="text-xs text-toss-gray-600 dark:text-slate-355 leading-relaxed whitespace-pre-wrap text-left min-h-[140px] flex items-start justify-start pt-1 overflow-y-auto max-h-[160px] scrollbar-thin">
-                {activeProject.description || '등록된 프로젝트 설명이 없습니다. 우측 상단의 "설명 수정"을 통해 세부 설명을 기록해 주세요.'}
-              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between min-h-[200px] hover:shadow-md transition-shadow text-left">
+            <div className="w-full">
+              <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-2.5">
+                <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">프로젝트 기본 정보</span>
+                <button 
+                  onClick={() => setIsEditingDates(true)}
+                  className="text-xs font-bold text-toss-blue hover:underline bg-transparent border-none cursor-pointer flex items-center gap-0.5"
+                >
+                  <Calendar className="w-3 h-3" /> 일정 변경
+                </button>
+              </div>
+              <div className="flex flex-col gap-2 text-xs font-bold text-slate-650 dark:text-slate-350">
+                <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-800/20">
+                  <span className="text-slate-400 dark:text-slate-550 font-medium">프로젝트 성격</span>
+                  <span className="text-slate-800 dark:text-slate-150 font-black">{activeProject.status}</span>
+                </div>
+                <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-800/20">
+                  <span className="text-slate-400 dark:text-slate-550 font-medium">시작일</span>
+                  <span className="text-slate-800 dark:text-slate-150 font-black">{activeProject.start_date || '미지정'}</span>
+                </div>
+                <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-800/20">
+                  <span className="text-slate-400 dark:text-slate-550 font-medium">종료일</span>
+                  <span className="text-slate-800 dark:text-slate-150 font-black">{activeProject.end_date || '미지정'}</span>
+                </div>
+                <div className="flex flex-col gap-1 pt-1.5 mt-0.5">
+                  <span className="text-[9.5px] font-black text-slate-400 dark:text-slate-550 uppercase flex items-center gap-1"><Database className="w-3 h-3 text-toss-blue" /> 로컬 디렉토리 경로</span>
+                  <span className="font-mono bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 rounded-xl text-[9.5px] text-slate-500 dark:text-slate-400 break-all select-all text-left border border-slate-100 dark:border-slate-800/40">
+                    {activeProject.path}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Card C: 프로젝트 설명 편집 및 관리 */}
+        <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between min-h-[200px] hover:shadow-md transition-shadow text-left">
+          <div className="w-full flex flex-col h-full justify-between">
+            <div className="w-full">
+              <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-2.5">
+                <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">세부 정보 설명</span>
+                {!isEditingDesc && (
+                  <button 
+                    onClick={() => setIsEditingDesc(true)}
+                    className="text-xs font-bold text-toss-blue hover:underline bg-transparent border-none cursor-pointer"
+                  >
+                    설명 수정
+                  </button>
+                )}
+              </div>
+
+              {isEditingDesc ? (
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    value={descInput}
+                    onChange={(e) => setDescInput(e.target.value)}
+                    placeholder="프로젝트의 주요 목표나 산출 규칙 등을 상세히 기록하세요."
+                    className="w-full h-20 p-2.5 text-xs rounded-xl border border-gray-200 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-850/50 text-slate-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-toss-blue resize-none scrollbar-thin text-left font-semibold"
+                  />
+                  <div className="flex justify-end gap-1.5">
+                    <button 
+                      onClick={() => {
+                        setIsEditingDesc(false);
+                        setDescInput(activeProject.description || '');
+                      }}
+                      className="px-2 py-1 text-[11px] font-bold rounded-lg bg-gray-100 hover:bg-gray-200 text-toss-gray-600 dark:bg-slate-800 dark:text-slate-400 border-none cursor-pointer"
+                    >
+                      취소
+                    </button>
+                    <button 
+                      onClick={handleSaveDescription}
+                      className="px-2 py-1 text-[11px] font-bold rounded-lg bg-toss-blue hover:bg-blue-600 text-white border-none cursor-pointer"
+                    >
+                      저장
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-wrap text-left max-h-24 overflow-y-auto scrollbar-thin font-medium">
+                  {activeProject.description || '등록된 프로젝트 세부 설명이 없습니다. "설명 수정"을 통해 업무 요건 및 규칙을 메모해 보세요.'}
+                </p>
+              )}
+            </div>
+            
+            {!isEditingDesc && (
+              <button
+                onClick={() => handleOpenFolder(activeProject.path)}
+                className="w-full py-2 mt-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/30 hover:bg-slate-100/60 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-350 transition-colors font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <Compass className="w-3.5 h-3.5 text-toss-blue" />
+                <span>로컬 탐색기에서 프로젝트 디렉토리 열기</span>
+              </button>
             )}
           </div>
         </div>
 
-        {/* Card 2: Project Details Card */}
-        <div className="p-6 rounded-[24px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 flex flex-col justify-between min-h-[240px] shadow-sm hover:shadow-md transition-all duration-300">
-          <span className="text-sm font-black text-toss-gray-800 dark:text-gray-200 border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-3 text-left block">프로젝트 요약 정보</span>
-          <div className="flex flex-col gap-2.5 text-xs font-bold text-toss-gray-700 dark:text-slate-300">
-            <div className="flex justify-between items-center py-0.5">
-              <span className="text-toss-gray-400 dark:text-slate-500">프로젝트명</span>
-              <span className="truncate max-w-[150px]" title={activeProject.name}>{activeProject.name}</span>
-            </div>
-            <div className="flex justify-between items-center py-0.5">
-              <span className="text-toss-gray-400 dark:text-slate-500">시작일</span>
-              <span>{activeProject.start_date || '미지정'}</span>
-            </div>
-            <div className="flex justify-between items-center py-0.5">
-              <span className="text-toss-gray-400 dark:text-slate-500">종료일</span>
-              <span>{activeProject.end_date || '미지정'}</span>
-            </div>
-            <div className="flex justify-between items-center py-0.5">
-              <span className="text-toss-gray-400 dark:text-slate-500">상태</span>
-              <span className="text-toss-blue font-bold">{activeProject.status}</span>
-            </div>
-            <div className="flex flex-col gap-1 pt-1.5 border-t border-gray-100 dark:border-slate-800/50">
-              <span className="text-toss-gray-400 dark:text-slate-500 text-left text-[10px]">로컬 경로</span>
-              <span className="font-mono bg-slate-50 dark:bg-slate-900/40 px-2.5 py-1.5 rounded-xl text-[10px] text-toss-gray-650 dark:text-slate-400 break-all select-all text-left">
-                {activeProject.path}
-              </span>
-            </div>
-            <button
-              onClick={() => handleOpenFolder(activeProject.path)}
-              className="w-full py-2.5 mt-1 rounded-xl flex items-center justify-center gap-1.5 font-bold text-xs cursor-pointer border border-slate-100 dark:border-slate-800/60 bg-slate-50/50 hover:bg-slate-100/60 dark:bg-slate-900/30 dark:hover:bg-slate-800/40 text-toss-gray-700 dark:text-slate-300 transition-colors"
-            >
-              <Compass className="w-3.5 h-3.5 text-toss-blue" />
-              <span>탐색기 폴더 열기</span>
-            </button>
+      </div>
+
+      {/* 2. 대시보드 중앙: 일간 / 주간 / 월간 작업량 통합 분석 차트 (SVG 시각화) */}
+      <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm hover:shadow-md transition-shadow">
+        {/* 차트 헤더 & 탭 스위치 */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-4 mb-5 gap-3">
+          <div className="flex items-center gap-2 text-left">
+            <span className="w-2 h-2 rounded-full bg-toss-blue shrink-0"></span>
+            <span className="text-sm font-black text-slate-800 dark:text-slate-200">프로젝트 작업량 및 자원 할당 시각화</span>
+          </div>
+
+          {/* Tab buttons */}
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200/40 dark:border-slate-700 text-xs font-black">
+            {[
+              { key: 'daily', label: '일간 작업 (7일)' },
+              { key: 'weekly', label: '주간 자원 (누적비율)' },
+              { key: 'monthly', label: '월간 작업 (스택)' }
+            ].map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setWorkloadTab(tab.key as any)}
+                className={`px-3.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  workloadTab === tab.key
+                    ? 'bg-white dark:bg-slate-900 text-toss-blue shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Card 3: Project Assigned Personnel (투입 인력 현황판) */}
-        <div className="p-6 rounded-[24px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 flex flex-col justify-between min-h-[240px] shadow-sm hover:shadow-md transition-all duration-300">
-          <div>
-            <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-3">
-              <div className="flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-toss-blue" />
-                <span className="text-sm font-black text-toss-gray-800 dark:text-gray-200">투입 인력 현황</span>
+        {/* 차트 프레임 렌더러 */}
+        <div className="w-full flex flex-col md:flex-row items-center gap-8 py-2 justify-center">
+          
+          {/* SVG 차트 바디 */}
+          <div className="w-full max-w-[620px] h-[190px] flex items-center justify-center shrink-0">
+            {workloadTab === 'daily' && (() => {
+              const maxVal = Math.max(...dailyChartData.map(d => d.count), 4);
+              const points = dailyChartData.map((d, i) => {
+                const x = 50 + i * 85;
+                const y = 140 - (d.count / maxVal) * 100;
+                return { x, y, val: d.count, label: d.label };
+              });
+              
+              const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+              const areaD = `${pathD} L ${points[points.length - 1].x} 140 L ${points[0].x} 140 Z`;
+
+              return (
+                <svg className="w-full h-full" viewBox="0 0 600 180">
+                  {/* Grid Lines */}
+                  {[0, 25, 50, 75, 100].map(pct => {
+                    const y = 140 - pct;
+                    return (
+                      <line key={pct} x1="40" y1={y} x2="570" y2={y} stroke="#E2E8F0" strokeWidth="1" strokeDasharray="4 4" className="dark:stroke-slate-800/60" />
+                    );
+                  })}
+                  
+                  {/* Gradient Fill under line */}
+                  <defs>
+                    <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#3182F6" stopOpacity="0.25" />
+                      <stop offset="100%" stopColor="#3182F6" stopOpacity="0.0" />
+                    </linearGradient>
+                  </defs>
+                  <path d={areaD} fill="url(#chartGradient)" />
+
+                  {/* Curve Path Line */}
+                  <path d={pathD} fill="none" stroke="#3182F6" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+
+                  {/* Interactive Points and Labels */}
+                  {points.map((p, i) => (
+                    <g key={i} className="group cursor-pointer">
+                      <circle cx={p.x} cy={p.y} r="5.5" fill="#FFFFFF" stroke="#3182F6" strokeWidth="3" className="hover:scale-125 transition-transform" />
+                      {/* Value label above the node */}
+                      <text x={p.x} y={p.y - 12} textAnchor="middle" className="text-[10px] font-black fill-current text-slate-800 dark:text-slate-200">
+                        {p.val}건
+                      </text>
+                      {/* X-axis labels */}
+                      <text x={p.x} y="160" textAnchor="middle" className="text-[10px] font-bold fill-current text-slate-400 dark:text-slate-500">
+                        {p.label}
+                      </text>
+                    </g>
+                  ))}
+                  
+                  {/* Y-axis values */}
+                  <text x="25" y="143" textAnchor="end" className="text-[9px] font-bold fill-current text-slate-400">0</text>
+                  <text x="25" y="43" textAnchor="end" className="text-[9px] font-bold fill-current text-slate-400">{maxVal}</text>
+                </svg>
+              );
+            })()}
+
+            {workloadTab === 'weekly' && (() => {
+              if (weeklyChartData.length === 0) {
+                return <span className="text-xs text-slate-400 dark:text-slate-500 py-12">현재 주간 배정된 자원 데이터가 없습니다.</span>;
+              }
+              
+              const maxVal = Math.max(...weeklyChartData.map(d => d.ratio), 100);
+              return (
+                <svg className="w-full h-full" viewBox="0 0 600 180">
+                  {/* Grid Lines */}
+                  {[0, 25, 50, 75, 100].map(pct => {
+                    const y = 140 - pct;
+                    return (
+                      <line key={pct} x1="40" y1={y} x2="570" y2={y} stroke="#E2E8F0" strokeWidth="1" strokeDasharray="4 4" className="dark:stroke-slate-800/60" />
+                    );
+                  })}
+
+                  <defs>
+                    <linearGradient id="blueBar" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#3182F6" /><stop offset="100%" stopColor="#1E58C1" />
+                    </linearGradient>
+                    <linearGradient id="orangeBar" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#FFAD0D" /><stop offset="100%" stopColor="#CA7F00" />
+                    </linearGradient>
+                    <linearGradient id="redBar" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#F04452" /><stop offset="100%" stopColor="#B5222E" />
+                    </linearGradient>
+                  </defs>
+
+                  {/* Render Bars */}
+                  {weeklyChartData.map((d, i) => {
+                    const x = 70 + i * 105;
+                    const h = (d.ratio / maxVal) * 100;
+                    const y = 140 - h;
+                    const barWidth = 32;
+
+                    let gradient = 'url(#blueBar)';
+                    if (d.ratio > 200) gradient = 'url(#redBar)';
+                    else if (d.ratio > 100) gradient = 'url(#orangeBar)';
+
+                    return (
+                      <g key={i} className="group">
+                        <rect 
+                          x={x} y={y} width={barWidth} height={h} rx="6" 
+                          fill={gradient} className="hover:opacity-90 transition-all cursor-pointer" 
+                        />
+                        {/* Value above the bar */}
+                        <text x={x + barWidth/2} y={y - 8} textAnchor="middle" className="text-[10px] font-black fill-current text-slate-800 dark:text-slate-200">
+                          {d.ratio}%
+                        </text>
+                        {/* X-axis labels */}
+                        <text x={x + barWidth/2} y="160" textAnchor="middle" className="text-[10px] font-bold fill-current text-slate-400 dark:text-slate-500">
+                          {d.label}
+                        </text>
+                      </g>
+                    );
+                  })}
+                  {/* Y-axis values */}
+                  <text x="25" y="143" textAnchor="end" className="text-[9px] font-bold fill-current text-slate-400">0%</text>
+                  <text x="25" y="43" textAnchor="end" className="text-[9px] font-bold fill-current text-slate-400">{maxVal}%</text>
+                </svg>
+              );
+            })()}
+
+            {workloadTab === 'monthly' && (() => {
+              if (monthlyChartData.length === 0) {
+                return <span className="text-xs text-slate-400 dark:text-slate-500 py-12">현재 등록된 프로젝트 태스크가 없습니다.</span>;
+              }
+
+              const maxVal = Math.max(...monthlyChartData.map(d => d.completed + d.ongoing + d.pending), 4);
+              return (
+                <svg className="w-full h-full" viewBox="0 0 600 180">
+                  {/* Grid Lines */}
+                  {[0, 25, 50, 75, 100].map(pct => {
+                    const y = 140 - pct;
+                    return (
+                      <line key={pct} x1="40" y1={y} x2="570" y2={y} stroke="#E2E8F0" strokeWidth="1" strokeDasharray="4 4" className="dark:stroke-slate-800/60" />
+                    );
+                  })}
+
+                  {/* Render Stacked Bars */}
+                  {monthlyChartData.map((d, i) => {
+                    const x = 70 + i * 105;
+                    const barWidth = 32;
+
+                    // Scaling heights
+                    const hPending = (d.pending / maxVal) * 100;
+                    const hOngoing = (d.ongoing / maxVal) * 100;
+                    const hCompleted = (d.completed / maxVal) * 100;
+                    
+                    const yPending = 140 - hPending;
+                    const yOngoing = yPending - hOngoing;
+                    const yCompleted = yOngoing - hCompleted;
+
+                    return (
+                      <g key={i}>
+                        {/* Pending (Gray) */}
+                        {hPending > 0 && (
+                          <rect x={x} y={yPending} width={barWidth} height={hPending} fill="#94A3B8" rx="2" className="hover:opacity-90" />
+                        )}
+                        {/* Ongoing (Blue) */}
+                        {hOngoing > 0 && (
+                          <rect x={x} y={yOngoing} width={barWidth} height={hOngoing} fill="#3182F6" rx="2" className="hover:opacity-90" />
+                        )}
+                        {/* Completed (Green) */}
+                        {hCompleted > 0 && (
+                          <rect x={x} y={yCompleted} width={barWidth} height={hCompleted} fill="#00B06C" rx="2" className="hover:opacity-90" />
+                        )}
+
+                        {/* Total Count Label on top of stack */}
+                        <text x={x + barWidth/2} y={yCompleted - 8} textAnchor="middle" className="text-[10px] font-black fill-current text-slate-800 dark:text-slate-200">
+                          {d.completed + d.ongoing + d.pending}건
+                        </text>
+                        {/* X-axis labels */}
+                        <text x={x + barWidth/2} y="160" textAnchor="middle" className="text-[10px] font-bold fill-current text-slate-400 dark:text-slate-500">
+                          {d.label}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Y-axis values */}
+                  <text x="25" y="143" textAnchor="end" className="text-[9px] font-bold fill-current text-slate-400">0</text>
+                  <text x="25" y="43" textAnchor="end" className="text-[9px] font-bold fill-current text-slate-400">{maxVal}</text>
+                </svg>
+              );
+            })()}
+          </div>
+
+          {/* 차트 가이드 및 인사이트 설명 */}
+          <div className="flex-1 text-left min-w-0 flex flex-col justify-center gap-3 bg-slate-50/50 dark:bg-slate-850/25 p-5 rounded-2xl border border-slate-100 dark:border-slate-800/60 w-full">
+            <span className="text-[11px] font-black text-toss-blue uppercase tracking-widest">차트 해석 & 실시간 분석</span>
+            
+            {workloadTab === 'daily' && (
+              <div className="flex flex-col gap-1.5 text-xs">
+                <p className="font-extrabold text-slate-850 dark:text-slate-150">향후 7일 일간 미완료 작업량 추이</p>
+                <p className="text-slate-500 dark:text-slate-400 leading-relaxed text-[11.5px]">
+                  매일 진행 및 검토 대기 중인 잔여 작업량의 누계 분포 곡선입니다. 특정 일자에 곡선이 솟아오른다면, 해당 일정 만료일에 작업이 집중되어 병목현상이 발생함을 암시합니다.
+                </p>
               </div>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-toss-blue/10 text-toss-blue border border-toss-blue/15">
+            )}
+
+            {workloadTab === 'weekly' && (
+              <div className="flex flex-col gap-1.5 text-xs">
+                <p className="font-extrabold text-slate-850 dark:text-slate-150">주차별 투입 인력 총 리소스 부하</p>
+                <p className="text-slate-500 dark:text-slate-400 leading-relaxed text-[11.5px]">
+                  본 프로젝트에 할당된 주차별 작업 할당 비율(Workload Ratio) 총합입니다. 누적 배율이 100%를 초과하는 주차가 지속될 경우 자원 과부하(Overload)가 발생하므로 인력 조정 또는 일정 조정이 필요합니다.
+                </p>
+                {/* 범례 */}
+                <div className="flex items-center gap-3 text-[10px] font-bold mt-1">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-toss-blue" /> 보통 (100%이하)</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-500" /> 경고 (100%~200%)</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-toss-red" /> 과부하 (200%초과)</span>
+                </div>
+              </div>
+            )}
+
+            {workloadTab === 'monthly' && (
+              <div className="flex flex-col gap-1.5 text-xs">
+                <p className="font-extrabold text-slate-850 dark:text-slate-150">월별 마일스톤 누적 진행 통계</p>
+                <p className="text-slate-500 dark:text-slate-400 leading-relaxed text-[11.5px]">
+                  프로젝트 내 전체 태스크를 마일스톤(월 단위)으로 분류해 상태별 비율을 비교하는 스택 막대 그래프입니다. 녹색의 완료 비율이 높을수록 안정적으로 마일스톤을 준수하고 있는 것입니다.
+                </p>
+                {/* 범례 */}
+                <div className="flex items-center gap-3 text-[10px] font-bold mt-1">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-500" /> 완료</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-toss-blue" /> 진행/검토 중</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-slate-400" /> 대기 중</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+
+      {/* 3. 프로세스 로드맵 단계 & 투입인력 현황 좌우 2열 배치 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* 로드맵 (Width: 2/3) */}
+        <div className="lg:col-span-2 p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3.5 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-toss-blue shrink-0"></span>
+              <span className="text-sm font-black text-slate-800 dark:text-slate-200">프로세스 단계 로드맵 및 작업 현황</span>
+            </div>
+            <button 
+              onClick={() => setView('projects_process')}
+              className="text-xs font-bold text-toss-blue hover:underline bg-transparent border-none cursor-pointer flex items-center gap-0.5"
+            >
+              단계 편집 <ArrowRight className="w-2.5 h-2.5" />
+            </button>
+          </div>
+
+          {processes.length === 0 ? (
+            <div className="py-12 text-center text-toss-gray-450 dark:text-slate-500 text-sm font-bold">
+              정의된 프로세스가 없습니다. 상단 '단계 편집'에서 프로세스를 추가해 주세요.
+            </div>
+          ) : (
+            <div className="flex overflow-x-auto pb-2 gap-4 scrollbar-thin">
+              {processes.map((proc, index) => {
+                const procTasks = tasks[proc.id] || [];
+                const isActive = proc.status === '진행중';
+                const isCompleted = proc.status === '완료';
+
+                let cardBorder = 'border-slate-100 dark:border-slate-800/40 bg-slate-50/20 dark:bg-slate-900/20';
+                if (isActive) {
+                  cardBorder = 'border-toss-blue/30 ring-1 ring-toss-blue/15 bg-blue-50/5 dark:bg-blue-955/10';
+                } else if (isCompleted) {
+                  cardBorder = 'border-emerald-400/20 bg-emerald-50/5 dark:bg-emerald-955/10';
+                }
+
+                return (
+                  <div 
+                    key={proc.id}
+                    className={`w-60 shrink-0 rounded-2xl border p-4 flex flex-col gap-3 min-h-[220px] transition-all hover:shadow-sm ${cardBorder}`}
+                  >
+                    {/* Process Header */}
+                    <div className="flex items-start justify-between gap-2 text-left">
+                      <div className="flex flex-col gap-0.5 text-left overflow-hidden w-full">
+                        <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-black text-left block">
+                          STEP 0{index + 1}
+                        </span>
+                        <span className="text-xs font-black text-slate-800 dark:text-slate-150 truncate text-left block" title={proc.name}>
+                          {proc.name}
+                        </span>
+                      </div>
+                      <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
+                        isCompleted ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-955/40 dark:text-emerald-450' :
+                        isActive ? 'bg-blue-50 text-toss-blue dark:bg-blue-955/40 dark:text-blue-400' :
+                        'bg-gray-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                      }`}>
+                        {Math.round(proc.progress * 100)}%
+                      </span>
+                    </div>
+
+                    {/* Task Kanban items under this process */}
+                    <div className="flex-1 flex flex-col gap-2 overflow-y-auto max-h-40 scrollbar-none pr-0.5">
+                      {procTasks.length === 0 ? (
+                        <span className="text-xs text-toss-gray-400 dark:text-slate-500 font-bold text-center py-6 block">
+                          등록된 작업 없음
+                        </span>
+                      ) : (
+                        procTasks.map(task => {
+                          const dday = getTaskDDay(task.end_date);
+                          let statusColor = 'bg-slate-100 text-slate-500';
+                          if (task.status === '진행중') statusColor = 'bg-blue-50 text-toss-blue dark:bg-blue-955/40 dark:text-blue-400';
+                          else if (task.status === '검토중') statusColor = 'bg-amber-50 text-amber-600 dark:bg-amber-955/40 dark:text-amber-400';
+                          else if (task.status === '완료') statusColor = 'bg-emerald-50 text-emerald-600 dark:bg-emerald-955/40 dark:text-emerald-450';
+
+                          return (
+                            <div 
+                              key={task.id}
+                              onClick={() => setView('projects_tasks')}
+                              className="bg-white dark:bg-slate-900 p-2.5 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.01)] border border-slate-100 dark:border-slate-800/30 hover:border-toss-blue/20 dark:hover:border-toss-blue/30 hover:-translate-y-0.5 hover:shadow-sm transition-all duration-200 flex flex-col gap-1.5 cursor-pointer text-left group"
+                            >
+                              <span className="text-xs font-black text-slate-800 dark:text-slate-200 line-clamp-1 group-hover:text-toss-blue transition-colors text-left">
+                                {task.title}
+                              </span>
+                              <div className="flex items-center justify-between gap-1.5">
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${statusColor}`}>
+                                  {task.status}
+                                </span>
+                                {dday && (
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${dday.color}`}>
+                                    {dday.label}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* 투입 인력 현황 (Width: 1/3) */}
+        <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm hover:shadow-md transition-shadow">
+          <div>
+            <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3.5 mb-3.5">
+              <div className="flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-toss-blue shrink-0" />
+                <span className="text-sm font-black text-slate-800 dark:text-slate-200">투입 인력 현황</span>
+              </div>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-toss-blue/10 text-toss-blue border border-toss-blue/15">
                 {assignments.length}명
               </span>
             </div>
 
             {loadingAssigns ? (
-              <div className="flex flex-col items-center justify-center py-8 gap-2 text-xs text-toss-gray-400">
+              <div className="flex flex-col items-center justify-center py-12 gap-2 text-xs text-toss-gray-400">
                 <Activity className="w-5 h-5 text-toss-blue animate-spin" />
                 <span>데이터 불러오는 중...</span>
               </div>
             ) : assignments.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center gap-1.5">
+              <div className="flex flex-col items-center justify-center py-12 text-center gap-1.5">
                 <Users className="w-8 h-8 text-toss-gray-350 dark:text-slate-700" />
-                <p className="text-xs text-toss-gray-400 font-bold">배정된 투입 인력이 없습니다.</p>
-                <p className="text-[10px] text-toss-gray-455 dark:text-slate-500">배정 관리에서 리소스를 등록해 주세요.</p>
+                <p className="text-xs text-slate-400 font-bold">배정된 투입 인력이 없습니다.</p>
+                <p className="text-[10px] text-slate-455 dark:text-slate-500">배정 관리에서 리소스를 등록해 주세요.</p>
               </div>
             ) : (
-              <div className="flex flex-col max-h-[140px] overflow-y-auto pr-0.5 scrollbar-thin">
+              <div className="flex flex-col max-h-56 overflow-y-auto pr-0.5 scrollbar-thin">
                 {assignments.map(assign => {
                   const userDetail = users.find(u => u.id === assign.user_id);
                   const avatar = getAvatarInfo(assign.user_name || 'U');
                   
-                  // 투입률에 따른 색상 정의
                   let pctColor = 'text-toss-gray-500 bg-toss-gray-100 dark:bg-slate-800 dark:text-slate-400';
                   if (assign.allocation_percent >= 100) {
                     pctColor = 'text-rose-600 bg-rose-50 dark:bg-rose-955/35 dark:text-rose-455';
@@ -474,9 +1029,9 @@ export const ProjectOverview: React.FC = () => {
                   return (
                     <div 
                       key={assign.id} 
-                      className="flex items-center justify-between py-2.5 border-b border-gray-100/50 dark:border-slate-800/30 last:border-b-0 hover:bg-slate-50/40 dark:hover:bg-slate-855/10 px-1.5 transition-colors"
+                      className="flex items-center justify-between py-2.5 border-b border-gray-100/50 dark:border-slate-800/20 last:border-b-0 hover:bg-slate-50/40 dark:hover:bg-slate-855/10 px-1 transition-colors"
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
                         {/* Circle Avatar */}
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-[11px] shrink-0 bg-gradient-to-br ${avatar.gradient}`}>
                           {avatar.initial}
@@ -484,16 +1039,16 @@ export const ProjectOverview: React.FC = () => {
                         {/* Name and Position */}
                         <div className="flex flex-col text-left min-w-0">
                           <div className="flex items-baseline gap-1">
-                            <span className="text-xs font-black text-toss-gray-800 dark:text-gray-250 truncate">
+                            <span className="text-xs font-black text-slate-800 dark:text-gray-250 truncate">
                               {assign.user_name}
                             </span>
                             {userDetail?.position && (
-                              <span className="text-[9px] text-toss-gray-400 dark:text-slate-500 font-bold">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold">
                                 {userDetail.position}
                               </span>
                             )}
                           </div>
-                          <span className="text-[9px] text-toss-gray-455 dark:text-slate-400 truncate">
+                          <span className="text-[9px] text-slate-400 dark:text-slate-500 truncate">
                             {assign.role || '담당자'}
                           </span>
                         </div>
@@ -501,11 +1056,11 @@ export const ProjectOverview: React.FC = () => {
 
                       {/* Allocation Rate Badge */}
                       <div className="flex flex-col items-end shrink-0">
-                        <span className={`text-[9.5px] font-black px-1.5 py-0.5 rounded ${pctColor}`}>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${pctColor}`}>
                           {assign.allocation_percent}%
                         </span>
                         {userDetail?.department && (
-                          <span className="text-[8.5px] text-toss-gray-400 dark:text-slate-500 font-medium mt-0.5">
+                          <span className="text-[8.5px] text-slate-400 dark:text-slate-500 font-medium mt-0.5">
                             {userDetail.department}
                           </span>
                         )}
@@ -520,146 +1075,44 @@ export const ProjectOverview: React.FC = () => {
 
       </div>
 
-      {/* Process Roadmap & Task Lists (Middle Section) */}
-      <div className="p-6 rounded-[24px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm hover:shadow-md transition-all duration-300">
-        <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3.5 mb-4">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-toss-blue"></span>
-            <span className="text-sm font-black text-toss-gray-800 dark:text-gray-200">프로세스 단계 로드맵 및 작업 현황</span>
-          </div>
-          <button 
-            onClick={() => setView('projects_process')}
-            className="text-xs font-bold text-toss-blue hover:underline bg-transparent border-none cursor-pointer flex items-center gap-0.5"
-          >
-            단계 편집 <ArrowRight className="w-2.5 h-2.5" />
-          </button>
-        </div>
-
-        {processes.length === 0 ? (
-          <div className="py-12 text-center text-toss-gray-400 dark:text-slate-500 text-sm font-bold">
-            정의된 프로세스가 없습니다. 상단 '단계 편집'에서 프로세스를 추가해 주세요.
-          </div>
-        ) : (
-          <div className="flex overflow-x-auto pb-2 gap-4 scrollbar-thin">
-            {processes.map((proc, index) => {
-              const procTasks = tasks[proc.id] || [];
-              const isActive = proc.status === '진행중';
-              const isCompleted = proc.status === '완료';
-
-              let cardBorder = 'border-slate-100 dark:border-slate-800/40 bg-slate-50/20 dark:bg-slate-900/20';
-              if (isActive) {
-                cardBorder = 'border-toss-blue/30 ring-1 ring-toss-blue/15 bg-blue-50/5 dark:bg-blue-955/10';
-              } else if (isCompleted) {
-                cardBorder = 'border-emerald-400/20 bg-emerald-50/5 dark:bg-emerald-955/10';
-              }
-
-              return (
-                <div 
-                  key={proc.id}
-                  className={`w-64 shrink-0 rounded-2xl border p-4 flex flex-col gap-3.5 min-h-[250px] transition-all hover:shadow-sm ${cardBorder}`}
-                >
-                  {/* Process Header */}
-                  <div className="flex items-start justify-between gap-2 text-left">
-                    <div className="flex flex-col gap-0.5 text-left overflow-hidden w-full">
-                      <span className="text-[9px] text-toss-gray-400 dark:text-slate-500 uppercase tracking-widest font-black text-left block">
-                        STEP 0{index + 1}
-                      </span>
-                      <span className="text-xs font-black text-toss-gray-800 dark:text-gray-255 truncate text-left block" title={proc.name}>
-                        {proc.name}
-                      </span>
-                    </div>
-                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
-                      isCompleted ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-955/40 dark:text-emerald-450' :
-                      isActive ? 'bg-blue-50 text-toss-blue dark:bg-blue-955/40 dark:text-blue-400' :
-                      'bg-gray-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                    }`}>
-                      {Math.round(proc.progress * 100)}%
-                    </span>
-                  </div>
-
-                  {/* Task Kanban items under this process */}
-                  <div className="flex-1 flex flex-col gap-2 overflow-y-auto max-h-48 scrollbar-none pr-0.5">
-                    {procTasks.length === 0 ? (
-                      <span className="text-xs text-toss-gray-400 dark:text-slate-500 font-bold text-center py-8 block">
-                        등록된 작업 없음
-                      </span>
-                    ) : (
-                      procTasks.map(task => {
-                        const dday = getTaskDDay(task.end_date);
-                        let statusColor = 'bg-slate-100 text-slate-500';
-                        if (task.status === '진행중') statusColor = 'bg-blue-50 text-toss-blue dark:bg-blue-955/40 dark:text-blue-400';
-                        else if (task.status === '검토중') statusColor = 'bg-amber-50 text-amber-600 dark:bg-amber-955/40 dark:text-amber-400';
-                        else if (task.status === '완료') statusColor = 'bg-emerald-50 text-emerald-600 dark:bg-emerald-955/40 dark:text-emerald-450';
-
-                        return (
-                          <div 
-                            key={task.id}
-                            onClick={() => setView('projects_tasks')}
-                            className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.015)] border border-slate-100/80 dark:border-slate-800/30 hover:border-toss-blue/20 dark:hover:border-toss-blue/30 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 flex flex-col gap-1.5 cursor-pointer text-left group"
-                          >
-                            <span className="text-xs font-black text-toss-gray-800 dark:text-gray-200 line-clamp-1 group-hover:text-toss-blue transition-colors text-left">
-                              {task.title}
-                            </span>
-                            <div className="flex items-center justify-between gap-1.5">
-                              <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-black ${statusColor}`}>
-                                {task.status}
-                              </span>
-                              {dday && (
-                                <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-black ${dday.color}`}>
-                                  {dday.label}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* 2-Column Bottom Section: Ongoing Tasks & Compact Documents Summary */}
+      {/* 4. 하단 태스크 리스트 & 폴더 구조 진단 좌우 2열 배치 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* Ongoing Tasks (Left Column) */}
-        <div className="p-6 rounded-[24px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm hover:shadow-md transition-all duration-300">
+        {/* Ongoing Tasks */}
+        <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3.5 mb-3.5">
             <div className="flex items-center gap-1.5">
-              <Clock className="w-4.5 h-4.5 text-toss-blue" />
-              <span className="text-sm font-black text-toss-gray-800 dark:text-gray-200">진행중인 작업 ({recentTasks.length})</span>
+              <Clock className="w-4.5 h-4.5 text-toss-blue shrink-0" />
+              <span className="text-sm font-black text-slate-800 dark:text-slate-200">실시간 진행중인 작업 ({recentTasks.length})</span>
             </div>
             <button onClick={() => setView('projects_tasks')} className="text-xs font-bold text-toss-blue hover:underline bg-transparent border-none cursor-pointer flex items-center gap-0.5">
-              작업 더보기 <ArrowRight className="w-2.5 h-2.5" />
+              작업 전체보기 <ArrowRight className="w-2.5 h-2.5" />
             </button>
           </div>
 
-          <div className="flex flex-col max-h-64 overflow-y-auto pr-0.5 scrollbar-thin">
+          <div className="flex flex-col max-h-56 overflow-y-auto pr-0.5 scrollbar-thin">
             {recentTasks.length === 0 ? (
-              <p className="text-xs text-toss-gray-400 dark:text-slate-500 font-bold py-16 text-center">진행 중인 작업이 없습니다.</p>
+              <p className="text-xs text-toss-gray-400 dark:text-slate-500 font-bold py-14 text-center">진행 중인 작업이 없습니다.</p>
             ) : (
               <div className="flex flex-col">
                 {recentTasks.map(task => {
-                  let priorityColor = 'text-toss-gray-500 bg-toss-gray-100 dark:bg-slate-855/30 dark:text-slate-400';
+                  let priorityColor = 'text-toss-gray-500 bg-toss-gray-100 dark:bg-slate-850/40 dark:text-slate-400';
                   if (task.priority === '긴급') priorityColor = 'text-toss-red bg-toss-red/10 dark:bg-rose-955/30 dark:text-toss-red';
                   else if (task.priority === '높음') priorityColor = 'text-toss-yellow bg-toss-yellow/10 dark:bg-amber-955/30 dark:text-toss-yellow';
                   
                   return (
                     <div 
                       key={task.id} 
-                      className="flex items-center justify-between py-3 border-b border-gray-100/50 dark:border-slate-800/30 last:border-b-0 hover:bg-slate-50/30 dark:hover:bg-slate-850/10 px-2 transition-colors text-left"
+                      className="flex items-center justify-between py-3 border-b border-slate-50 dark:border-slate-800/20 last:border-b-0 hover:bg-slate-50/30 dark:hover:bg-slate-850/10 px-1 transition-colors text-left"
                     >
                       <div className="flex items-center gap-2.5 overflow-hidden w-full">
                         <Clock className="w-4.5 h-4.5 text-toss-blue shrink-0" />
                         <div className="flex flex-col overflow-hidden text-left w-full">
-                          <span className="text-xs font-extrabold text-toss-gray-800 dark:text-gray-255 truncate">{task.title}</span>
-                          <span className="text-[9.5px] text-toss-gray-450 dark:text-slate-500 truncate mt-0.5">{task.description || '설명 없음'}</span>
+                          <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 truncate">{task.title}</span>
+                          <span className="text-[9.5px] text-slate-400 dark:text-slate-500 truncate mt-0.5">{task.description || '작업 세부 설명이 기록되지 않았습니다.'}</span>
                         </div>
                       </div>
-                      <span className={`text-[9.5px] px-2 py-0.5 rounded font-black shrink-0 ${priorityColor}`}>{task.priority}</span>
+                      <span className={`text-[9px] px-2 py-0.5 rounded font-black shrink-0 ${priorityColor}`}>{task.priority}</span>
                     </div>
                   );
                 })}
@@ -668,45 +1121,56 @@ export const ProjectOverview: React.FC = () => {
           </div>
         </div>
 
-        {/* Compact Documents & Analysis (Right Column) */}
-        <div className="p-6 rounded-[24px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between min-h-[280px]">
+        {/* Compact Documents & Analysis with Visual bar chart */}
+        <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between min-h-[260px]">
           <div>
             <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3.5 mb-3.5">
               <div className="flex items-center gap-1.5">
-                <FileText className="w-4.5 h-4.5 text-toss-blue" />
-                <span className="text-sm font-black text-toss-gray-800 dark:text-gray-200">산출물 및 폴더 구조 진단</span>
+                <FileText className="w-4.5 h-4.5 text-toss-blue shrink-0" />
+                <span className="text-sm font-black text-slate-800 dark:text-slate-200">산출물 및 폴더 구조 진단</span>
               </div>
               <button onClick={() => setView('projects_documents')} className="text-xs font-bold text-toss-blue hover:underline bg-transparent border-none cursor-pointer flex items-center gap-0.5">
                 산출물 관리 <ArrowRight className="w-2.5 h-2.5" />
               </button>
             </div>
 
-            <div className="flex flex-col">
-              {/* Document Check Overview */}
-              <div className="flex items-center justify-between py-3 border-b border-gray-100/50 dark:border-slate-800/30 text-xs font-bold">
-                <span className="text-toss-gray-500 dark:text-slate-400">누락된 필수 문서 파일</span>
-                <span className={`px-2 py-0.5 rounded-full font-black ${
-                  documentMetrics.missing.length === 0 ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-rose-50 text-toss-red dark:bg-rose-955/40'
-                }`}>
-                  {documentMetrics.missing.length}건
-                </span>
+            <div className="flex flex-col gap-3">
+              {/* Horizontal Bar Chart (SVG) */}
+              <div className="flex flex-col gap-1.5 bg-slate-50/50 dark:bg-slate-950 px-4 py-3 rounded-2xl border border-slate-100 dark:border-slate-800/40">
+                <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block text-left">구조 및 문서 매칭율 비교</span>
+                <div className="flex flex-col gap-2 mt-2">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-650 dark:text-slate-350">
+                    <span>폴더 트리 적합도</span>
+                    <span className="font-extrabold">{structureMetrics.percent}%</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                    <div className="h-full bg-purple-500 rounded-full" style={{ width: `${structureMetrics.percent}%` }} />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-650 dark:text-slate-355 mt-1">
+                    <span>필수 산출물 확보율</span>
+                    <span className="font-extrabold">{documentMetrics.percent}%</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${documentMetrics.percent}%` }} />
+                  </div>
+                </div>
               </div>
 
-              {/* Duplicate & Large Files Check */}
-              <div className="flex items-center justify-between py-3 border-b border-gray-100/50 dark:border-slate-800/30 text-xs font-bold">
-                <span className="text-toss-gray-500 dark:text-slate-400">중복 파일 및 대용량 파일 감지</span>
-                <span className="text-toss-gray-750 dark:text-slate-300">
-                  중복 {duplicateFilesList.length}건 / 대용량 {largeFilesList.length}건
-                </span>
-              </div>
-
-              {/* Diagnostic Quick Link */}
-              <div className="mt-4 flex items-start gap-3 p-3.5 rounded-2xl bg-purple-50/40 dark:bg-purple-950/15 border border-purple-100/40 dark:border-purple-900/10">
-                <AlertCircle className="w-4.5 h-4.5 text-purple-500 shrink-0 mt-0.5" />
-                <div className="flex flex-col text-left">
-                  <span className="text-xs font-black text-purple-700 dark:text-purple-300">구조 규칙 자동 진단 완료</span>
-                  <span className="text-[10px] text-toss-gray-455 dark:text-slate-400 mt-1 leading-normal">
-                    물리 폴더 트리 구조가 정의된 프로세스 단계와 {structureMetrics.percent}% 일치합니다.
+              {/* Status summary list */}
+              <div className="grid grid-cols-2 gap-3 text-xs font-bold mt-1">
+                <div className="flex justify-between items-center py-2 px-3 bg-slate-50 dark:bg-slate-850 rounded-xl">
+                  <span className="text-slate-450 dark:text-slate-500">누락된 필수 파일</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                    documentMetrics.missing.length === 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-toss-red'
+                  }`}>
+                    {documentMetrics.missing.length}건
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-2 px-3 bg-slate-50 dark:bg-slate-850 rounded-xl">
+                  <span className="text-slate-450 dark:text-slate-500">중복 및 대용량</span>
+                  <span className="text-slate-800 dark:text-slate-200">
+                    {duplicateFilesList.length} / {largeFilesList.length}건
                   </span>
                 </div>
               </div>
@@ -717,7 +1181,7 @@ export const ProjectOverview: React.FC = () => {
             onClick={() => setView('projects_analysis')}
             className="w-full py-2.5 mt-4 rounded-xl flex items-center justify-center gap-1 font-bold text-xs cursor-pointer border border-purple-100 dark:border-purple-900/40 bg-purple-50/50 hover:bg-purple-100/60 text-purple-750 dark:bg-purple-950/20 dark:text-purple-400 transition-colors"
           >
-            <span>상세 규칙 진단 및 파일 분석 리포트 보기</span>
+            <span>상세 규칙 진단 및 파일 분석 리포트 확인</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>

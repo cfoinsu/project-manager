@@ -116,17 +116,33 @@ router.get('/', verifyToken, async (req, res) => {
 
     const rows = await dbAll(sql, params);
 
-    // 사용자+주별 총 work_ratio 계산 (과부하 감지)
-    const overloadMap = {};
-    for (const row of rows) {
-      const key = `${row.user_id}__${row.week_start}`;
-      overloadMap[key] = (overloadMap[key] || 0) + row.work_ratio;
+    // 사용자+주별 총 work_ratio 계산 (과부하 감지 - 모든 프로젝트 기준)
+    const userIds = [...new Set(rows.map(r => r.user_id))];
+    const totalRatioMap = {};
+    if (userIds.length > 0) {
+      const placeholders = userIds.map(() => '?').join(',');
+      const allUserWorkloads = await dbAll(
+        `SELECT user_id, week_start, SUM(work_ratio) as total_ratio 
+         FROM workload 
+         WHERE user_id IN (${placeholders}) 
+         GROUP BY user_id, week_start`,
+        userIds
+      );
+      for (const uw of allUserWorkloads) {
+        const key = `${uw.user_id}__${uw.week_start}`;
+        totalRatioMap[key] = uw.total_ratio;
+      }
     }
 
-    const enriched = rows.map(r => ({
-      ...r,
-      is_overloaded: (overloadMap[`${r.user_id}__${r.week_start}`] || 0) > 100
-    }));
+    const enriched = rows.map(r => {
+      const key = `${r.user_id}__${r.week_start}`;
+      const totalRatio = totalRatioMap[key] || r.work_ratio;
+      return {
+        ...r,
+        total_ratio: totalRatio,
+        is_overloaded: totalRatio > 100
+      };
+    });
 
     res.json({ workloads: enriched });
   } catch (err) {

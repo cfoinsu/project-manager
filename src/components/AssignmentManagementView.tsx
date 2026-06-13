@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import * as api from '../utils/api';
 import * as db from '../utils/db';
 import { useAuthStore } from '../store/authStore';
@@ -7,6 +7,7 @@ import type { Assignment, User, Workload } from '../types';
 import { WorkloadGridView } from './WorkloadGridView';
 import { CommentPanel } from './CommentPanel';
 import { CustomSelect } from './CustomSelect';
+import { RangeDatePicker } from './RangeDatePicker';
 import { 
   Users, 
   Calendar, 
@@ -20,7 +21,9 @@ import {
   Sliders,
   Sparkles,
   BarChart2,
-  MessageSquare
+  MessageSquare,
+  Search,
+  Clock
 } from 'lucide-react';
 
 export const AssignmentManagementView: React.FC = () => {
@@ -76,6 +79,7 @@ export const AssignmentManagementView: React.FC = () => {
 
   // Filtering
   const [filterProjectId, setFilterProjectId] = useState('');
+  const [tableSearchQuery, setTableSearchQuery] = useState('');
 
   const isEditable = currentUser?.role === 'admin' || currentUser?.role === 'manager';
 
@@ -120,6 +124,12 @@ export const AssignmentManagementView: React.FC = () => {
       // Set default selectedCardProjectId if not set or invalid
       if (projectList.length > 0) {
         setSelectedCardProjectId(prev => {
+          if (prev && projectList.some(p => p.id === prev)) {
+            return prev;
+          }
+          return projectList[0].id;
+        });
+        setSelectedProjectId(prev => {
           if (prev && projectList.some(p => p.id === prev)) {
             return prev;
           }
@@ -276,8 +286,21 @@ export const AssignmentManagementView: React.FC = () => {
     ? assignments.filter(a => a.project_id === filterProjectId)
     : assignments;
 
-  const unavailableAssignments = filteredAssignments.filter(a => (userAllocations[a.user_id] || 0) >= 100);
-  const availableAssignments = filteredAssignments.filter(a => (userAllocations[a.user_id] || 0) < 100);
+  // 테이블 뷰 실시간 검색 필터링
+  const searchedAssignments = useMemo(() => {
+    if (!tableSearchQuery.trim()) return filteredAssignments;
+    const q = tableSearchQuery.toLowerCase();
+    return filteredAssignments.filter(a =>
+      (a.user_name || '').toLowerCase().includes(q) ||
+      (a.user_email || '').toLowerCase().includes(q) ||
+      (a.project_name || '').toLowerCase().includes(q) ||
+      (a.project_code || '').toLowerCase().includes(q) ||
+      (a.role || '').toLowerCase().includes(q)
+    );
+  }, [filteredAssignments, tableSearchQuery]);
+
+  const unavailableAssignments = searchedAssignments.filter(a => (userAllocations[a.user_id] || 0) >= 100);
+  const availableAssignments = searchedAssignments.filter(a => (userAllocations[a.user_id] || 0) < 100);
 
   const filteredProjects = projects.filter(p => {
     if (projectStatusFilter === '전체') return true;
@@ -292,7 +315,6 @@ export const AssignmentManagementView: React.FC = () => {
   const handleWorkloadCellClick = (wl: Workload) => {
     setSelectedWorkload(wl);
     setSelectedAssignment(null);
-    setActiveTab('comments');
   };
 
   const handleAssignmentCommentClick = (a: Assignment) => {
@@ -445,18 +467,41 @@ export const AssignmentManagementView: React.FC = () => {
             </div>
 
             {viewMode === 'table' && (
-              <div className="flex items-center gap-2">
-                <Sliders className="w-3.5 h-3.5 text-toss-gray-400" />
-                <CustomSelect
-                  value={filterProjectId}
-                  onChange={(e) => setFilterProjectId(e.target.value)}
-                  className="text-sm font-bold px-3 py-1.5 bg-toss-gray-100 dark:bg-slate-800 border border-toss-gray-200 dark:border-slate-800 rounded-xl focus:outline-none transition-all cursor-pointer text-toss-gray-800 dark:text-slate-200"
-                >
-                  <option value="">모든 프로젝트</option>
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.name}</option>
-                  ))}
-                </CustomSelect>
+              <div className="flex flex-wrap items-center gap-3">
+                {/* 실시간 검색창 */}
+                <div className="relative flex items-center">
+                  <Search className="absolute left-3 w-3.5 h-3.5 text-toss-gray-400" />
+                  <input
+                    type="text"
+                    value={tableSearchQuery}
+                    onChange={(e) => setTableSearchQuery(e.target.value)}
+                    placeholder="배정 인원, 프로젝트 검색..."
+                    className="pl-9 pr-8 py-1.5 text-xs font-bold bg-toss-gray-50 dark:bg-slate-800 border border-toss-gray-200 dark:border-slate-800 rounded-xl focus:outline-none focus:border-toss-blue transition-all text-toss-gray-800 dark:text-slate-200 placeholder-toss-gray-400 w-44 focus:w-56"
+                  />
+                  {tableSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setTableSearchQuery('')}
+                      className="absolute right-2.5 text-toss-gray-400 hover:text-rose-500 cursor-pointer p-0.5 border-none bg-transparent"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Sliders className="w-3.5 h-3.5 text-toss-gray-400" />
+                  <CustomSelect
+                    value={filterProjectId}
+                    onChange={(e) => setFilterProjectId(e.target.value)}
+                    className="text-xs font-bold px-3 py-1.5 bg-toss-gray-105 dark:bg-slate-850 border border-toss-gray-200 dark:border-slate-800 rounded-xl focus:outline-none transition-all cursor-pointer text-toss-gray-800 dark:text-slate-200"
+                  >
+                    <option value="">모든 프로젝트</option>
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.name}</option>
+                    ))}
+                  </CustomSelect>
+                </div>
               </div>
             )}
           </div>
@@ -838,106 +883,9 @@ export const AssignmentManagementView: React.FC = () => {
             </div>
           ) : (
             /* ──── TABLE MODE (LIST) ──── */
-            <div className="flex flex-col gap-6 flex-1">
-              {/* 🔴 투입 불가 인원 배정 현황 (누적 100% 이상) */}
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 select-none">
-                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
-                  <h3 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200">
-                    투입 불가 인원 배정 현황 (누적 투입률 100% 이상) ({unavailableAssignments.length}건)
-                  </h3>
-                </div>
-                {unavailableAssignments.length === 0 ? (
-                  <div className="p-8 text-center text-xs font-semibold text-toss-gray-400 bg-toss-gray-50/20 dark:bg-slate-900/10 border border-dashed border-toss-gray-200/60 dark:border-slate-800 rounded-2xl">
-                    투입 불가 상태인 배정 내역이 없습니다.
-                  </div>
-                ) : (
-                  <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-200/50 dark:border-slate-800/80 p-5 overflow-x-auto">
-                    <table className="w-full text-sm text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-toss-gray-100 dark:border-slate-850 text-toss-gray-400 dark:text-slate-500 font-bold select-none text-xs">
-                          <th className="py-3 px-3">이름/이메일</th>
-                          <th className="py-3 px-3">소속 프로젝트</th>
-                          <th className="py-3 px-3">업무 역할</th>
-                          <th className="py-3 px-3 text-center font-bold">투입 비율</th>
-                          <th className="py-3 px-3">투입 기간</th>
-                          <th className="py-3 px-3 text-right">관리</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {unavailableAssignments.map((a) => {
-                          const totalAlloc = userAllocations[a.user_id] || 0;
-                          const isOverallocated = totalAlloc > 100;
-                          return (
-                            <tr key={a.id} className="border-b border-toss-gray-50/50 dark:border-slate-850 hover:bg-toss-gray-50/50 dark:hover:bg-slate-850/30 transition-colors font-semibold">
-                              <td className="py-3.5 px-3">
-                                <div className="flex flex-col text-left">
-                                  <span className="font-bold text-toss-gray-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
-                                    {a.user_name || '알 수 없는 사용자'}
-                                    {isOverallocated && (
-                                      <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-xs font-black">초과</span>
-                                    )}
-                                  </span>
-                                  <span className="text-xs text-toss-gray-400 font-mono mt-0.5">{a.user_email}</span>
-                                </div>
-                              </td>
-                              <td className="py-3.5 px-3">
-                                <div className="flex flex-col text-left">
-                                  <span className="font-bold text-toss-gray-800 dark:text-slate-200 truncate max-w-[200px] text-xs" title={a.project_name}>{a.project_name || '미지정'}</span>
-                                  <span className="text-xs text-toss-gray-400 font-mono mt-0.5">{a.project_code || 'CODE'}</span>
-                                </div>
-                              </td>
-                              <td className="py-3.5 px-3 text-left">
-                                <span className="px-2 py-0.5 rounded-lg bg-toss-gray-100 dark:bg-slate-800 text-toss-gray-700 dark:text-slate-300 text-xs font-black">{a.role}</span>
-                              </td>
-                              <td className="py-3.5 px-3 text-center">
-                                <div className="flex flex-col items-center">
-                                  <span className="font-extrabold text-toss-gray-900 dark:text-slate-100 text-xs">{a.allocation_percent}%</span>
-                                  <div className="w-12 h-1 bg-toss-gray-100 dark:bg-slate-800 rounded-full mt-1.5 overflow-hidden">
-                                    <div className={`h-full ${a.allocation_percent >= 80 ? 'bg-toss-blue' : 'bg-sky-400'}`} style={{ width: `${a.allocation_percent}%` }} />
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="py-3.5 px-3 text-toss-gray-650 dark:text-slate-400 text-left">
-                                <div className="flex items-center gap-1.5 text-xs font-medium font-mono">
-                                  <Calendar className="w-3.5 h-3.5 text-toss-gray-400" />
-                                  <span>{a.start_date}</span>
-                                  <span className="text-toss-gray-300">~</span>
-                                  <span>{a.end_date}</span>
-                                </div>
-                              </td>
-                              <td className="py-3.5 px-3 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  <button
-                                    onClick={() => handleAssignmentCommentClick(a)}
-                                    className="p-1.5 rounded-lg text-toss-gray-400 hover:text-toss-blue hover:bg-toss-blue-light/30 transition-all cursor-pointer inline-flex"
-                                    title="댓글 보기"
-                                  >
-                                    <MessageSquare className="w-4 h-4" />
-                                  </button>
-                                  {isEditable && (
-                                    <>
-                                      <button onClick={() => openEditModal(a)} className="p-1.5 rounded-lg text-toss-gray-400 hover:text-toss-blue hover:bg-toss-blue-light/30 transition-all cursor-pointer inline-flex" title="수정">
-                                        <Edit2 className="w-4 h-4" />
-                                      </button>
-                                      <button onClick={() => handleDelete(a.id)} className="p-1.5 rounded-lg text-toss-gray-400 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer inline-flex" title="해제">
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
+            <div className="flex flex-col lg:flex-row gap-6 flex-1 min-w-0 items-start select-none">
               {/* 🟢 투입 가능 인원 배정 현황 (누적 100% 미만) */}
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2.5 flex-1 min-w-0 w-full lg:w-1/2">
                 <div className="flex items-center gap-2 select-none">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
                   <h3 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200">
@@ -949,79 +897,280 @@ export const AssignmentManagementView: React.FC = () => {
                     투입 가능 상태인 배정 내역이 없습니다.
                   </div>
                 ) : (
-                  <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-200/50 dark:border-slate-800/80 p-5 overflow-x-auto">
-                    <table className="w-full text-sm text-left border-collapse">
+                  <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-200/50 dark:border-slate-800/80 p-0 overflow-x-auto rounded-[24px]">
+                    <table className="w-full text-sm text-left border-collapse min-w-[500px]">
                       <thead>
-                        <tr className="border-b border-toss-gray-100 dark:border-slate-850 text-toss-gray-400 dark:text-slate-500 font-bold select-none text-xs">
-                          <th className="py-3 px-3">이름/이메일</th>
-                          <th className="py-3 px-3">소속 프로젝트</th>
-                          <th className="py-3 px-3">업무 역할</th>
-                          <th className="py-3 px-3 text-center font-bold">투입 비율</th>
-                          <th className="py-3 px-3">투입 기간</th>
-                          <th className="py-3 px-3 text-right">관리</th>
+                        <tr className="border-b border-toss-gray-100 dark:border-slate-850 text-toss-gray-450 dark:text-slate-500 font-bold select-none text-xs bg-slate-50/50 dark:bg-slate-850/20">
+                          <th className="py-3 px-3">인원 정보</th>
+                          <th className="py-3 px-3">프로젝트 / 역할</th>
+                          <th className="py-3 px-3 text-center">배정 및 누적률</th>
+                          <th className="py-3 px-3 text-right pr-4">기간 및 관리</th>
                         </tr>
                       </thead>
                       <tbody>
                         {availableAssignments.map((a) => {
                           const totalAlloc = userAllocations[a.user_id] || 0;
-                          const isOverallocated = totalAlloc > 100;
+                          
+                          // 타 프로젝트 배정 상세정보 (툴팁용)
+                          const otherAssignsText = assignments
+                            .filter(other => other.user_id === a.user_id && other.id !== a.id)
+                            .map(other => `${other.project_name || '미지정'}(${other.allocation_percent}%)`)
+                            .join(', ');
+                          const tooltipText = otherAssignsText
+                            ? `현재 배정 외 추가 투입 프로젝트: ${otherAssignsText}`
+                            : '추가 투입 프로젝트 없음';
+
                           return (
-                            <tr key={a.id} className="border-b border-toss-gray-50/50 dark:border-slate-850 hover:bg-toss-gray-50/50 dark:hover:bg-slate-850/30 transition-colors font-semibold">
+                            <tr key={a.id} className="border-b border-toss-gray-50/50 dark:border-slate-850 hover:bg-toss-gray-50/50 dark:hover:bg-slate-850/30 transition-colors font-semibold text-xs text-toss-gray-800 dark:text-slate-200">
+                              {/* 1. 인원 정보 */}
                               <td className="py-3.5 px-3">
-                                <div className="flex flex-col text-left">
-                                  <span className="font-bold text-toss-gray-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
+                                <div className="flex flex-col text-left min-w-0">
+                                  <span className="font-extrabold text-toss-gray-850 dark:text-slate-200 truncate">
                                     {a.user_name || '알 수 없는 사용자'}
-                                    {isOverallocated && (
-                                      <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-xs font-black">초과</span>
-                                    )}
                                   </span>
-                                  <span className="text-xs text-toss-gray-400 font-mono mt-0.5">{a.user_email}</span>
+                                  <span className="text-[10px] text-toss-gray-400 font-mono mt-0.5 truncate max-w-[150px]" title={a.user_email}>
+                                    {a.user_email}
+                                  </span>
                                 </div>
                               </td>
+                              {/* 2. 프로젝트 / 역할 */}
                               <td className="py-3.5 px-3">
-                                <div className="flex flex-col text-left">
-                                  <span className="font-bold text-toss-gray-800 dark:text-slate-200 truncate max-w-[200px] text-xs" title={a.project_name}>{a.project_name || '미지정'}</span>
-                                  <span className="text-xs text-toss-gray-400 font-mono mt-0.5">{a.project_code || 'CODE'}</span>
-                                </div>
-                              </td>
-                              <td className="py-3.5 px-3 text-left">
-                                <span className="px-2 py-0.5 rounded-lg bg-toss-gray-100 dark:bg-slate-800 text-toss-gray-700 dark:text-slate-300 text-xs font-black">{a.role}</span>
-                              </td>
-                              <td className="py-3.5 px-3 text-center">
-                                <div className="flex flex-col items-center">
-                                  <span className="font-extrabold text-toss-gray-900 dark:text-slate-100 text-xs">{a.allocation_percent}%</span>
-                                  <div className="w-12 h-1 bg-toss-gray-100 dark:bg-slate-800 rounded-full mt-1.5 overflow-hidden">
-                                    <div className={`h-full ${a.allocation_percent >= 80 ? 'bg-toss-blue' : 'bg-sky-400'}`} style={{ width: `${a.allocation_percent}%` }} />
+                                <div className="flex flex-col text-left min-w-0">
+                                  <span className="font-extrabold text-toss-gray-850 dark:text-slate-250 truncate max-w-[150px]" title={a.project_name}>
+                                    {a.project_name || '미지정'}
+                                  </span>
+                                  <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                    <span className="px-1.5 py-0.5 rounded bg-toss-gray-100 dark:bg-slate-800 text-toss-gray-650 dark:text-slate-400 text-[9.5px] font-black shrink-0">
+                                      {a.role}
+                                    </span>
+                                    {a.project_code && (
+                                      <span className="px-1.5 py-0.5 rounded bg-sky-500/10 text-toss-blue text-[9px] font-bold shrink-0 font-mono">
+                                        {a.project_code}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </td>
-                              <td className="py-3.5 px-3 text-toss-gray-650 dark:text-slate-400 text-left">
-                                <div className="flex items-center gap-1.5 text-xs font-medium font-mono">
-                                  <Calendar className="w-3.5 h-3.5 text-toss-gray-400" />
-                                  <span>{a.start_date}</span>
-                                  <span className="text-toss-gray-300">~</span>
-                                  <span>{a.end_date}</span>
+                              {/* 3. 배정 및 누적 투입률 */}
+                              <td className="py-3.5 px-3">
+                                <div className="flex flex-col items-center justify-center">
+                                  <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                                    <span className="font-extrabold text-toss-gray-850 dark:text-slate-100">
+                                      배정 {a.allocation_percent}%
+                                    </span>
+                                    <span 
+                                      title={tooltipText}
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-black cursor-help ${
+                                        totalAlloc > 100
+                                          ? 'bg-rose-500/10 text-rose-500'
+                                          : totalAlloc === 100
+                                          ? 'bg-toss-blue/10 text-toss-blue'
+                                          : 'bg-emerald-500/10 text-emerald-500'
+                                      }`}
+                                    >
+                                      누적 {totalAlloc}%
+                                    </span>
+                                  </div>
+                                  <div className="w-16 h-1 bg-toss-gray-100 dark:bg-slate-800 rounded-full mt-1.5 overflow-hidden">
+                                    <div 
+                                      className={`h-full ${
+                                        totalAlloc > 100 
+                                          ? 'bg-rose-500' 
+                                          : totalAlloc === 100 
+                                          ? 'bg-toss-blue' 
+                                          : 'bg-sky-400'
+                                      }`} 
+                                      style={{ width: `${Math.min(totalAlloc, 100)}%` }} 
+                                    />
+                                  </div>
                                 </div>
                               </td>
-                              <td className="py-3.5 px-3 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  <button
-                                    onClick={() => handleAssignmentCommentClick(a)}
-                                    className="p-1.5 rounded-lg text-toss-gray-400 hover:text-toss-blue hover:bg-toss-blue-light/30 transition-all cursor-pointer inline-flex"
-                                    title="댓글 보기"
-                                  >
-                                    <MessageSquare className="w-4 h-4" />
-                                  </button>
-                                  {isEditable && (
-                                    <>
-                                      <button onClick={() => openEditModal(a)} className="p-1.5 rounded-lg text-toss-gray-400 hover:text-toss-blue hover:bg-toss-blue-light/30 transition-all cursor-pointer inline-flex" title="수정">
-                                        <Edit2 className="w-4 h-4" />
-                                      </button>
-                                      <button onClick={() => handleDelete(a.id)} className="p-1.5 rounded-lg text-toss-gray-400 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer inline-flex" title="해제">
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    </>
-                                  )}
+                              {/* 4. 기간 및 관리 */}
+                              <td className="py-3.5 px-3 text-right pr-4">
+                                <div className="flex flex-col items-end gap-1.5">
+                                  <div className="flex items-center gap-1 text-[10px] text-toss-gray-450 dark:text-slate-400 font-medium font-mono">
+                                    <Calendar className="w-3 h-3 text-toss-gray-400" />
+                                    <span>{a.start_date} ~ {a.end_date}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAssignmentCommentClick(a)}
+                                      className="p-1 rounded-md text-toss-gray-400 hover:text-toss-blue hover:bg-toss-blue/5 transition-all cursor-pointer inline-flex border-none bg-transparent"
+                                      title="댓글 보기"
+                                    >
+                                      <MessageSquare className="w-3.5 h-3.5" />
+                                    </button>
+                                    {isEditable && (
+                                      <>
+                                        <button 
+                                          type="button"
+                                          onClick={() => openEditModal(a)} 
+                                          className="p-1 rounded-md text-toss-gray-400 hover:text-toss-blue hover:bg-toss-blue/5 transition-all cursor-pointer inline-flex border-none bg-transparent" 
+                                          title="수정"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          onClick={() => handleDelete(a.id)} 
+                                          className="p-1 rounded-md text-toss-gray-400 hover:text-red-500 hover:bg-rose-50 transition-all cursor-pointer inline-flex border-none bg-transparent" 
+                                          title="해제"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* 🔴 투입 불가 인원 배정 현황 (누적 100% 이상) */}
+              <div className="flex flex-col gap-2.5 flex-1 min-w-0 w-full lg:w-1/2">
+                <div className="flex items-center gap-2 select-none">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                  <h3 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200">
+                    투입 불가 인원 배정 현황 (누적 투입률 100% 이상) ({unavailableAssignments.length}건)
+                  </h3>
+                </div>
+                {unavailableAssignments.length === 0 ? (
+                  <div className="p-8 text-center text-xs font-semibold text-toss-gray-400 bg-toss-gray-50/20 dark:bg-slate-900/10 border border-dashed border-toss-gray-200/60 dark:border-slate-800 rounded-2xl">
+                    투입 불가 상태인 배정 내역이 없습니다.
+                  </div>
+                ) : (
+                  <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-200/50 dark:border-slate-800/80 p-0 overflow-x-auto rounded-[24px]">
+                    <table className="w-full text-sm text-left border-collapse min-w-[500px]">
+                      <thead>
+                        <tr className="border-b border-toss-gray-100 dark:border-slate-850 text-toss-gray-450 dark:text-slate-500 font-bold select-none text-xs bg-slate-50/50 dark:bg-slate-850/20">
+                          <th className="py-3 px-3">인원 정보</th>
+                          <th className="py-3 px-3">프로젝트 / 역할</th>
+                          <th className="py-3 px-3 text-center">배정 및 누적률</th>
+                          <th className="py-3 px-3 text-right pr-4">기간 및 관리</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {unavailableAssignments.map((a) => {
+                          const totalAlloc = userAllocations[a.user_id] || 0;
+                          
+                          // 타 프로젝트 배정 상세정보 (툴팁용)
+                          const otherAssignsText = assignments
+                            .filter(other => other.user_id === a.user_id && other.id !== a.id)
+                            .map(other => `${other.project_name || '미지정'}(${other.allocation_percent}%)`)
+                            .join(', ');
+                          const tooltipText = otherAssignsText
+                            ? `현재 배정 외 추가 투입 프로젝트: ${otherAssignsText}`
+                            : '추가 투입 프로젝트 없음';
+
+                          return (
+                            <tr key={a.id} className="border-b border-toss-gray-50/50 dark:border-slate-850 hover:bg-toss-gray-50/50 dark:hover:bg-slate-850/30 transition-colors font-semibold text-xs text-toss-gray-800 dark:text-slate-200">
+                              {/* 1. 인원 정보 */}
+                              <td className="py-3.5 px-3">
+                                <div className="flex flex-col text-left min-w-0">
+                                  <span className="font-extrabold text-toss-gray-850 dark:text-slate-200 truncate">
+                                    {a.user_name || '알 수 없는 사용자'}
+                                  </span>
+                                  <span className="text-[10px] text-toss-gray-400 font-mono mt-0.5 truncate max-w-[150px]" title={a.user_email}>
+                                    {a.user_email}
+                                  </span>
+                                </div>
+                              </td>
+                              {/* 2. 프로젝트 / 역할 */}
+                              <td className="py-3.5 px-3">
+                                <div className="flex flex-col text-left min-w-0">
+                                  <span className="font-extrabold text-toss-gray-850 dark:text-slate-250 truncate max-w-[150px]" title={a.project_name}>
+                                    {a.project_name || '미지정'}
+                                  </span>
+                                  <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                    <span className="px-1.5 py-0.5 rounded bg-toss-gray-100 dark:bg-slate-800 text-toss-gray-650 dark:text-slate-400 text-[9.5px] font-black shrink-0">
+                                      {a.role}
+                                    </span>
+                                    {a.project_code && (
+                                      <span className="px-1.5 py-0.5 rounded bg-sky-500/10 text-toss-blue text-[9px] font-bold shrink-0 font-mono">
+                                        {a.project_code}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              {/* 3. 배정 및 누적 투입률 */}
+                              <td className="py-3.5 px-3">
+                                <div className="flex flex-col items-center justify-center">
+                                  <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                                    <span className="font-extrabold text-toss-gray-850 dark:text-slate-100">
+                                      배정 {a.allocation_percent}%
+                                    </span>
+                                    <span 
+                                      title={tooltipText}
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-black cursor-help ${
+                                        totalAlloc > 100
+                                          ? 'bg-rose-500/10 text-rose-500'
+                                          : totalAlloc === 100
+                                          ? 'bg-toss-blue/10 text-toss-blue'
+                                          : 'bg-emerald-500/10 text-emerald-500'
+                                      }`}
+                                    >
+                                      누적 {totalAlloc}%
+                                    </span>
+                                  </div>
+                                  <div className="w-16 h-1 bg-toss-gray-100 dark:bg-slate-800 rounded-full mt-1.5 overflow-hidden">
+                                    <div 
+                                      className={`h-full ${
+                                        totalAlloc > 100 
+                                          ? 'bg-rose-500' 
+                                          : totalAlloc === 100 
+                                          ? 'bg-toss-blue' 
+                                          : 'bg-sky-400'
+                                      }`} 
+                                      style={{ width: `${Math.min(totalAlloc, 100)}%` }} 
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+                              {/* 4. 기간 및 관리 */}
+                              <td className="py-3.5 px-3 text-right pr-4">
+                                <div className="flex flex-col items-end gap-1.5">
+                                  <div className="flex items-center gap-1 text-[10px] text-toss-gray-450 dark:text-slate-400 font-medium font-mono">
+                                    <Calendar className="w-3 h-3 text-toss-gray-400" />
+                                    <span>{a.start_date} ~ {a.end_date}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAssignmentCommentClick(a)}
+                                      className="p-1 rounded-md text-toss-gray-400 hover:text-toss-blue hover:bg-toss-blue/5 transition-all cursor-pointer inline-flex border-none bg-transparent"
+                                      title="댓글 보기"
+                                    >
+                                      <MessageSquare className="w-3.5 h-3.5" />
+                                    </button>
+                                    {isEditable && (
+                                      <>
+                                        <button 
+                                          type="button"
+                                          onClick={() => openEditModal(a)} 
+                                          className="p-1 rounded-md text-toss-gray-400 hover:text-toss-blue hover:bg-toss-blue/5 transition-all cursor-pointer inline-flex border-none bg-transparent" 
+                                          title="수정"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          onClick={() => handleDelete(a.id)} 
+                                          className="p-1 rounded-md text-toss-gray-400 hover:text-red-500 hover:bg-rose-50 transition-all cursor-pointer inline-flex border-none bg-transparent" 
+                                          title="해제"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
                                 </div>
                               </td>
                             </tr>
@@ -1057,12 +1206,42 @@ export const AssignmentManagementView: React.FC = () => {
           </div>
 
           {selectedProjectId ? (
-            <WorkloadGridView
-              projectId={selectedProjectId}
-              assignments={projectAssignments}
-              onSelectCell={wl => handleWorkloadCellClick(wl)}
-              selectedWorkloadId={selectedWorkload?.id}
-            />
+            <div className="flex flex-col gap-4 flex-1">
+              <WorkloadGridView
+                projectId={selectedProjectId}
+                assignments={projectAssignments}
+                onSelectCell={wl => handleWorkloadCellClick(wl)}
+                selectedWorkloadId={selectedWorkload?.id}
+              />
+              
+              {/* 선택된 셀 정보 및 댓글 연동 패널 */}
+              {selectedWorkload && (() => {
+                const assign = assignments.find(a => a.id === selectedWorkload.assignment_id);
+                return (
+                  <div className="toss-card bg-slate-50/50 dark:bg-slate-850/20 border border-gray-150/45 dark:border-slate-850/60 p-4 rounded-[20px] flex flex-col sm:flex-row items-center justify-between gap-4 select-none animate-fade-in mt-1">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-toss-blue/10 flex items-center justify-center text-toss-blue">
+                        <Clock className="w-5 h-5" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-[10px] font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider">선택된 주간 작업량 상세</p>
+                        <p className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200 mt-0.5">
+                          {assign?.user_name || '알 수 없음'} ({assign?.role || '담당자'}) · {selectedWorkload.week_start} 주차 · 투입 비율 {selectedWorkload.work_ratio}%
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('comments')}
+                      className="toss-btn toss-btn-primary px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                      <span>댓글 작성 및 피드백 패널로 이동</span>
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-20">
               <BarChart2 className="w-10 h-10 mb-3 opacity-30" />
@@ -1074,92 +1253,22 @@ export const AssignmentManagementView: React.FC = () => {
 
       {/* ── Tab: 댓글 패널 ── */}
       {activeTab === 'comments' && (
-        <div className="flex gap-4 flex-1 min-h-[500px]">
-          {/* 컨텍스트 선택 */}
-          <div className="w-56 shrink-0 flex flex-col gap-2">
-            <div className="toss-card bg-white border border-gray-200 p-4">
-              <p className="text-xs font-black text-gray-600 mb-3">댓글 컨텍스트</p>
-              {/* 프로젝트 선택 */}
-              <div className="mb-3">
-                <label className="text-xs text-gray-400 font-bold uppercase mb-1 block">프로젝트</label>
-                <CustomSelect
-                  value={selectedProjectId}
-                  onChange={e => {
-                    setSelectedProjectId(e.target.value);
-                    setSelectedAssignment(null);
-                    setSelectedWorkload(null);
-                  }}
-                  className="w-full text-xs font-bold px-2.5 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-toss-blue transition-all cursor-pointer text-gray-800"
-                >
-                  <option value="">-- 프로젝트 선택 --</option>
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </CustomSelect>
-              </div>
-              {/* 배정 인력 선택 */}
-              {selectedProjectId && (
-                <div>
-                  <label className="text-xs text-gray-400 font-bold uppercase mb-1 block">인력 배정</label>
-                  <div className="flex flex-col gap-1">
-                    <button
-                      onClick={() => { setSelectedAssignment(null); setSelectedWorkload(null); }}
-                      className={`text-left px-2.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-                        !selectedAssignment && !selectedWorkload
-                          ? 'bg-toss-blue text-white'
-                          : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                      }`}
-                    >
-                      📋 전체 프로젝트 댓글
-                    </button>
-                    {assignments.filter(a => a.project_id === selectedProjectId).map(a => (
-                      <button
-                        key={a.id}
-                        onClick={() => { setSelectedAssignment(a); setSelectedWorkload(null); }}
-                        className={`text-left px-2.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-                          selectedAssignment?.id === a.id
-                            ? 'bg-toss-blue text-white'
-                            : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                        }`}
-                      >
-                        👤 {a.user_name} <span className="opacity-70">({a.role})</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {selectedWorkload && (
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                  <p className="text-xs text-gray-400 font-bold mb-1">선택된 워크로드</p>
-                  <div className="px-2.5 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-700">
-                    📅 {selectedWorkload.week_start} 주간<br />
-                    <span className="text-amber-500">{selectedWorkload.work_ratio}% 작업량</span>
-                  </div>
-                  <button
-                    onClick={() => setSelectedWorkload(null)}
-                    className="mt-1 text-xs text-gray-400 hover:text-red-500 transition-colors"
-                  >
-                    × 선택 해제
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-          {/* 댓글 내용 영역 */}
-          <div className="flex-1 toss-card bg-white dark:bg-slate-900 border border-toss-gray-200/50 dark:border-slate-800/80 p-5 flex flex-col min-h-0">
-            {selectedProjectId ? (
-              <CommentPanel
-                projectId={selectedProjectId}
-                selectedWorkload={selectedWorkload}
-                selectedAssignment={selectedAssignment}
-              />
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-20">
-                <MessageSquare className="w-10 h-10 mb-3 opacity-30" />
-                <p className="text-sm font-medium">프로젝트를 선택하면 댓글 패널이 활성화됩니다.</p>
-              </div>
-            )}
-          </div>
+        <div className="flex-1 flex flex-col min-h-[500px] w-full">
+          <CommentPanel
+            projectId={selectedProjectId}
+            assignments={projectAssignments}
+            selectedWorkload={selectedWorkload}
+            selectedAssignment={selectedAssignment}
+            onProjectChange={id => {
+              setSelectedProjectId(id);
+              setSelectedAssignment(null);
+              setSelectedWorkload(null);
+            }}
+            onClose={() => {
+              setSelectedWorkload(null);
+              setSelectedAssignment(null);
+            }}
+          />
         </div>
       )}
 
@@ -1230,17 +1339,17 @@ export const AssignmentManagementView: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-toss-gray-450 uppercase tracking-wider">투입 시작일</label>
-                  <input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)}
-                    className="toss-input font-semibold" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-toss-gray-450 uppercase tracking-wider">투입 종료일</label>
-                  <input type="date" required value={endDate} onChange={(e) => setEndDate(e.target.value)}
-                    className="toss-input font-semibold" />
-                </div>
+              <div className="space-y-1">
+                <label className="text-toss-gray-450 uppercase tracking-wider text-left block text-xs font-bold mb-1">투입 기간</label>
+                <RangeDatePicker
+                  startDate={startDate}
+                  endDate={endDate}
+                  onChange={(start, end) => {
+                    setStartDate(start);
+                    setEndDate(end);
+                  }}
+                  placeholder="투입 기간 선택"
+                />
               </div>
               <div className="flex items-center gap-3 pt-3">
                 <button type="button" onClick={() => setIsModalOpen(false)}

@@ -7,6 +7,7 @@ export interface FolderNode {
   children?: FolderNode[];
   file_count: number;
   folder_count: number;
+  modified?: number; // unix timestamp in seconds
 }
 
 export interface ScanMetrics {
@@ -237,6 +238,7 @@ export interface Workload {
   assignment_role?: string;
   allocation_percent?: number;
   is_overloaded?: boolean;
+  total_ratio?: number; // Cumulative ratio across all projects
 }
 
 export interface Comment {
@@ -252,6 +254,7 @@ export interface Comment {
   content: string;
   created_at: string;
   updated_at?: string | null;
+  reactions?: Record<string, string[]>; // emoji reactions: { "👍": ["userId1", "userId2"] }
   // Joined fields
   author_name?: string;
   author_email?: string;

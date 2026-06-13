@@ -93,6 +93,19 @@ export const FolderDetails: React.FC<FolderDetailsProps> = ({ node, onShowToast 
     }
   }, [node]);
 
+  const formattedModified = useMemo(() => {
+    if (!node.modified) return '정보 없음';
+    const date = new Date(node.modified * 1000);
+    return date.toLocaleString('ko-KR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  }, [node.modified]);
+
   const COLORS = ['#3182F6', '#A855F7', '#00B06C', '#FFAD0D', '#64748B'];
 
   return (
@@ -138,7 +151,7 @@ export const FolderDetails: React.FC<FolderDetailsProps> = ({ node, onShowToast 
         <div className="cds--column-flex select-none">
           <span className="cds--details-modify-label">수정일</span>
           <span className="cds--details-modify-value">
-            2024-05-20 오후 3:21 (임시)
+            {formattedModified}
           </span>
         </div>
       </div>

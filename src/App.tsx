@@ -259,7 +259,7 @@ function App() {
                   <span className="text-xs font-extrabold text-toss-gray-400 dark:text-slate-500 uppercase">디렉토리 구조</span>
                   <span className="text-xs font-bold text-toss-gray-500 truncate max-w-[200px]" title={rootNode.path}>{rootNode.name}</span>
                 </div>
-                <div className="flex-1 overflow-hidden min-h-0">
+                <div className="flex flex-col flex-1 overflow-hidden min-h-0">
                   <FolderTree
                     node={rootNode}
                     searchQuery={searchQuery}

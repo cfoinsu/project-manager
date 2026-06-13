@@ -138,9 +138,9 @@ export const TemplateManagement: React.FC = () => {
   };
 
   return (
-    <div className="w-full flex-1 flex min-h-0 overflow-hidden relative text-left select-none animate-slide-up">
+    <div className="w-full flex-1 flex min-h-0 overflow-hidden bg-white dark:bg-slate-900 border border-toss-gray-200/50 dark:border-slate-800 rounded-[28px] shadow-sm relative text-left select-none animate-slide-up">
       {/* Left panel: List of templates */}
-      <div className="w-72 shrink-0 border-r border-toss-gray-200/60 dark:border-slate-800 flex flex-col h-full bg-white dark:bg-slate-900 pr-5 gap-5 pb-10">
+      <div className="w-72 shrink-0 border-r border-toss-gray-200/60 dark:border-slate-800 flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/25 p-5 gap-5 pb-10">
         <div className="flex justify-between items-center shrink-0">
           <div className="flex flex-col">
             <span className="text-xs font-bold text-toss-blue">Settings</span>
@@ -182,7 +182,7 @@ export const TemplateManagement: React.FC = () => {
       </div>
 
       {/* Right panel: Details OR Builder Form */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto px-6 pb-10">
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto p-6 pb-10 bg-white dark:bg-slate-900">
         
         {isCreating ? (
           /* ==============================================
@@ -253,7 +253,7 @@ export const TemplateManagement: React.FC = () => {
                 {processes.map((proc, pIdx) => (
                   <div 
                     key={pIdx}
-                    className="p-5 bg-white dark:bg-slate-900 border border-toss-gray-200/80 dark:border-slate-800 rounded-3xl flex flex-col gap-4 relative"
+                    className="p-5 bg-slate-50/40 dark:bg-slate-850/40 border border-toss-gray-200/50 dark:border-slate-800 rounded-3xl flex flex-col gap-4 relative"
                   >
                     {/* Delete process btn */}
                     <button
@@ -405,7 +405,7 @@ export const TemplateManagement: React.FC = () => {
                 {(JSON.parse(activeTemplate.config_json) as TempConfig).processes.map((proc, pIdx) => (
                   <div 
                     key={pIdx}
-                    className="p-5 bg-white dark:bg-slate-900 border border-toss-gray-200/60 dark:border-slate-800 p-5 rounded-3xl shadow-sm flex flex-col gap-4"
+                    className="p-5 bg-slate-50/40 dark:bg-slate-850/40 border border-toss-gray-200/50 dark:border-slate-800 rounded-3xl flex flex-col gap-4"
                   >
                     <div className="flex items-center gap-2">
                       <span className="w-7 h-7 rounded-xl bg-toss-blue-light dark:bg-toss-blue/20 text-toss-blue font-extrabold flex items-center justify-center text-xs shrink-0 select-none">

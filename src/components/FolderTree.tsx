@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { FolderNode } from '../types';
-import { Folder, File, ChevronRight, ChevronDown, MoreVertical, ExternalLink, Copy, FolderOpen } from 'lucide-react';
+import { Folder, FileText, FileSpreadsheet, Image, FileCode, ChevronRight, ChevronDown, MoreVertical, ExternalLink, Copy, FolderOpen } from 'lucide-react';
 import { openFile, openInExplorer } from '../utils/tauriBridge';
 
 interface FolderTreeProps {
@@ -45,44 +45,70 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
     return () => window.removeEventListener('click', handleGlobalClick);
   }, []);
 
-  // Compute paths that should be expanded based on search query
-  const searchMatchPaths = useMemo(() => {
-    if (!searchQuery) return new Set<string>();
+  const [fileTypeFilter, setFileTypeFilter] = useState<'all' | 'document' | 'image' | 'code' | 'other'>('all');
 
-    const matches = new Set<string>();
+  const docExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'hwp', 'hwpx', 'txt', 'csv'];
+  const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'psd', 'key', 'fig'];
+  const codeExtensions = ['html', 'css', 'js', 'ts', 'tsx', 'py', 'rs', 'json', 'java', 'cs', 'cpp', 'go', 'sh', 'xml', 'yaml', 'yml'];
+
+  const isMatchFilter = (filename: string, filter: string) => {
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    if (filter === 'document') return docExtensions.includes(ext);
+    if (filter === 'image') return imageExtensions.includes(ext);
+    if (filter === 'code') return codeExtensions.includes(ext);
+    if (filter === 'other') {
+      return !docExtensions.includes(ext) && !imageExtensions.includes(ext) && !codeExtensions.includes(ext);
+    }
+    return true; // 'all'
+  };
+
+  // Compute paths that should be visible (directories that contain matching files or files themselves)
+  const visiblePathsAndFiles = useMemo(() => {
+    const visibleDirPaths = new Set<string>();
+    const visibleFilePaths = new Set<string>();
+
     const checkNode = (n: FolderNode): boolean => {
-      let isChildMatch = false;
+      if (!n.is_dir) {
+        const matchesSearch = !searchQuery || n.name.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesFilter = fileTypeFilter === 'all' || isMatchFilter(n.name, fileTypeFilter);
+        const isVisible = matchesSearch && matchesFilter;
+        if (isVisible) {
+          visibleFilePaths.add(n.path);
+        }
+        return isVisible;
+      }
+
+      let hasVisibleChild = false;
       if (n.children) {
         for (const child of n.children) {
           if (checkNode(child)) {
-            isChildMatch = true;
+            hasVisibleChild = true;
           }
         }
       }
-      
-      const isSelfMatch = n.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const hasMatch = isSelfMatch || isChildMatch;
-      
-      if (hasMatch && n.is_dir) {
-        matches.add(n.path);
+
+      const matchesSearchSelf = searchQuery ? n.name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+      const isVisible = hasVisibleChild || matchesSearchSelf;
+      if (isVisible) {
+        visibleDirPaths.add(n.path);
       }
-      return hasMatch;
+      return isVisible;
     };
 
     checkNode(node);
-    return matches;
-  }, [node, searchQuery]);
+    return { dirs: visibleDirPaths, files: visibleFilePaths };
+  }, [node, searchQuery, fileTypeFilter]);
 
-  // Expand folders automatically when search query matches their children
+  // Expand folders automatically when search query or filter matches their children
   useEffect(() => {
-    if (searchQuery) {
+    if (searchQuery || fileTypeFilter !== 'all') {
       const newExpanded = { ...expanded };
-      searchMatchPaths.forEach(path => {
+      visiblePathsAndFiles.dirs.forEach(path => {
         newExpanded[path] = true;
       });
       setExpanded(newExpanded);
     }
-  }, [searchMatchPaths, searchQuery]);
+  }, [visiblePathsAndFiles, searchQuery, fileTypeFilter]);
 
   const toggleExpand = (path: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -158,16 +184,34 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
+  // File type icon selector
+  const getFileIcon = (name: string, isSelected: boolean) => {
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+    const iconClass = `w-4 h-4 shrink-0 ${isSelected ? 'text-toss-blue' : ''}`;
+    
+    if (['xls', 'xlsx', 'csv'].includes(ext)) {
+      return <FileSpreadsheet className={`${iconClass} ${isSelected ? '' : 'text-emerald-500'}`} />;
+    }
+    if (['png', 'jpg', 'jpeg', 'gif', 'psd', 'key', 'fig'].includes(ext)) {
+      return <Image className={`${iconClass} ${isSelected ? '' : 'text-amber-500'}`} />;
+    }
+    if (['html', 'css', 'js', 'ts', 'tsx', 'py', 'rs', 'json', 'java', 'cs', 'cpp', 'go', 'sh', 'txt'].includes(ext)) {
+      return <FileCode className={`${iconClass} ${isSelected ? '' : 'text-purple-500'}`} />;
+    }
+    return <FileText className={`${iconClass} ${isSelected ? '' : 'text-toss-blue'}`} />;
+  };
+
   // Recursive tree renderer
   const renderTreeNode = (n: FolderNode): React.ReactNode => {
     const isExpanded = !!expanded[n.path];
     const isSelected = selectedNode?.path === n.path;
     
-    // Search query filtering: hide nodes that don't match and don't contain matching descendants
-    if (searchQuery) {
-      const isMatch = n.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const hasMatchingDescendant = searchMatchPaths.has(n.path);
-      if (!isMatch && !hasMatchingDescendant) {
+    // Filtering based on search query and file type filter
+    if (n.path !== node.path) {
+      if (n.is_dir && !visiblePathsAndFiles.dirs.has(n.path)) {
+        return null;
+      }
+      if (!n.is_dir && !visiblePathsAndFiles.files.has(n.path)) {
         return null;
       }
     }
@@ -203,7 +247,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
             {n.is_dir ? (
               <Folder className={`w-4 h-4 shrink-0 ${isSelected ? 'text-toss-blue' : 'text-amber-400 dark:text-amber-500'}`} />
             ) : (
-              <File className={`w-4 h-4 shrink-0 ${isSelected ? 'text-toss-blue' : 'text-toss-gray-400'}`} />
+              getFileIcon(n.name, isSelected)
             )}
 
             {/* File/Folder Name with search highlighting */}
@@ -252,24 +296,54 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   };
 
   return (
-    <div className="cds--column-flex cds--flex-1 min-h-0 pr-1">
-      {/* Tree Toolbar */}
-      <div className="cds--tree-toolbar">
-        <button
-          onClick={expandAll}
-          className="cds--btn cds--btn-primary px-3 py-1.5 rounded-lg text-xs"
-        >
-          모두 펼치기
-        </button>
-        <button
-          onClick={collapseAll}
-          className="cds--btn cds--btn-secondary px-3 py-1.5 rounded-lg text-xs"
-        >
-          모두 접기
-        </button>
+    <div className="flex flex-col flex-1 min-h-0 pr-1 w-full gap-3">
+      {/* Combined Tree Toolbar & File Type Filter */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 select-none pb-2 border-b border-toss-gray-100 dark:border-slate-800/60">
+        {/* Left Side: Expand / Collapse All */}
+        <div className="flex gap-1.5">
+          <button
+            onClick={expandAll}
+            className="cds--btn cds--btn-primary px-3 py-1.5 rounded-lg text-xs"
+          >
+            모두 펼치기
+          </button>
+          <button
+            onClick={collapseAll}
+            className="cds--btn cds--btn-secondary px-3 py-1.5 rounded-lg text-xs"
+          >
+            모두 접기
+          </button>
+        </div>
+
+        {/* Right Side: File Type Filters */}
+        <div className="flex flex-wrap gap-1">
+          {(['all', 'document', 'image', 'code', 'other'] as const).map(filter => {
+            const labels: Record<string, string> = {
+              all: '전체',
+              document: '문서',
+              image: '이미지',
+              code: '코드',
+              other: '기타'
+            };
+            const isActive = fileTypeFilter === filter;
+            return (
+              <button
+                key={filter}
+                onClick={() => setFileTypeFilter(filter)}
+                className={`px-2.5 py-1.5 rounded-xl text-[10.5px] font-bold border transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-toss-blue text-white border-toss-blue'
+                    : 'bg-slate-50 dark:bg-slate-850 text-toss-gray-650 dark:text-slate-355 border-toss-gray-200/50 dark:border-slate-800 hover:border-toss-blue'
+                }`}
+              >
+                {labels[filter]}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <div className="cds--flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0 w-full pr-1">
         {renderTreeNode(node)}
       </div>
 

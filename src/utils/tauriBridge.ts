@@ -63,7 +63,8 @@ const buildTreeFromFiles = (files: File[], rootName: string, rootPath: string): 
           depth: currentDepth,
           children: [],
           file_count: 0,
-          folder_count: 0
+          folder_count: 0,
+          modified: Math.round(Date.now() / 1000)
         };
         dirMap.set(currentDirKey, dirNode);
 
@@ -88,7 +89,8 @@ const buildTreeFromFiles = (files: File[], rootName: string, rootPath: string): 
       size: file.size,
       depth: fileDepth,
       file_count: 1,
-      folder_count: 0
+      folder_count: 0,
+      modified: Math.round(file.lastModified / 1000)
     };
 
     const parentDir = dirMap.get(parentDirKey) || root;
@@ -139,16 +141,21 @@ const buildTreeFromFiles = (files: File[], rootName: string, rootPath: string): 
 export const generateMockProject = (): FolderNode => {
   const rootPath = 'C:\\Projects\\Folder-Atlas-Demo';
   
-  const makeFiles = (parentPath: string, names: [string, number][], depth: number): FolderNode[] => {
-    return names.map(([name, size]) => ({
-      name,
-      path: `${parentPath}\\${name}`,
-      is_dir: false,
-      size,
-      depth,
-      file_count: 1,
-      folder_count: 0
-    }));
+  const makeFiles = (parentPath: string, names: [string, number, number?][], depth: number): FolderNode[] => {
+    return names.map(([name, size, modDaysAgo]) => {
+      const days = modDaysAgo !== undefined ? modDaysAgo : 10;
+      const modifiedTime = Math.round((Date.now() - days * 24 * 60 * 60 * 1000) / 1000);
+      return {
+        name,
+        path: `${parentPath}\\${name}`,
+        is_dir: false,
+        size,
+        depth,
+        file_count: 1,
+        folder_count: 0,
+        modified: modifiedTime
+      };
+    });
   };
 
   const createDir = (
@@ -163,6 +170,7 @@ export const generateMockProject = (): FolderNode => {
     const size = children.reduce((acc, c) => acc + c.size, 0);
     const file_count = children.reduce((acc, c) => acc + c.file_count, 0);
     const folder_count = children.reduce((acc, c) => acc + c.folder_count + (c.is_dir ? 1 : 0), 0);
+    const maxModified = children.reduce((max, c) => Math.max(max, c.modified || 0), 0);
 
     return {
       name,
@@ -172,102 +180,103 @@ export const generateMockProject = (): FolderNode => {
       depth,
       children,
       file_count,
-      folder_count
+      folder_count,
+      modified: maxModified || Math.round(Date.now() / 1000)
     };
   };
 
   // 1. Planning/Product dir
   const designDocs = makeFiles(`${rootPath}\\01_기획\\디자인_시안`, [
-    ['wireframe_v1.key', 45000000],
-    ['wireframe_v2_final.key', 58000000],
-    ['user_flow.pdf', 12500000]
+    ['wireframe_v1.key', 45000000, 25],
+    ['wireframe_v2_final.key', 58000000, 4],
+    ['user_flow.pdf', 12500000, 2]
   ], 3);
   const designDir = createDir('디자인_시안', `${rootPath}\\01_기획`, 2, [], designDocs);
 
   const planningFiles = makeFiles(`${rootPath}\\01_기획`, [
-    ['요구사항정의서.docx', 2400000],
-    ['스케줄표.xlsx', 1100000],
-    ['회의록_2026-06-10.md', 45000]
+    ['요구사항정의서.docx', 2400000, 8],
+    ['스케줄표.xlsx', 1100000, 15],
+    ['회의록_2026-06-10.md', 45000, 3]
   ], 2);
   const planningDir = createDir('01_기획', rootPath, 1, [designDir], planningFiles);
 
   // 2. Design dir
   const assetIcons = makeFiles(`${rootPath}\\02_디자인\\assets\\icons`, [
-    ['home.svg', 1200],
-    ['search.svg', 850],
-    ['profile.svg', 1450],
-    ['settings.svg', 1800],
-    ['logo.png', 45000]
+    ['home.svg', 1200, 22],
+    ['search.svg', 850, 22],
+    ['profile.svg', 1450, 22],
+    ['settings.svg', 1800, 22],
+    ['logo.png', 45000, 22]
   ], 4);
   const iconsDir = createDir('icons', `${rootPath}\\02_디자인\\assets`, 3, [], assetIcons);
 
   const assetImages = makeFiles(`${rootPath}\\02_디자인\\assets\\images`, [
-    ['hero_banner.jpg', 2400000],
-    ['intro_bg.png', 5600000],
-    ['avatar_placeholder.jpg', 120000]
+    ['hero_banner.jpg', 2400000, 18],
+    ['intro_bg.png', 5600000, 18],
+    ['avatar_placeholder.jpg', 120000, 18]
   ], 4);
   const imagesDir = createDir('images', `${rootPath}\\02_디자인\\assets`, 3, [], assetImages);
 
   const assetsDir = createDir('assets', `${rootPath}\\02_디자인`, 2, [iconsDir, imagesDir], []);
 
   const rawPsdFiles = makeFiles(`${rootPath}\\02_디자인`, [
-    ['app_layout_draft.psd', 245000000],
-    ['app_layout_v2.psd', 312000000],
-    ['app_layout_final.psd', 345000000]
+    ['app_layout_draft.psd', 245000000, 20],
+    ['app_layout_v2.psd', 312000000, 12],
+    ['app_layout_final.psd', 345000000, 5]
   ], 2);
   const designMainDir = createDir('02_디자인', rootPath, 1, [assetsDir], rawPsdFiles);
 
   // 3. Development dir (lots of files)
   const nodeModulesMock = createDir('node_modules', `${rootPath}\\03_개발`, 2, [
-    createDir('react', `${rootPath}\\03_개발\\node_modules`, 3, [], makeFiles(`${rootPath}\\03_개발\\node_modules\\react`, [['index.js', 4500], ['package.json', 1200]], 4)),
-    createDir('vite', `${rootPath}\\03_개발\\node_modules`, 3, [], makeFiles(`${rootPath}\\03_개발\\node_modules\\vite`, [['vite.js', 14500]], 4))
+    createDir('react', `${rootPath}\\03_개발\\node_modules`, 3, [], makeFiles(`${rootPath}\\03_개발\\node_modules\\react`, [['index.js', 4500, 60], ['package.json', 1200, 60]], 4)),
+    createDir('vite', `${rootPath}\\03_개발\\node_modules`, 3, [], makeFiles(`${rootPath}\\03_개발\\node_modules\\vite`, [['vite.js', 14500, 60]], 4))
   ], []);
   nodeModulesMock.size = 380 * 1024 * 1024; // 380MB
   nodeModulesMock.file_count = 14231;
   nodeModulesMock.folder_count = 542;
 
   const srcComponents = makeFiles(`${rootPath}\\03_개발\\src\\components`, [
-    ['Button.tsx', 2300],
-    ['Card.tsx', 4100],
-    ['FolderTree.tsx', 12500],
-    ['MindmapView.tsx', 18400],
-    ['TreemapView.tsx', 15200]
+    ['Button.tsx', 2300, 8],
+    ['Card.tsx', 4100, 6],
+    ['FolderTree.tsx', 12500, 1],
+    ['MindmapView.tsx', 18400, 3],
+    ['TreemapView.tsx', 15200, 2]
   ], 3);
   const componentsDir = createDir('components', `${rootPath}\\03_개발\\src`, 2, [], srcComponents);
 
   const srcUtils = makeFiles(`${rootPath}\\03_개발\\src\\utils`, [
-    ['tauriBridge.ts', 4300],
-    ['helpers.ts', 2800]
+    ['tauriBridge.ts', 4300, 1],
+    ['helpers.ts', 2800, 12]
   ], 3);
   const utilsDir = createDir('utils', `${rootPath}\\03_개발\\src`, 2, [], srcUtils);
 
   const srcFiles = makeFiles(`${rootPath}\\03_개발\\src`, [
-    ['App.tsx', 12500],
-    ['index.css', 4500],
-    ['main.tsx', 1200],
-    ['types.ts', 2400]
+    ['App.tsx', 12500, 2],
+    ['index.css', 4500, 4],
+    ['main.tsx', 1200, 10],
+    ['types.ts', 2400, 1]
   ], 2);
   const srcDir = createDir('src', `${rootPath}\\03_개발`, 1, [componentsDir, utilsDir], srcFiles);
 
   const devConfig = makeFiles(`${rootPath}\\03_개발`, [
-    ['package.json', 1400],
-    ['tsconfig.json', 450],
-    ['vite.config.ts', 850],
-    ['tailwind.config.js', 1800]
+    ['package.json', 1400, 5],
+    ['tsconfig.json', 450, 40],
+    ['vite.config.ts', 850, 10],
+    ['tailwind.config.js', 1800, 4]
   ], 2);
   const devDir = createDir('03_개발', rootPath, 1, [nodeModulesMock, srcDir], devConfig);
 
   // 4. Output/Deliverables dir
   const reportsDir = createDir('reports', `${rootPath}\\04_산출물`, 2, [], makeFiles(`${rootPath}\\04_산출물\\reports`, [
-    ['QA_report_v1.pdf', 3400000],
-    ['Performance_audit.xlsx', 4200000]
+    ['QA_report_v1.pdf', 3400000, 11],
+    ['Performance_audit.xlsx', 4200000, 14]
   ], 3));
   const buildDir = createDir('build', `${rootPath}\\04_산출물`, 2, [], makeFiles(`${rootPath}\\04_산출물\\build`, [
-    ['index.html', 1200],
-    ['bundle.js', 4200000],
-    ['style.css', 150000]
+    ['index.html', 1200, 10],
+    ['bundle.js', 4200000, 10],
+    ['style.css', 150000, 10]
   ], 3));
-  const outputDir = createDir('04_산출물', rootPath, 1, [reportsDir, buildDir], makeFiles(`${rootPath}\\04_산출물`, [['설명서.txt', 25000]], 2));
+  const outputDir = createDir('04_산출물', rootPath, 1, [reportsDir, buildDir], makeFiles(`${rootPath}\\04_산출물`, [['설명서.txt', 25000, 15]], 2));
 
   // Overwrite sizes to match the beautiful demo GB sizes
   planningDir.size = Math.round(6.4 * 1024 * 1024 * 1024);
@@ -276,8 +285,8 @@ export const generateMockProject = (): FolderNode => {
   outputDir.size = Math.round(5.4 * 1024 * 1024 * 1024);
 
   // 5. Create 05_운영 and 기타 directory
-  const opsDir = createDir('05_운영', rootPath, 1, [], makeFiles(`${rootPath}\\05_운영`, [['운영노트.pdf', Math.round(2.1 * 1024 * 1024 * 1024)]], 2));
-  const etcDir = createDir('기타', rootPath, 1, [], makeFiles(`${rootPath}\\기타`, [['아카이브.zip', Math.round(1.3 * 1024 * 1024 * 1024)]], 2));
+  const opsDir = createDir('05_운영', rootPath, 1, [], makeFiles(`${rootPath}\\05_운영`, [['운영노트.pdf', Math.round(2.1 * 1024 * 1024 * 1024), 25]], 2));
+  const etcDir = createDir('기타', rootPath, 1, [], makeFiles(`${rootPath}\\기타`, [['아카이브.zip', Math.round(1.3 * 1024 * 1024 * 1024), 35]], 2));
 
   // Empty folders
   const emptyFolder1 = createDir('temp', `${rootPath}\\03_개발\\src`, 3, [], []);

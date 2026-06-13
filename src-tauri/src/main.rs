@@ -17,6 +17,7 @@ struct FolderNode {
     children: Vec<FolderNode>,
     file_count: usize,
     folder_count: usize,
+    modified: u64,
 }
 
 // Recursively scan a path and return its tree structure
@@ -29,6 +30,11 @@ fn scan_node(path: &Path, depth: usize) -> FolderNode {
 
     let metadata = fs::metadata(path);
     let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+    let modified = metadata.as_ref()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
 
     if !is_dir {
         let size = metadata.map(|m| m.len()).unwrap_or(0);
@@ -41,6 +47,7 @@ fn scan_node(path: &Path, depth: usize) -> FolderNode {
             children: Vec::new(),
             file_count: 1,
             folder_count: 0,
+            modified,
         };
     }
 
@@ -80,6 +87,7 @@ fn scan_node(path: &Path, depth: usize) -> FolderNode {
         children,
         file_count,
         folder_count,
+        modified,
     }
 }
 

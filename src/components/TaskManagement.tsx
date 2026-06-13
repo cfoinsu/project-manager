@@ -12,6 +12,7 @@ import type { Task, SubTask, WorkLog, User } from '../types';
 import { RangeDatePicker } from './RangeDatePicker';
 import { CustomTimePicker } from './CustomTimePicker';
 import { CommentPanel } from './CommentPanel';
+import { CustomSelect } from './CustomSelect';
 
 // ─── 유틸 ─────────────────────────────────────────────────────
 function getRemainingDays(endDate?: string) {
@@ -304,7 +305,8 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode }) => {
   const [showForm, setShowForm] = useState(false);
   const [content, setContent] = useState('');
   const [hours, setHours] = useState<string>('');
-  const [logDate, setLogDate] = useState(new Date().toISOString().slice(0, 10));
+  const [logStartDate, setLogStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [logEndDate, setLogEndDate] = useState(new Date().toISOString().slice(0, 10));
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -320,15 +322,20 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode }) => {
     if (!content.trim()) return;
     setSubmitting(true);
     try {
+      const displayDate = logEndDate && logEndDate !== logStartDate
+        ? `${logStartDate} ~ ${logEndDate}`
+        : logStartDate;
       const log = await api.createWorkLog(serverMode, {
         task_id: taskId,
         content: content.trim(),
         hours: hours ? parseFloat(hours) : null,
-        log_date: logDate,
+        log_date: displayDate,
       });
       setLogs(prev => [log, ...prev]);
       setContent('');
       setHours('');
+      setLogStartDate(new Date().toISOString().slice(0, 10));
+      setLogEndDate(new Date().toISOString().slice(0, 10));
       setShowForm(false);
     } finally { setSubmitting(false); }
   };
@@ -389,13 +396,16 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode }) => {
           {/* 날짜 + 시간 */}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-slate-400 dark:text-slate-500">수행일자</label>
-              <input
-                type="date"
-                value={logDate}
-                onChange={e => setLogDate(e.target.value)}
-                required
-                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-toss-blue/30 focus:border-toss-blue cursor-pointer"
+              <label className="text-[11px] font-bold text-slate-400 dark:text-slate-500">수행기간</label>
+              <RangeDatePicker
+                startDate={logStartDate}
+                endDate={logEndDate}
+                onChange={(start, end) => {
+                  setLogStartDate(start);
+                  setLogEndDate(end);
+                }}
+                placeholder="기간 선택"
+                compact={true}
               />
             </div>
             <div className="flex flex-col gap-1">
@@ -1169,12 +1179,12 @@ export const TaskManagement: React.FC = () => {
               <div className="cds--modal-grid-2">
                 <div className="cds--column-flex gap-1.5">
                   <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">우선순위</label>
-                  <select value={priority} onChange={e => setPriority(e.target.value)} className="cds--text-input font-bold cursor-pointer">
+                  <CustomSelect value={priority} onChange={e => setPriority(e.target.value)} className="cds--text-input font-bold">
                     <option value="낮음">낮음</option>
                     <option value="보통">보통</option>
                     <option value="높음">높음</option>
                     <option value="긴급">긴급</option>
-                  </select>
+                  </CustomSelect>
                 </div>
                 <div className="cds--column-flex gap-1.5">
                   <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">담당자 ({assigneeNames.length}명)</label>
