@@ -940,14 +940,14 @@ export const DashboardView: React.FC = () => {
 
               {/* Select template */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">연동할 기본 프로세스 템플릿</label>
+                <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">적용할 폴더 양식 (폴더/서류 자동 생성)</label>
                 <CustomSelect
                   value={selectedTemplateId}
                   onChange={(e) => setSelectedTemplateId(e.target.value)}
                   required
                   className="toss-input cursor-pointer"
                 >
-                  <option value="">템플릿 선택</option>
+                  <option value="">적용할 폴더 양식 선택</option>
                   {templates.map(t => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}

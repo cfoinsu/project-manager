@@ -446,7 +446,7 @@ function App() {
                 }`}
               >
                 <ClipboardList className="w-4.5 h-4.5" />
-                <span>템플릿 저장소</span>
+                <span>폴더 양식 라이브러리</span>
               </button>
             )}
 

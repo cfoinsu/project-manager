@@ -174,12 +174,12 @@ export const TemplateManagement: React.FC = () => {
         <div className="flex justify-between items-center shrink-0">
           <div className="flex flex-col">
             <span className="text-xs font-bold text-toss-blue">Settings</span>
-            <h2 className="text-xl font-extrabold text-toss-gray-900 dark:text-slate-100 mt-0.5">템플릿 보관함</h2>
+            <h2 className="text-xl font-extrabold text-toss-gray-900 dark:text-slate-100 mt-0.5">폴더 양식 라이브러리</h2>
           </div>
           <button
             onClick={() => setIsCreating(true)}
             className="p-2.5 rounded-xl bg-toss-blue-light/50 dark:bg-toss-blue/15 text-toss-blue hover:bg-toss-blue-light transition-all cursor-pointer"
-            title="새 템플릿 작성"
+            title="새 폴더 양식 등록"
           >
             <Plus className="w-4.5 h-4.5" />
           </button>
@@ -220,7 +220,7 @@ export const TemplateManagement: React.FC = () => {
              ============================================== */
           <form onSubmit={handleSaveTemplate} className="flex flex-col gap-6 max-w-2xl w-full">
             <div className="flex justify-between items-center border-b border-toss-gray-150 dark:border-slate-800/80 pb-4">
-              <h2 className="text-xl font-extrabold text-toss-gray-900 dark:text-slate-100">새 프로세스 템플릿 만들기</h2>
+              <h2 className="text-xl font-extrabold text-toss-gray-900 dark:text-slate-100">새 폴더 양식 등록</h2>
               <div className="flex gap-2.5">
                 <button
                   type="button"
@@ -234,7 +234,7 @@ export const TemplateManagement: React.FC = () => {
                   className="toss-btn toss-btn-primary px-4.5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  템플릿 저장
+                  폴더 양식 저장
                 </button>
               </div>
             </div>
@@ -242,23 +242,23 @@ export const TemplateManagement: React.FC = () => {
             {/* Template Basic Info */}
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">템플릿 이름</label>
+                <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">폴더 양식 이름</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="예: 백엔드 API 서버 구축 템플릿"
+                  placeholder="예: 백엔드 API 서버 구축 폴더 양식"
                   required
                   className="text-sm px-4 py-3 bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 rounded-2xl focus:outline-none focus:ring-2 focus:ring-toss-blue/60 transition-all font-semibold"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">설명</label>
+                <label className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">설명</label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="예: RESTful API 기획 및 개발 산출물을 포함하는 템플릿"
+                  placeholder="예: RESTful API 기획 및 개발 산출물을 포함하는 폴더 양식"
                   rows={2}
                   className="text-sm px-4 py-3 bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 rounded-2xl focus:outline-none focus:ring-2 focus:ring-toss-blue/60 transition-all font-semibold resize-none"
                 />
@@ -441,7 +441,7 @@ export const TemplateManagement: React.FC = () => {
 
             {/* Config tree visualization */}
             <div className="flex flex-col gap-6">
-              <h3 className="text-xs font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider">템플릿 세부 구조</h3>
+              <h3 className="text-xs font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider">폴더 양식 구조</h3>
               
               <div className="flex flex-col gap-4">
                 {(JSON.parse(activeTemplate.config_json) as TempConfig).processes.map((proc, pIdx) => (
@@ -515,7 +515,7 @@ export const TemplateManagement: React.FC = () => {
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <p className="text-sm text-toss-gray-450 dark:text-slate-400">템플릿이 없습니다. 새 템플릿을 생성해 주세요.</p>
+            <p className="text-sm text-toss-gray-450 dark:text-slate-400">등록된 폴더 양식이 없습니다. 새 폴더 양식을 등록해 주세요.</p>
           </div>
         )}
 
