@@ -1,11 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useBrandStore } from '../store/brandStore';
 import { KeyRound, User as UserIcon, AlertCircle, ArrowRight, Laptop, Activity } from 'lucide-react';
+import * as api from '../utils/api';
 
 export const LoginView: React.FC = () => {
   const { login, registerCurrentDevice, error, loading, clearError } = useAuthStore();
   const brand = useBrandStore();
+  const [adminContact, setAdminContact] = useState<{ name: string; email?: string | null; phone?: string | null } | null>(null);
+
+  useEffect(() => {
+    const fetchAdmin = async () => {
+      try {
+        const isServer = useAuthStore.getState().serverMode;
+        const admin = await api.getAdminContact(isServer);
+        if (admin) {
+          setAdminContact({
+            name: admin.name,
+            email: admin.email,
+            phone: admin.phone
+          });
+        }
+      } catch (e) {
+        console.error('Failed to fetch admin contact info:', e);
+      }
+    };
+    fetchAdmin();
+  }, []);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   
@@ -142,9 +163,18 @@ export const LoginView: React.FC = () => {
         </form>
 
         {/* Password Lost Guide */}
-        <p className="text-center text-[11px] text-toss-gray-400 dark:text-slate-500 font-semibold mt-4.5 mb-1.5 select-none leading-relaxed">
-          🔒 비밀번호 분실 시 시스템 관리자에게 직접 문의하여 초기화하시기 바랍니다.
-        </p>
+        <div className="text-center text-[11px] text-toss-gray-400 dark:text-slate-500 font-semibold mt-4.5 mb-1.5 select-none leading-relaxed flex flex-col gap-0.5">
+          <span>🔒 비밀번호 분실 시 최고 관리 담당자에게 문의하여 초기화하시기 바랍니다.</span>
+          {adminContact ? (
+            <span className="text-[10px] text-toss-blue dark:text-sky-455 mt-0.5">
+              [최고 관리 담당자: {adminContact.name} ({adminContact.email || '이메일 없음'}) {adminContact.phone ? '/ 연락처: ' + adminContact.phone : ''}]
+            </span>
+          ) : (
+            <span className="text-[10px] text-toss-gray-455 dark:text-slate-500 mt-0.5">
+              [최고 관리 담당자: 대표 관리자 (admin@atlas.com / 010-0000-0000)]
+            </span>
+          )}
+        </div>
 
         {/* Demo Fast Login Buttons */}
         <div className="cds--demo-container">

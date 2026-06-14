@@ -3,6 +3,7 @@ import * as api from '../utils/api';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import type { Comment, Workload, Assignment } from '../types';
+import { Avatar } from './Avatar';
 import {
   MessageSquare, Send, X,
   Play, Pause, Mic, Paperclip,
@@ -84,7 +85,6 @@ const CommentCard: React.FC<CommentCardProps> = ({
   const [editValue, setEditValue] = useState(comment.content);
   const [savingEdit, setSavingEdit] = useState(false);
   const editRef = useRef<HTMLTextAreaElement>(null);
-  const palette = getAvatarPalette(comment.author_name || '');
 
   useEffect(() => {
     if (editing && editRef.current) {
@@ -140,11 +140,11 @@ const CommentCard: React.FC<CommentCardProps> = ({
       <div className={`flex gap-3 group animate-fade-in ${alignRight ? 'flex-row-reverse' : ''}`}>
         {/* 아바타 */}
         <div className="shrink-0">
-          <div
-            className={`w-9 h-9 text-xs rounded-full ${palette.bg} ring-2 ${palette.ring} flex items-center justify-center text-white font-bold shadow-sm`}
-          >
-            {getInitials(comment.author_name || '?')}
-          </div>
+          <Avatar 
+            name={comment.author_name} 
+            profileImage={comment.author_profile_image} 
+            className="w-9 h-9 text-xs" 
+          />
         </div>
 
         {/* 말풍선 */}

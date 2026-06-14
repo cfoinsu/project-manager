@@ -7,6 +7,7 @@ import type { Assignment, User, Workload } from '../types';
 import { WorkloadGridView } from './WorkloadGridView';
 import { CommentPanel } from './CommentPanel';
 import { CustomSelect } from './CustomSelect';
+import { Avatar } from './Avatar';
 import { RangeDatePicker } from './RangeDatePicker';
 import { 
   Users, 
@@ -784,13 +785,10 @@ export const AssignmentManagementView: React.FC = () => {
                           </div>
                         ) : (
                           projAssigns.map(a => {
-                            const initialChar = a.user_name ? a.user_name.charAt(0) : '👤';
                             return (
                               <div key={a.id} className="flex items-center justify-between p-3 bg-toss-gray-50/50 dark:bg-slate-850/40 border border-toss-gray-100/50 dark:border-slate-850/70 rounded-2xl hover:bg-toss-gray-50 dark:hover:bg-slate-800/60 transition-all font-semibold text-sm text-toss-gray-800 dark:text-slate-200">
                                 <div className="flex items-center gap-3.5 min-w-0">
-                                  <div className="w-8.5 h-8.5 rounded-xl bg-toss-blue/10 text-toss-blue flex items-center justify-center font-extrabold shrink-0 text-base select-none">
-                                    {initialChar}
-                                  </div>
+                                  <Avatar name={a.user_name} profileImage={a.user_profile_image} className="w-8.5 h-8.5 text-xs font-black" />
                                   <div className="flex flex-col text-left min-w-0">
                                     <span className="font-extrabold truncate text-toss-gray-800 dark:text-slate-200">
                                       {a.user_name} <span className="font-semibold text-toss-gray-550 dark:text-slate-400 text-xs">| {a.role}</span>
@@ -821,7 +819,7 @@ export const AssignmentManagementView: React.FC = () => {
                       {/* Quick Add Form */}
                       {isEditable && (
                         <div className="border-t border-toss-gray-100 dark:border-slate-800 pt-4 flex flex-col gap-2.5 shrink-0">
-                          <span className="text-xs font-black text-toss-gray-450 dark:text-slate-500 uppercase tracking-wider block">간편 인력 편입</span>
+                          <span className="text-xs font-black text-toss-gray-450 dark:text-slate-550 uppercase tracking-wider block">간편 인력 편입</span>
                           <div className="flex gap-2 items-center">
                             <div className="flex-[1.5] min-w-0">
                               <CustomSelect
@@ -837,23 +835,20 @@ export const AssignmentManagementView: React.FC = () => {
                                 ))}
                               </CustomSelect>
                             </div>
-                            <input
-                              type="text"
-                              placeholder="역할"
-                              value={quickAddRole[p.id] || ''}
-                              onChange={(e) => setQuickAddRole(prev => ({ ...prev, [p.id]: e.target.value }))}
-                              className="flex-1 min-w-0 text-sm px-2.5 py-1.5 bg-toss-gray-50 dark:bg-slate-800 border border-toss-gray-200 dark:border-slate-800 rounded-xl focus:outline-none font-bold text-toss-gray-800 dark:text-slate-100"
-                            />
-                            <div className="relative flex items-center w-14 shrink-0">
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                value={quickAddAlloc[p.id] !== undefined ? quickAddAlloc[p.id] : 100}
-                                onChange={(e) => setQuickAddAlloc(prev => ({ ...prev, [p.id]: parseInt(e.target.value, 10) || 0 }))}
-                                className="w-full text-sm pl-2.5 pr-4 py-1.5 bg-toss-gray-50 dark:bg-slate-850 border border-toss-gray-200 dark:border-slate-800 rounded-xl focus:outline-none font-extrabold text-toss-gray-800 dark:text-slate-100"
-                              />
-                              <span className="absolute right-2.5 text-xs text-toss-gray-400 font-bold select-none">%</span>
+                            <div className="flex-1 min-w-0">
+                              <CustomSelect
+                                value={quickAddRole[p.id] || ''}
+                                onChange={(e) => setQuickAddRole(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                className="w-full px-2 py-1.5 bg-toss-gray-100 dark:bg-slate-800 border border-toss-gray-200 dark:border-slate-800 rounded-xl text-sm cursor-pointer text-toss-gray-800 dark:text-slate-200 font-bold"
+                              >
+                                <option value="">역할...</option>
+                                {orgInfo?.jobRoles?.map(jr => (
+                                  <option key={jr.id} value={jr.name}>{jr.name}</option>
+                                ))}
+                                {quickAddRole[p.id] && orgInfo?.jobRoles && !orgInfo.jobRoles.some(jr => jr.name === quickAddRole[p.id]) && (
+                                  <option value={quickAddRole[p.id]}>{quickAddRole[p.id]}</option>
+                                )}
+                              </CustomSelect>
                             </div>
                             <button
                               onClick={() => handleQuickAdd(p.id)}
@@ -862,6 +857,57 @@ export const AssignmentManagementView: React.FC = () => {
                             >
                               <Plus className="w-4.5 h-4.5" />
                             </button>
+                          </div>
+                          
+                          {/* Grouped Allocation Slider & Presets Box */}
+                          <div className="bg-slate-50 dark:bg-slate-950/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80 flex flex-col gap-2 mt-0.5">
+                            <div className="flex justify-between items-center">
+                              <span className="text-[10px] text-toss-gray-450 dark:text-slate-400 font-extrabold">투입 비율 설정</span>
+                              <div className="relative flex items-center w-16">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={quickAddAlloc[p.id] !== undefined ? quickAddAlloc[p.id] : 100}
+                                  onChange={(e) => setQuickAddAlloc(prev => ({ ...prev, [p.id]: Math.min(Math.max(parseInt(e.target.value, 10) || 0, 0), 100) }))}
+                                  className="w-full text-xs text-right pr-5 py-0.5 bg-white dark:bg-slate-900 border border-toss-gray-200 dark:border-slate-800 rounded-md focus:outline-none font-bold text-toss-gray-800 dark:text-slate-100"
+                                />
+                                <span className="absolute right-1.5 text-[9px] text-toss-gray-400 font-bold select-none">%</span>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-1.5 select-none">
+                              <span className="text-[9px] font-bold text-toss-gray-455 dark:text-slate-550 shrink-0">0%</span>
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                value={quickAddAlloc[p.id] !== undefined ? quickAddAlloc[p.id] : 100}
+                                onChange={(e) => setQuickAddAlloc(prev => ({ ...prev, [p.id]: parseInt(e.target.value, 10) || 0 }))}
+                                className="premium-slider flex-1"
+                                style={{
+                                  background: `linear-gradient(to right, #3182f6 0%, #3182f6 ${quickAddAlloc[p.id] !== undefined ? quickAddAlloc[p.id] : 100}%, var(--slider-bg) ${quickAddAlloc[p.id] !== undefined ? quickAddAlloc[p.id] : 100}%)`
+                                }}
+                              />
+                              <span className="text-[9px] font-bold text-toss-gray-455 dark:text-slate-550 shrink-0">100%</span>
+                            </div>
+
+                            <div className="flex gap-1 justify-between">
+                              {[0, 25, 50, 75, 100].map(val => (
+                                <button
+                                  key={val}
+                                  type="button"
+                                  onClick={() => setQuickAddAlloc(prev => ({ ...prev, [p.id]: val }))}
+                                  className={`flex-1 py-0.5 rounded text-[9px] font-extrabold transition-all cursor-pointer text-center ${
+                                    (quickAddAlloc[p.id] !== undefined ? quickAddAlloc[p.id] : 100) === val
+                                      ? 'bg-toss-blue text-white shadow-soft-sm'
+                                      : 'bg-white dark:bg-slate-900 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-150 dark:border-slate-800'
+                                  }`}
+                                >
+                                  {val}%
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       )}
@@ -924,13 +970,16 @@ export const AssignmentManagementView: React.FC = () => {
                             <tr key={a.id} className="border-b border-toss-gray-50/50 dark:border-slate-850 hover:bg-toss-gray-50/50 dark:hover:bg-slate-850/30 transition-colors font-semibold text-xs text-toss-gray-800 dark:text-slate-200">
                               {/* 1. 인원 정보 */}
                               <td className="py-3.5 px-3">
-                                <div className="flex flex-col text-left min-w-0">
-                                  <span className="font-extrabold text-toss-gray-850 dark:text-slate-200 truncate">
-                                    {a.user_name || '알 수 없는 사용자'}
-                                  </span>
-                                  <span className="text-[10px] text-toss-gray-400 font-mono mt-0.5 truncate max-w-[150px]" title={a.user_email}>
-                                    {a.user_email}
-                                  </span>
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <Avatar name={a.user_name} profileImage={a.user_profile_image} className="w-8 h-8 text-[10px] shrink-0" />
+                                  <div className="flex flex-col text-left min-w-0">
+                                    <span className="font-extrabold text-toss-gray-850 dark:text-slate-200 truncate">
+                                      {a.user_name || '알 수 없는 사용자'}
+                                    </span>
+                                    <span className="text-[10px] text-toss-gray-400 font-mono mt-0.5 truncate max-w-[120px]" title={a.user_email}>
+                                      {a.user_email}
+                                    </span>
+                                  </div>
                                 </div>
                               </td>
                               {/* 2. 프로젝트 / 역할 */}
@@ -1073,13 +1122,16 @@ export const AssignmentManagementView: React.FC = () => {
                             <tr key={a.id} className="border-b border-toss-gray-50/50 dark:border-slate-850 hover:bg-toss-gray-50/50 dark:hover:bg-slate-850/30 transition-colors font-semibold text-xs text-toss-gray-800 dark:text-slate-200">
                               {/* 1. 인원 정보 */}
                               <td className="py-3.5 px-3">
-                                <div className="flex flex-col text-left min-w-0">
-                                  <span className="font-extrabold text-toss-gray-850 dark:text-slate-200 truncate">
-                                    {a.user_name || '알 수 없는 사용자'}
-                                  </span>
-                                  <span className="text-[10px] text-toss-gray-400 font-mono mt-0.5 truncate max-w-[150px]" title={a.user_email}>
-                                    {a.user_email}
-                                  </span>
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <Avatar name={a.user_name} profileImage={a.user_profile_image} className="w-8 h-8 text-[10px] shrink-0" />
+                                  <div className="flex flex-col text-left min-w-0">
+                                    <span className="font-extrabold text-toss-gray-850 dark:text-slate-200 truncate">
+                                      {a.user_name || '알 수 없는 사용자'}
+                                    </span>
+                                    <span className="text-[10px] text-toss-gray-400 font-mono mt-0.5 truncate max-w-[120px]" title={a.user_email}>
+                                      {a.user_email}
+                                    </span>
+                                  </div>
                                 </div>
                               </td>
                               {/* 2. 프로젝트 / 역할 */}
@@ -1320,22 +1372,63 @@ export const AssignmentManagementView: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-toss-gray-450 uppercase tracking-wider">업무 역할 (Role)</label>
-                  <input
-                    type="text" required value={role}
+                  <CustomSelect
+                    value={role}
                     onChange={(e) => setRole(e.target.value)}
-                    placeholder="예: Front-End, PL, Designer"
                     className="toss-input font-bold"
-                  />
+                  >
+                    <option value="">역할 선택</option>
+                    {orgInfo?.jobRoles?.map(jr => (
+                      <option key={jr.id} value={jr.name}>{jr.name}</option>
+                    ))}
+                    {role && orgInfo?.jobRoles && !orgInfo.jobRoles.some(jr => jr.name === role) && (
+                      <option value={role}>{role}</option>
+                    )}
+                  </CustomSelect>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-toss-gray-450 uppercase tracking-wider">투입 비율 (%)</label>
-                  <div className="relative flex items-center">
-                    <input
-                      type="number" required min={0} max={100} value={allocationPercent}
-                      onChange={(e) => setAllocationPercent(parseInt(e.target.value, 10) || 0)}
-                      className="toss-input pr-8"
-                    />
-                    <span className="absolute right-3.5 text-toss-gray-455">%</span>
+                  <div className="bg-slate-50 dark:bg-slate-950/40 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800/80 flex flex-col gap-2.5">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[11px] font-black text-toss-gray-455 dark:text-slate-400 uppercase tracking-wider">투입 비율</label>
+                      <div className="relative flex items-center w-20">
+                        <input
+                          type="number" required min={0} max={100} value={allocationPercent}
+                          onChange={(e) => setAllocationPercent(Math.min(Math.max(parseInt(e.target.value, 10) || 0, 0), 100))}
+                          className="w-full text-xs font-black px-2.5 py-1 bg-white dark:bg-slate-900 border border-toss-gray-200 dark:border-slate-800 rounded-lg focus:outline-none text-right pr-6 text-toss-gray-800 dark:text-slate-100"
+                        />
+                        <span className="absolute right-2 text-[10px] text-toss-gray-400 font-bold select-none">%</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 select-none">
+                      <span className="text-[10px] font-bold text-toss-gray-400 shrink-0">0%</span>
+                      <input
+                        type="range" min={0} max={100} value={allocationPercent}
+                        onChange={(e) => setAllocationPercent(parseInt(e.target.value, 10) || 0)}
+                        className="premium-slider"
+                        style={{
+                          background: `linear-gradient(to right, #3182f6 0%, #3182f6 ${allocationPercent}%, var(--slider-bg) ${allocationPercent}%)`
+                        }}
+                      />
+                      <span className="text-[10px] font-bold text-toss-gray-400 shrink-0">100%</span>
+                    </div>
+
+                    <div className="flex gap-1">
+                      {[0, 25, 50, 75, 100].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setAllocationPercent(val)}
+                          className={`flex-1 py-1 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${
+                            allocationPercent === val
+                              ? 'bg-toss-blue text-white shadow-soft-sm'
+                              : 'bg-white dark:bg-slate-900 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-150 dark:border-slate-800'
+                          }`}
+                        >
+                          {val}%
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>

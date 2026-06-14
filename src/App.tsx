@@ -23,6 +23,7 @@ import { ReportGeneration } from './components/ReportGeneration';
 import { TemplateManagement } from './components/TemplateManagement';
 import { FolderTemplateManagement } from './components/FolderTemplateManagement';
 import { SettingsView } from './components/SettingsView';
+import { ProfileSettingsView } from './components/ProfileSettingsView';
 import { ScheduleCalendarView } from './components/ScheduleCalendarView';
 
 // Auth and User Views
@@ -35,6 +36,7 @@ import { DocumentLibraryView } from './components/DocumentLibraryView';
 
 import { CustomSelect } from './components/CustomSelect';
 import { migrateComments } from './utils/api';
+import { Avatar } from './components/Avatar';
 
 import {
   Search,
@@ -55,7 +57,8 @@ import {
   Users,
   UserCheck,
   Library,
-  LogOut
+  LogOut,
+  UserCog
 } from 'lucide-react';
 
 function App() {
@@ -160,6 +163,8 @@ function App() {
         return <FolderTemplateManagement />;
       case 'settings':
         return <SettingsView />;
+      case 'profile_settings':
+        return <ProfileSettingsView />;
       case 'calendar':
         return <ScheduleCalendarView />;
       case 'projects_overview':
@@ -586,43 +591,61 @@ function App() {
         </div>
 
         {/* User Profile and Logout */}
-        <div className="px-5 mb-1 mt-auto border-t border-toss-gray-100 dark:border-slate-800/80 pt-4 flex flex-col gap-2 select-none shrink-0 text-left">
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col text-left">
-              <span className="text-xs font-extrabold text-toss-gray-800 dark:text-slate-200">{currentUser?.name}</span>
-              <span className="text-[10px] text-toss-gray-400 dark:text-slate-500 font-bold uppercase tracking-wider mt-0.5">
-                {currentUser?.role === 'admin' ? '관리자' : currentUser?.role === 'manager' ? '매니저' : '개발원'}
-              </span>
+        <div className="mx-4 mb-4 mt-auto p-3 bg-toss-gray-50/50 dark:bg-slate-900/60 border border-toss-gray-150/45 dark:border-slate-800/80 rounded-2xl flex flex-col gap-3 select-none shrink-0 text-left">
+          <div className="flex items-center gap-3">
+            {/* 아바타 컴포넌트 */}
+            <div
+              onClick={() => setView('profile_settings')}
+              className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer group/profile"
+              title="개인 프로필 설정"
+            >
+              <Avatar name={currentUser?.name} profileImage={currentUser?.profile_image} className="w-9 h-9 text-xs transition-transform group-hover/profile:scale-105" />
+              <div className="flex flex-col flex-1 min-w-0">
+                <span className="text-xs font-black text-toss-gray-800 dark:text-slate-200 truncate group-hover/profile:text-toss-blue">{currentUser?.name}</span>
+                <span className="text-[10px] text-toss-gray-400 dark:text-slate-550 font-bold uppercase tracking-wider mt-0.5">
+                  {currentUser?.role === 'admin' ? '최고 관리자' : currentUser?.role === 'manager' ? '매니저' : '개발원'}
+                </span>
+              </div>
             </div>
             <button
+              onClick={() => setView('profile_settings')}
+              className="p-1.5 hover:bg-toss-gray-100 dark:hover:bg-slate-800 text-toss-gray-400 hover:text-toss-blue dark:hover:text-toss-blue rounded-lg transition-colors cursor-pointer"
+              title="개인 프로필 설정"
+            >
+              <UserCog className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between border-t border-toss-gray-100 dark:border-slate-800/60 pt-3">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className="p-2 rounded-xl text-toss-gray-400 hover:bg-toss-gray-100 dark:hover:bg-slate-800 dark:text-slate-500 transition-all cursor-pointer"
+                title={darkMode ? '라이트 모드' : '다크 모드'}
+              >
+                {darkMode ? <Sun className="w-4 h-4 text-yellow-500" /> : <Moon className="w-4 h-4" />}
+              </button>
+              
+              <button
+                onClick={() => setView('settings')}
+                className="p-2 rounded-xl text-toss-gray-400 hover:bg-toss-gray-100 dark:hover:bg-slate-800 dark:text-slate-500 transition-all cursor-pointer"
+                title="시스템 설정"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </div>
+
+            <button
               onClick={() => logout()}
-              className="px-2 py-1 bg-toss-gray-105 hover:bg-toss-gray-150 dark:bg-slate-800 dark:hover:bg-slate-750 text-[10px] font-black text-toss-gray-650 dark:text-slate-350 rounded-lg cursor-pointer transition-all flex items-center gap-1"
+              className="px-2.5 py-1 bg-white dark:bg-slate-850 hover:bg-toss-gray-50 dark:hover:bg-slate-800 text-[10px] font-extrabold text-toss-gray-650 dark:text-slate-350 border border-toss-gray-150/40 dark:border-slate-800 rounded-lg cursor-pointer transition-all flex items-center gap-1 shadow-soft-sm"
             >
               <LogOut className="w-3 h-3" />
               <span>로그아웃</span>
             </button>
           </div>
         </div>
-
-        {/* Bottom utility icons */}
-        <div className="flex items-center justify-between px-6 shrink-0 select-none border-t border-toss-gray-100 dark:border-slate-800/80 pt-4">
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            className="p-2.5 rounded-xl text-toss-gray-400 hover:bg-toss-gray-100 dark:hover:bg-slate-800 dark:text-slate-500 transition-all cursor-pointer"
-            title={darkMode ? '라이트 모드' : '다크 모드'}
-          >
-            {darkMode ? <Sun className="w-4.5 h-4.5 text-yellow-500" /> : <Moon className="w-4.5 h-4.5" />}
-          </button>
-          
-          <button
-            onClick={() => setView('settings')}
-            className="p-2.5 rounded-xl text-toss-gray-400 hover:bg-toss-gray-100 dark:hover:bg-slate-800 dark:text-slate-500 transition-all cursor-pointer"
-            title="설정"
-          >
-            <Settings className="w-4.5 h-4.5" />
-          </button>
-        </div>
-      </aside>
+        
+        </aside>
 
       {/* Main Container */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">

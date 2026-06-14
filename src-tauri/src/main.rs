@@ -166,6 +166,13 @@ fn write_file_bytes(path: String, bytes: Vec<u8>) -> Result<(), String> {
     std::fs::write(target_path, bytes).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn move_file_or_dir(src: String, dest: String) -> Result<(), String> {
+    let src_path = Path::new(&src);
+    let dest_path = Path::new(&dest);
+    std::fs::rename(src_path, dest_path).map_err(|e| e.to_string())
+}
+
 mod db;
 
 fn main() {
@@ -183,6 +190,7 @@ fn main() {
             open_file,
             create_directory,
             write_file_bytes,
+            move_file_or_dir,
             db::db_get_projects,
             db::db_create_project,
             db::db_delete_project,
@@ -208,6 +216,8 @@ fn main() {
             db::db_reset_user_password,
             db::db_change_password,
             db::db_register_device,
+            db::db_update_profile,
+            db::db_get_admin_contact,
             db::db_get_user_password_hash,
             db::get_raw_device_id,
             db::db_get_org_info,

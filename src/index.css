@@ -850,10 +850,10 @@
   @apply flex-1 overflow-y-auto flex flex-col gap-3 pr-0.5;
 }
 .cds--kanban-empty-column-card {
-  @apply flex-1 flex items-center justify-center py-12 text-xs text-gray-300 font-semibold border border-dashed border-gray-200 dark:border-slate-800/50 rounded-md bg-gray-50/10;
+  @apply flex-1 flex items-center justify-center py-12 text-xs text-slate-400 dark:text-slate-500 font-semibold border border-dashed border-slate-200 dark:border-slate-800 rounded-md bg-slate-50/70 dark:bg-slate-950/40;
 }
 .cds--kanban-task-card {
-  @apply p-4 rounded-xl bg-white dark:bg-slate-800 hover:bg-gray-50/50 dark:hover:bg-slate-700/50 border border-gray-200/40 dark:border-slate-800/40 hover:border-[#18a0fb]/60 shadow-sm transition-all duration-200 flex flex-col gap-3.5 text-left;
+  @apply p-4 rounded-xl bg-white dark:bg-slate-800 hover:bg-gray-50/50 dark:hover:bg-slate-700/50 border border-slate-200 dark:border-slate-700/80 hover:border-[#18a0fb]/60 shadow-[0_8px_30px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] dark:shadow-none transition-all duration-200 flex flex-col gap-3.5 text-left;
 }
 .cds--kanban-card-main {
   @apply flex flex-col gap-1 w-full;
@@ -1336,8 +1336,8 @@
   padding: 0 8px;
   border: 1px solid transparent;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  pointer-events: auto;
-  cursor: pointer;
+  pointer-events: none;
+  cursor: default;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
   z-index: 5;
 }
@@ -1364,6 +1364,77 @@
   color: #ffffff !important;
   font-weight: 800 !important;
 }
+
+/* ===================== PREMIUM SLIDER ===================== */
+:root {
+  --slider-bg: #e2e8f0;
+}
+body.dark {
+  --slider-bg: #334155;
+}
+
+.premium-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--slider-bg);
+  border-radius: 9999px;
+  outline: none;
+  transition: background 0.15s ease;
+}
+
+/* 웹킷 브라우저용 thumb 스타일 */
+.premium-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #3182f6;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(49, 130, 246, 0.4);
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+body.dark .premium-slider::-webkit-slider-thumb {
+  border-color: #1e293b;
+  box-shadow: 0 2px 6px rgba(49, 130, 246, 0.6);
+}
+
+.premium-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  background: #1b64da;
+}
+
+.premium-slider::-webkit-slider-thumb:active {
+  transform: scale(0.95);
+  background: #154fb3;
+}
+
+/* 파이어폭스용 thumb 스타일 */
+.premium-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #3182f6;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(49, 130, 246, 0.4);
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+body.dark .premium-slider::-moz-range-thumb {
+  border-color: #1e293b;
+  box-shadow: 0 2px 6px rgba(49, 130, 246, 0.6);
+}
+
+.premium-slider::-moz-range-thumb:hover {
+  transform: scale(1.15);
+  background: #1b64da;
+}
+
 
 
 

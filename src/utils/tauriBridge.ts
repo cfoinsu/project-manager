@@ -313,6 +313,187 @@ export const generateMockProject = (): FolderNode => {
   };
 };
 
+// Helper to extract project root path from any file/directory path
+const getProjectRootPath = (path: string): string => {
+  const match = path.match(/^(C:\\Projects\\[^\\]+)/i);
+  return match ? match[1] : 'C:\\Projects\\Folder-Atlas-Demo';
+};
+
+// LocalStorage mock tree cache loader
+const loadMockProject = (rootPath: string): FolderNode => {
+  const key = `pa_mock_project_${rootPath}`;
+  try {
+    const data = localStorage.getItem(key);
+    if (data) {
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  const mock = generateMockProject();
+  const folderName = rootPath.split('\\').pop() || rootPath.split('/').pop() || 'Folder-Atlas-Demo';
+  mock.name = folderName;
+  mock.path = rootPath;
+  const adjustPaths = (node: FolderNode, parentPath: string) => {
+    node.path = `${parentPath}\\${node.name}`;
+    if (node.children) {
+      node.children.forEach(c => adjustPaths(c, node.path));
+    }
+  };
+  adjustPaths(mock, rootPath);
+  saveMockProject(rootPath, mock);
+  return mock;
+};
+
+// LocalStorage mock tree cache saver with size/count calculations
+const saveMockProject = (rootPath: string, tree: FolderNode) => {
+  const key = `pa_mock_project_${rootPath}`;
+  const calcStats = (node: FolderNode) => {
+    if (!node.is_dir) {
+      node.file_count = 1;
+      node.folder_count = 0;
+      return;
+    }
+    let size = 0;
+    let fileCount = 0;
+    let folderCount = 0;
+    if (node.children) {
+      node.children.forEach(c => {
+        calcStats(c);
+        size += c.size;
+        fileCount += c.file_count;
+        folderCount += c.folder_count + (c.is_dir ? 1 : 0);
+      });
+    }
+    node.size = size;
+    node.file_count = fileCount;
+    node.folder_count = folderCount;
+  };
+  calcStats(tree);
+  localStorage.setItem(key, JSON.stringify(tree));
+};
+
+const createDirectoryMock = (dirPath: string) => {
+  const rootPath = getProjectRootPath(dirPath);
+  const tree = loadMockProject(rootPath);
+  const parts = dirPath.split('\\');
+  const newDirName = parts.pop() || '';
+  const parentPath = parts.join('\\');
+  const findAndAdd = (node: FolderNode): boolean => {
+    if (node.path === parentPath) {
+      node.children = node.children || [];
+      if (!node.children.some(c => c.name === newDirName)) {
+        node.children.push({
+          name: newDirName,
+          path: dirPath,
+          is_dir: true,
+          size: 0,
+          depth: node.depth + 1,
+          children: [],
+          file_count: 0,
+          folder_count: 0,
+          modified: Math.round(Date.now() / 1000)
+        });
+      }
+      return true;
+    }
+    if (node.children) {
+      for (const child of node.children) {
+        if (child.is_dir && findAndAdd(child)) return true;
+      }
+    }
+    return false;
+  };
+  findAndAdd(tree);
+  saveMockProject(rootPath, tree);
+};
+
+const writeFileMock = (filePath: string, size: number) => {
+  const rootPath = getProjectRootPath(filePath);
+  const tree = loadMockProject(rootPath);
+  const parts = filePath.split('\\');
+  const fileName = parts.pop() || '';
+  const parentPath = parts.join('\\');
+  const findAndAdd = (node: FolderNode): boolean => {
+    if (node.path === parentPath) {
+      node.children = node.children || [];
+      const existing = node.children.find(c => c.name === fileName);
+      if (existing) {
+        existing.size = size;
+        existing.modified = Math.round(Date.now() / 1000);
+      } else {
+        node.children.push({
+          name: fileName,
+          path: filePath,
+          is_dir: false,
+          size: size,
+          depth: node.depth + 1,
+          file_count: 1,
+          folder_count: 0,
+          modified: Math.round(Date.now() / 1000)
+        });
+      }
+      return true;
+    }
+    if (node.children) {
+      for (const child of node.children) {
+        if (child.is_dir && findAndAdd(child)) return true;
+      }
+    }
+    return false;
+  };
+  findAndAdd(tree);
+  saveMockProject(rootPath, tree);
+};
+
+const moveFileOrDirMock = (src: string, dest: string) => {
+  const rootPath = getProjectRootPath(src);
+  const tree = loadMockProject(rootPath);
+  let movingNode: FolderNode | null = null;
+  const removeNode = (node: FolderNode): boolean => {
+    if (node.children) {
+      const idx = node.children.findIndex(c => c.path === src);
+      if (idx !== -1) {
+        movingNode = node.children[idx];
+        node.children.splice(idx, 1);
+        return true;
+      }
+      for (const child of node.children) {
+        if (child.is_dir && removeNode(child)) return true;
+      }
+    }
+    return false;
+  };
+  removeNode(tree);
+  if (!movingNode) return;
+  const destParts = dest.split('\\');
+  const newName = destParts.pop() || '';
+  const destParentPath = destParts.join('\\');
+  (movingNode as FolderNode).name = newName;
+  const adjustPaths = (node: FolderNode, parentPath: string) => {
+    node.path = `${parentPath}\\${node.name}`;
+    if (node.children) {
+      node.children.forEach(c => adjustPaths(c, node.path));
+    }
+  };
+  adjustPaths(movingNode, destParentPath);
+  const addNode = (node: FolderNode): boolean => {
+    if (node.path === destParentPath) {
+      node.children = node.children || [];
+      node.children.push(movingNode!);
+      return true;
+    }
+    if (node.children) {
+      for (const child of node.children) {
+        if (child.is_dir && addNode(child)) return true;
+      }
+    }
+    return false;
+  };
+  addNode(tree);
+  saveMockProject(rootPath, tree);
+};
+
 // ─────────────────────────────────────────────────────────────
 // Tauri native invoke wrappers with browser fallbacks
 // ─────────────────────────────────────────────────────────────
@@ -333,15 +514,13 @@ export const scanDirectory = async (path: string): Promise<FolderNode> => {
       });
     }
 
-    // Otherwise, check if it's a demo path or return mock data
+    // Otherwise, check cached mock project
     return new Promise((resolve) => {
       setTimeout(() => {
-        const folderName = path.split('\\').pop() || path.split('/').pop() || 'Folder-Atlas-Demo';
-        const mockProj = generateMockProject();
-        mockProj.name = folderName;
-        mockProj.path = path;
+        const rootPath = getProjectRootPath(path);
+        const mockProj = loadMockProject(rootPath);
         resolve(mockProj);
-      }, 800);
+      }, 500);
     });
   }
 };
@@ -465,6 +644,7 @@ export const createDirectory = async (path: string): Promise<void> => {
     return (invoke as any)('create_directory', { path }) as Promise<void>;
   } else {
     console.log(`[Browser Mode] 폴더 생성 요청: ${path}`);
+    createDirectoryMock(path);
     return Promise.resolve();
   }
 };
@@ -476,6 +656,19 @@ export const writeFileBytes = async (path: string, bytes: Uint8Array): Promise<v
     return (invoke as any)('write_file_bytes', { path, bytes: Array.from(bytes) }) as Promise<void>;
   } else {
     console.log(`[Browser Mode] 파일 쓰기 요청 (바이트): ${path} (크기: ${bytes.length} bytes)`);
+    writeFileMock(path, bytes.length);
+    return Promise.resolve();
+  }
+};
+
+export const moveFileOrDir = async (src: string, dest: string): Promise<void> => {
+  if (isTauri()) {
+    // @ts-ignore
+    const { invoke } = await import('@tauri-apps/api');
+    return (invoke as any)('move_file_or_dir', { src, dest }) as Promise<void>;
+  } else {
+    console.log(`[Browser Mode] 파일/폴더 이동 요청: ${src} -> ${dest}`);
+    moveFileOrDirMock(src, dest);
     return Promise.resolve();
   }
 };

@@ -17,11 +17,14 @@ import {
   RotateCcw,
   Pencil,
   Activity,
+  Plus,
+  X
 } from 'lucide-react';
 import { isTauri } from '../utils/tauriBridge';
 import { useProjectStore } from '../store/projectStore';
 import { useBrandStore } from '../store/brandStore';
-import { REGION_CODES, PROJECT_TYPE_CODES } from '../types';
+import { getKoreaRegions, PROJECT_TYPE_CODES } from '../types';
+import type { RegionGroup } from '../types';
 
 export const SettingsView: React.FC = () => {
   const isTauriMode = isTauri();
@@ -32,6 +35,161 @@ export const SettingsView: React.FC = () => {
   const [serverUrl, setServerUrl] = useState(
     localStorage.getItem('pa_server_url') || 'http://localhost:5000'
   );
+
+  // ─── 지역 설정 상태 및 핸들러
+  const [regionsList, setRegionsList] = useState<RegionGroup[]>(() => getKoreaRegions());
+  const [selectedProvinceName, setSelectedProvinceName] = useState<string>('서울특별시');
+  const [disabledRegions, setDisabledRegions] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('pa_disabled_regions');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // 지역 편집/추가 상태
+  const [editingSubRegionCode, setEditingSubRegionCode] = useState<string | null>(null);
+  const [editCodeValue, setEditCodeValue] = useState('');
+  const [editNameValue, setEditNameValue] = useState('');
+
+  const [isAddingSubRegion, setIsAddingSubRegion] = useState(false);
+  const [newCodeValue, setNewCodeValue] = useState('');
+  const [newNameValue, setNewNameValue] = useState('');
+
+  const saveRegionsList = (newList: RegionGroup[]) => {
+    setRegionsList(newList);
+    localStorage.setItem('pa_custom_regions', JSON.stringify(newList));
+  };
+
+  const handleToggleRegion = (code: string) => {
+    setDisabledRegions(prev => {
+      const next = prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code];
+      localStorage.setItem('pa_disabled_regions', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleSaveEditSubRegion = (originalCode: string) => {
+    const codeTrimmed = editCodeValue.trim().toUpperCase();
+    const nameTrimmed = editNameValue.trim();
+
+    if (!codeTrimmed || !nameTrimmed) {
+      alert('코드와 지역명을 모두 입력해 주세요.');
+      return;
+    }
+    if (!/^[A-Z0-9]+$/.test(codeTrimmed)) {
+      alert('지역 코드는 영문 대문자와 숫자만 가능합니다.');
+      return;
+    }
+
+    // 중복 체크
+    const duplicate = regionsList.some(group =>
+      group.subRegions.some(sub => sub.code === codeTrimmed && sub.code !== originalCode)
+    );
+    if (duplicate) {
+      alert('이미 사용 중인 지역 코드입니다.');
+      return;
+    }
+
+    const nextRegionsList = regionsList.map(group => {
+      if (group.name === selectedProvinceName) {
+        return {
+          ...group,
+          subRegions: group.subRegions.map(sub => {
+            if (sub.code === originalCode) {
+              return { code: codeTrimmed, name: nameTrimmed };
+            }
+            return sub;
+          })
+        };
+      }
+      return group;
+    });
+
+    if (originalCode !== codeTrimmed) {
+      setDisabledRegions(prev => {
+        let next = [...prev];
+        if (prev.includes(originalCode)) {
+          next = next.filter(c => c !== originalCode);
+          next.push(codeTrimmed);
+        }
+        localStorage.setItem('pa_disabled_regions', JSON.stringify(next));
+        return next;
+      });
+    }
+
+    saveRegionsList(nextRegionsList);
+    setEditingSubRegionCode(null);
+  };
+
+  const handleAddSubRegion = () => {
+    const codeTrimmed = newCodeValue.trim().toUpperCase();
+    const nameTrimmed = newNameValue.trim();
+
+    if (!codeTrimmed || !nameTrimmed) {
+      alert('코드와 지역명을 모두 입력해 주세요.');
+      return;
+    }
+    if (!/^[A-Z0-9]+$/.test(codeTrimmed)) {
+      alert('지역 코드는 영문 대문자와 숫자만 가능합니다.');
+      return;
+    }
+
+    // 중복 체크
+    const duplicate = regionsList.some(group =>
+      group.subRegions.some(sub => sub.code === codeTrimmed)
+    );
+    if (duplicate) {
+      alert('이미 사용 중인 지역 코드입니다.');
+      return;
+    }
+
+    const nextRegionsList = regionsList.map(group => {
+      if (group.name === selectedProvinceName) {
+        return {
+          ...group,
+          subRegions: [...group.subRegions, { code: codeTrimmed, name: nameTrimmed }]
+        };
+      }
+      return group;
+    });
+
+    saveRegionsList(nextRegionsList);
+    setIsAddingSubRegion(false);
+    setNewCodeValue('');
+    setNewNameValue('');
+  };
+
+  const handleDeleteSubRegion = (code: string) => {
+    const usageCount = codeStats.regionCounts[code] || 0;
+    if (usageCount > 0) {
+      alert(`이 지역 코드는 현재 ${usageCount}개의 프로젝트에서 사용 중이므로 삭제할 수 없습니다.`);
+      return;
+    }
+
+    if (!confirm('정말 이 지역 코드를 삭제하시겠습니까?')) {
+      return;
+    }
+
+    const nextRegionsList = regionsList.map(group => {
+      if (group.name === selectedProvinceName) {
+        return {
+          ...group,
+          subRegions: group.subRegions.filter(sub => sub.code !== code)
+        };
+      }
+      return group;
+    });
+
+    setDisabledRegions(prev => {
+      const next = prev.filter(c => c !== code);
+      localStorage.setItem('pa_disabled_regions', JSON.stringify(next));
+      return next;
+    });
+
+    saveRegionsList(nextRegionsList);
+  };
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // ─── 브랜딩 편집 상태
@@ -411,33 +569,273 @@ export const SettingsView: React.FC = () => {
 
           <hr className="border-t border-gray-100/50 dark:border-slate-800/40" />
 
-          {/* Region Codes Table */}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <MapPin className="w-3.5 h-3.5 text-toss-gray-400" />
-              <span className="text-xs font-bold text-toss-gray-500 dark:text-slate-400">지역 코드 목록</span>
+          {/* Region Codes Settings */}
+          <div className="flex flex-col gap-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-3.5 h-3.5 text-toss-gray-400" />
+                <span className="text-xs font-bold text-toss-gray-500 dark:text-slate-400">지역 코드 활성/비활성 및 관리</span>
+              </div>
+              <span className="text-[10px] text-toss-gray-455 dark:text-slate-500">도 &gt; 시(군) 구조로 지역 코드를 활성화하거나 직접 수정/추가/삭제할 수 있습니다.</span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-52 overflow-y-auto pr-1 scrollbar-thin">
-              {REGION_CODES.map(r => (
-                <div 
-                  key={r.code} 
-                  className={`flex items-center justify-between px-3.5 py-2 rounded-2xl text-xs transition-colors ${
-                    codeStats.regionCounts[r.code] 
-                      ? 'bg-sky-500/10 border border-sky-500/20' 
-                      : 'bg-gray-50/50 dark:bg-slate-850/40 border border-gray-100/50 dark:border-slate-800/40'
-                  }`}
-                >
-                  <span className={`font-extrabold font-mono ${codeStats.regionCounts[r.code] ? 'text-toss-blue' : 'text-toss-gray-600 dark:text-slate-400'}`}>
-                    {r.code}
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border border-gray-100 dark:border-slate-800/60 rounded-3xl p-4 bg-gray-50/20 dark:bg-slate-950/20">
+              {/* Left Pane: Provinces */}
+              <div className="flex flex-col gap-1 pr-2 border-r border-gray-100 dark:border-slate-800 max-h-80 overflow-y-auto scrollbar-thin">
+                {regionsList.map(group => {
+                  const activeCount = group.subRegions.filter(r => !disabledRegions.includes(r.code)).length;
+                  const totalCount = group.subRegions.length;
+                  const isSelected = selectedProvinceName === group.name;
+                  return (
+                    <button
+                      key={group.name}
+                      type="button"
+                      onClick={() => {
+                        setSelectedProvinceName(group.name);
+                        setEditingSubRegionCode(null);
+                        setIsAddingSubRegion(false);
+                      }}
+                      className={`flex items-center justify-between px-4 py-2.5 rounded-full text-left text-xs font-bold transition-all duration-200 hover:scale-[1.02] cursor-pointer ${
+                        isSelected
+                          ? 'bg-toss-blue text-white shadow-sm'
+                          : 'text-toss-gray-700 dark:text-slate-350 hover:bg-slate-100/50 dark:hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <span>{group.name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
+                        activeCount === 0 
+                          ? 'bg-red-500/10 text-red-500' 
+                          : activeCount === totalCount 
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' 
+                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                      }`}>
+                        {activeCount}/{totalCount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Right Pane: Cities Grid */}
+              <div className="md:col-span-2 flex flex-col gap-3 max-h-80 overflow-y-auto pl-1 pr-1 scrollbar-thin">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-xs font-extrabold text-toss-gray-800 dark:text-slate-300 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-toss-blue"></span>
+                    <span>{selectedProvinceName} 상세 지역 목록</span>
                   </span>
-                  <span className="text-toss-gray-500 dark:text-slate-500 truncate ml-2">{r.name}</span>
-                  {codeStats.regionCounts[r.code] && (
-                    <span className="ml-auto pl-1 text-xs font-extrabold text-toss-blue shrink-0">
-                      {codeStats.regionCounts[r.code]}개
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetGroup = regionsList.find(g => g.name === selectedProvinceName);
+                        if (!targetGroup) return;
+                        const targetCodes = targetGroup.subRegions.map(r => r.code);
+                        const allActive = targetCodes.every(code => !disabledRegions.includes(code));
+                        setDisabledRegions(prev => {
+                          let next;
+                          if (allActive) {
+                            next = [...new Set([...prev, ...targetCodes])];
+                          } else {
+                            next = prev.filter(code => !targetCodes.includes(code));
+                          }
+                          localStorage.setItem('pa_disabled_regions', JSON.stringify(next));
+                          return next;
+                        });
+                      }}
+                      className="text-[10px] font-bold text-toss-blue hover:underline cursor-pointer"
+                    >
+                      {regionsList.find(g => g.name === selectedProvinceName)?.subRegions.every(r => !disabledRegions.includes(r.code))
+                        ? '전체 비활성화'
+                        : '전체 활성화'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddingSubRegion(true);
+                        setNewCodeValue('');
+                        setNewNameValue('');
+                      }}
+                      className="flex items-center gap-1 text-[10px] font-extrabold text-toss-blue bg-toss-blue/10 px-2 py-1 rounded-lg hover:bg-toss-blue/20 transition-all cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      지역 추가
+                    </button>
+                  </div>
                 </div>
-              ))}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Inline Add Form */}
+                  {isAddingSubRegion && (
+                    <div className="col-span-full p-4 bg-toss-blue/5 dark:bg-toss-blue/10 border border-toss-blue/20 rounded-2xl flex flex-col gap-3 animate-scale-in">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold text-toss-blue">새 상세 지역 추가 ({selectedProvinceName})</span>
+                        <button 
+                          type="button"
+                          onClick={() => setIsAddingSubRegion(false)}
+                          className="p-1 rounded-md hover:bg-toss-blue/10 text-toss-gray-400 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-bold text-slate-500">지역 코드 (예: TEST)</label>
+                          <input
+                            type="text"
+                            placeholder="영문 대문자/숫자"
+                            value={newCodeValue}
+                            onChange={e => setNewCodeValue(e.target.value.toUpperCase())}
+                            className="toss-input py-1.5 px-3 text-xs font-bold font-mono"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-bold text-slate-500">지역명 (예: 테스트군)</label>
+                          <input
+                            type="text"
+                            placeholder="한글/영문 지역명"
+                            value={newNameValue}
+                            onChange={e => setNewNameValue(e.target.value)}
+                            className="toss-input py-1.5 px-3 text-xs font-bold"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingSubRegion(false)}
+                          className="px-3 py-1.5 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                        >
+                          취소
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAddSubRegion}
+                          className="px-3 py-1.5 bg-toss-blue text-[10px] font-extrabold text-white rounded-lg hover:bg-blue-600 cursor-pointer"
+                        >
+                          등록
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {regionsList.find(g => g.name === selectedProvinceName)?.subRegions.map(r => {
+                    const isActive = !disabledRegions.includes(r.code);
+                    const usageCount = codeStats.regionCounts[r.code] || 0;
+                    const isEditing = editingSubRegionCode === r.code;
+
+                    if (isEditing) {
+                      return (
+                        <div
+                          key={r.code}
+                          className="col-span-1 p-3.5 bg-white dark:bg-slate-855 border border-toss-blue/30 rounded-[20px] flex flex-col gap-2.5 shadow-md animate-scale-in"
+                        >
+                          <div className="flex flex-col gap-1.5">
+                            <input
+                              type="text"
+                              placeholder="코드 (대문자)"
+                              value={editCodeValue}
+                              onChange={e => setEditCodeValue(e.target.value.toUpperCase())}
+                              className="toss-input py-1 px-2.5 text-xs font-mono font-bold"
+                            />
+                            <input
+                              type="text"
+                              placeholder="지역명"
+                              value={editNameValue}
+                              onChange={e => setEditNameValue(e.target.value)}
+                              className="toss-input py-1 px-2.5 text-xs font-bold"
+                            />
+                          </div>
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEditingSubRegionCode(null)}
+                              className="px-2.5 py-1 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 rounded-md hover:bg-slate-50 cursor-pointer"
+                            >
+                              취소
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditSubRegion(r.code)}
+                              className="px-3 py-1 bg-toss-blue text-[10px] font-extrabold text-white rounded-md hover:bg-blue-600 cursor-pointer"
+                            >
+                              저장
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={r.code}
+                        className={`flex flex-col gap-2 p-3.5 rounded-[20px] border text-xs transition-all duration-200 ${
+                          isActive
+                            ? 'bg-white dark:bg-slate-850 border-slate-100 dark:border-slate-800/80 shadow-sm hover:shadow-md'
+                            : 'bg-slate-50/40 dark:bg-slate-900/30 border-slate-100/20 dark:border-slate-900/20 opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between w-full">
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`font-mono font-extrabold ${isActive ? 'text-toss-blue' : 'text-toss-gray-400 dark:text-slate-600'}`}>
+                                {r.code}
+                              </span>
+                              <span className="font-extrabold text-toss-gray-800 dark:text-slate-300">
+                                {r.name}
+                              </span>
+                            </div>
+                            {usageCount > 0 && (
+                              <span className="text-[10px] text-toss-blue font-bold mt-0.5">
+                                사용 중: {usageCount}개 프로젝트
+                              </span>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleToggleRegion(r.code)}
+                            className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                              isActive ? 'bg-toss-blue' : 'bg-gray-200 dark:bg-slate-700'
+                            }`}
+                          >
+                            <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              isActive ? 'translate-x-3.5' : 'translate-x-0'
+                            }`} />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-100/50 dark:border-slate-800/40 mt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingSubRegionCode(r.code);
+                              setEditCodeValue(r.code);
+                              setEditNameValue(r.name);
+                            }}
+                            className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-toss-blue transition-colors cursor-pointer"
+                            title="지역 코드 및 이름 수정"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSubRegion(r.code)}
+                            disabled={usageCount > 0}
+                            className={`p-1 rounded-lg transition-colors ${
+                              usageCount > 0
+                                ? 'text-slate-200 dark:text-slate-800 cursor-not-allowed'
+                                : 'hover:bg-rose-50 dark:hover:bg-rose-950/20 text-slate-400 hover:text-rose-500 cursor-pointer'
+                            }`}
+                            title={usageCount > 0 ? "프로젝트에서 사용 중인 코드는 삭제할 수 없습니다" : "지역 코드 삭제"}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
 

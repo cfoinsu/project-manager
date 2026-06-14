@@ -6,17 +6,21 @@ import type { Assignment, User, Workload } from '../types';
 import { 
   Activity, 
   Clock, 
-  Compass, 
   ArrowRight,
   Users,
   FileText,
-  Calendar,
-  Database
+  Database,
+  Edit,
+  X
 } from 'lucide-react';
 import { openInExplorer } from '../utils/tauriBridge';
 import { RangeDatePicker } from './RangeDatePicker';
+import { getRegionCodes } from '../types';
+import { RegionPickerModal } from './RegionPickerModal';
+import { Avatar } from './Avatar';
 
 export const ProjectOverview: React.FC = () => {
+  const REGION_CODES = getRegionCodes();
   const { 
     activeProject, 
     processes, 
@@ -32,11 +36,26 @@ export const ProjectOverview: React.FC = () => {
 
   const { user, serverMode } = useAuthStore();
 
-  const [isEditingDesc, setIsEditingDesc] = useState(false);
-  const [descInput, setDescInput] = useState('');
   const [isEditingDates, setIsEditingDates] = useState(false);
   const [startDateInput, setStartDateInput] = useState('');
   const [endDateInput, setEndDateInput] = useState('');
+
+  // Edit modal states
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isRegionPickerOpen, setIsRegionPickerOpen] = useState(false);
+  const [editContractAmount, setEditContractAmount] = useState('');
+  const [editImportance, setEditImportance] = useState('');
+  const [editPriority, setEditPriority] = useState('');
+  const [editClientName, setEditClientName] = useState('');
+  const [editClientRegion, setEditClientRegion] = useState('');
+  const [editClientDepartment, setEditClientDepartment] = useState('');
+  const [editClientContactName, setEditClientContactName] = useState('');
+  const [editClientContactPhone, setEditClientContactPhone] = useState('');
+  const [editClientContactEmail, setEditClientContactEmail] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editBusinessPurpose, setEditBusinessPurpose] = useState('');
+  const [editMajorScope, setEditMajorScope] = useState('');
+  const [editSpecialNotes, setEditSpecialNotes] = useState('');
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [workloads, setWorkloads] = useState<Workload[]>([]);
@@ -45,7 +64,6 @@ export const ProjectOverview: React.FC = () => {
 
   useEffect(() => {
     if (activeProject) {
-      setDescInput(activeProject.description || '');
       setStartDateInput(activeProject.start_date || '');
       setEndDateInput(activeProject.end_date || '');
     }
@@ -82,13 +100,47 @@ export const ProjectOverview: React.FC = () => {
     }
   };
 
-  const handleSaveDescription = async () => {
+  const handleOpenEditModal = () => {
+    if (!activeProject) return;
+    setEditContractAmount(activeProject.contract_amount || '');
+    setEditImportance(activeProject.importance || 'Medium');
+    setEditPriority(activeProject.priority || 'P3');
+    setEditClientName(activeProject.client_name || '');
+    setEditClientRegion(activeProject.client_region || '');
+    setEditClientDepartment(activeProject.client_department || '');
+    setEditClientContactName(activeProject.client_contact_name || '');
+    setEditClientContactPhone(activeProject.client_contact_phone || '');
+    setEditClientContactEmail(activeProject.client_contact_email || '');
+    setEditDescription(activeProject.description || '');
+    setEditBusinessPurpose(activeProject.business_purpose || '');
+    setEditMajorScope(activeProject.major_scope || '');
+    setEditSpecialNotes(activeProject.special_notes || '');
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveAllInfo = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!activeProject) return;
     try {
-      await updateProjectInfo(activeProject.id, { description: descInput });
-      setIsEditingDesc(false);
+      await updateProjectInfo(activeProject.id, {
+        contract_amount: editContractAmount,
+        importance: editImportance,
+        priority: editPriority,
+        client_name: editClientName,
+        client_region: editClientRegion,
+        client_department: editClientDepartment,
+        client_contact_name: editClientContactName,
+        client_contact_phone: editClientContactPhone,
+        client_contact_email: editClientContactEmail,
+        description: editDescription,
+        business_purpose: editBusinessPurpose,
+        major_scope: editMajorScope,
+        special_notes: editSpecialNotes,
+      });
+      setIsEditModalOpen(false);
     } catch (e) {
-      console.error('Failed to update project description:', e);
+      console.error('Failed to save project details:', e);
+      alert('프로젝트 개요 정보 수정에 실패했습니다.');
     }
   };
 
@@ -105,29 +157,15 @@ export const ProjectOverview: React.FC = () => {
     }
   };
 
-  // 이름의 이니셜 추출 및 그라디언트 색상 결정
-  const getAvatarInfo = (name: string) => {
-    const cleanName = name.trim();
-    const initial = cleanName ? cleanName.charAt(0) : '?';
-    
-    // 이름 문자열 해시를 이용한 일관된 그라디언트 매핑
-    let hash = 0;
-    for (let i = 0; i < cleanName.length; i++) {
-      hash = cleanName.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const index = Math.abs(hash) % 5;
-    const gradients = [
-      'from-blue-500 to-indigo-600 text-white',
-      'from-emerald-400 to-teal-600 text-white',
-      'from-purple-500 to-pink-600 text-white',
-      'from-amber-400 to-orange-600 text-white',
-      'from-rose-500 to-red-600 text-white'
-    ];
-    return {
-      initial,
-      gradient: gradients[index]
-    };
+  const formatCurrency = (val?: string) => {
+    if (!val) return '등록 안 됨';
+    const cleanNum = val.replace(/[^0-9]/g, '');
+    if (!cleanNum) return val;
+    const num = parseInt(cleanNum, 10);
+    return `${num.toLocaleString()}원`;
   };
+
+  // getAvatarInfo removed to satisfy compiler
 
   // D-Day 계산
   const dDayMetrics = useMemo(() => {
@@ -365,7 +403,6 @@ export const ProjectOverview: React.FC = () => {
 
   return (
     <div className="cds--overview-container animate-slide-up select-none text-left w-full h-full overflow-y-auto pr-3 space-y-6 scrollbar-thin p-1 pb-12">
-      
       {/* Overview Top bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 select-none shrink-0 border-b border-slate-100 dark:border-slate-800/60 pb-5">
         <div className="flex flex-col text-left">
@@ -385,23 +422,33 @@ export const ProjectOverview: React.FC = () => {
           </div>
         </div>
         
-        <button
-          onClick={scanAndSync}
-          className="px-4 py-2.5 rounded-xl bg-toss-blue text-white hover:bg-blue-600 transition-all cursor-pointer font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-98"
-        >
-          <Activity className="w-4.5 h-4.5 text-white animate-pulse" />
-          <span>폴더 구조 동기화 및 건강도 진단</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleOpenEditModal}
+            className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-855 text-slate-650 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-98"
+          >
+            <Edit className="w-3.5 h-3.5" />
+            <span>정보 수정</span>
+          </button>
+
+          <button
+            onClick={scanAndSync}
+            className="px-4 py-2.5 rounded-xl bg-toss-blue text-white hover:bg-blue-600 transition-all cursor-pointer font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-98"
+          >
+            <Activity className="w-4.5 h-4.5 text-white animate-pulse" />
+            <span>폴더 구조 동기화 및 건강도 진단</span>
+          </button>
+        </div>
       </div>
 
       {/* 1. 최상단 중요도 지표 3열 그리드 (시각화 링 대시보드 포함) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         
-        {/* Card A: 3중 동심원 헬스 링 대시보드 */}
-        <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col md:flex-row items-center justify-around gap-6 group hover:shadow-md transition-shadow">
+        {/* Card A: 프로젝트 상태 */}
+        <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col items-center justify-between gap-6 group hover:shadow-md transition-shadow xl:col-span-1 min-h-[380px]">
           {/* Radial Activity Rings SVG */}
-          <div className="relative w-44 h-44 shrink-0 flex items-center justify-center">
-            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 160 160">
+          <div className="relative w-40 h-40 shrink-0 flex items-center justify-center">
+            <svg className="w-full h-full" viewBox="0 0 160 160" style={{ transform: 'rotate(-90deg)' }}>
               {/* Outer Track & Ring (Overall Progress) */}
               <circle cx="80" cy="80" r="65" fill="none" stroke={rings.progress.bg} strokeWidth="10" />
               <circle 
@@ -442,50 +489,24 @@ export const ProjectOverview: React.FC = () => {
             </div>
           </div>
 
-          {/* Legend Details */}
-          <div className="flex flex-col gap-3.5 w-full text-left min-w-0">
-            <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">핵심 성과 메트릭</span>
-            
-            <div className="flex flex-col gap-2.5">
-              <div className="flex items-center justify-between text-xs font-bold gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: rings.progress.color }} />
-                  <span className="text-slate-650 dark:text-slate-350 truncate">전체 공정 진행률</span>
-                </div>
-                <span className="text-slate-800 dark:text-slate-100 font-extrabold shrink-0">{totalProgress}%</span>
-              </div>
-
-              <div className="flex items-center justify-between text-xs font-bold gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: rings.time.color }} />
-                  <span className="text-slate-650 dark:text-slate-350 truncate">계획 일정 소모율</span>
-                </div>
-                <span className="text-slate-800 dark:text-slate-100 font-extrabold shrink-0">
-                  {timeElapsedPercent !== null ? `${timeElapsedPercent}%` : '미지정'}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between text-xs font-bold gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: rings.docs.color }} />
-                  <span className="text-slate-650 dark:text-slate-350 truncate">필수 문서 완료율</span>
-                </div>
-                <span className="text-slate-800 dark:text-slate-100 font-extrabold shrink-0">{documentMetrics.percent}%</span>
-              </div>
+          {/* Details */}
+          <div className="flex flex-col gap-2.5 w-full text-left min-w-0">
+            <div className="flex justify-between items-center border-b border-gray-100/50 dark:border-slate-800/50 pb-2">
+              <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">프로젝트 상태</span>
+              {!isEditingDates && (
+                <button 
+                  onClick={() => setIsEditingDates(true)}
+                  className="text-[10px] font-bold text-toss-blue hover:underline bg-transparent border-none cursor-pointer flex items-center gap-0.5"
+                >
+                  일정 변경
+                </button>
+              )}
             </div>
-          </div>
-        </div>
-
-        {/* Card B: 프로젝트 요약 정보 */}
-        {isEditingDates ? (
-          <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between min-h-[200px] hover:shadow-md transition-shadow text-left">
-            <div className="w-full">
-              <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-3">
-                <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">프로젝트 일정 설정</span>
-              </div>
-              <div className="flex flex-col gap-3 text-xs font-bold mt-2">
-                <div className="flex flex-col gap-1.5 text-left">
-                  <span className="text-toss-gray-450 dark:text-slate-500 text-[10px]">계약 수행 기간</span>
+            
+            {isEditingDates ? (
+              <div className="flex flex-col gap-2.5 text-xs font-bold pt-1">
+                <div className="flex flex-col gap-1 text-left">
+                  <span className="text-toss-gray-455 dark:text-slate-500 text-[9px] font-bold">계약 수행 기간</span>
                   <RangeDatePicker
                     startDate={startDateInput}
                     endDate={endDateInput}
@@ -496,125 +517,419 @@ export const ProjectOverview: React.FC = () => {
                     placeholder="프로젝트 기간 선택"
                   />
                 </div>
-                <div className="flex justify-end gap-2 mt-4">
+                <div className="flex justify-end gap-1.5 mt-1">
                   <button 
                     onClick={() => {
                       setIsEditingDates(false);
                       setStartDateInput(activeProject.start_date || '');
                       setEndDateInput(activeProject.end_date || '');
                     }}
-                    className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-gray-100 hover:bg-gray-250 text-toss-gray-650 dark:bg-slate-800 dark:text-slate-400 border-none cursor-pointer"
+                    className="px-2 py-1 text-[10px] font-bold rounded-lg bg-gray-100 hover:bg-gray-250 text-toss-gray-655 dark:bg-slate-850 dark:text-slate-450 border-none cursor-pointer"
                   >
                     취소
                   </button>
                   <button 
                     onClick={handleSaveDates}
-                    className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-toss-blue hover:bg-blue-600 text-white border-none cursor-pointer"
+                    className="px-2 py-1 text-[10px] font-bold rounded-lg bg-toss-blue hover:bg-blue-600 text-white border-none cursor-pointer"
                   >
                     저장
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
-        ) : (
-          <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between min-h-[200px] hover:shadow-md transition-shadow text-left">
-            <div className="w-full">
-              <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-2.5">
-                <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">프로젝트 기본 정보</span>
-                <button 
-                  onClick={() => setIsEditingDates(true)}
-                  className="text-xs font-bold text-toss-blue hover:underline bg-transparent border-none cursor-pointer flex items-center gap-0.5"
-                >
-                  <Calendar className="w-3 h-3" /> 일정 변경
-                </button>
-              </div>
-              <div className="flex flex-col gap-2 text-xs font-bold text-slate-650 dark:text-slate-350">
+            ) : (
+              <div className="flex flex-col gap-1.5 text-xs font-bold text-slate-650 dark:text-slate-350">
                 <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-800/20">
-                  <span className="text-slate-400 dark:text-slate-550 font-medium">프로젝트 성격</span>
+                  <span className="text-slate-400 dark:text-slate-550 font-medium">상태</span>
                   <span className="text-slate-800 dark:text-slate-150 font-black">{activeProject.status}</span>
                 </div>
                 <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-800/20">
-                  <span className="text-slate-400 dark:text-slate-550 font-medium">시작일</span>
-                  <span className="text-slate-800 dark:text-slate-150 font-black">{activeProject.start_date || '미지정'}</span>
+                  <span className="text-slate-400 dark:text-slate-550 font-medium">진행률</span>
+                  <span className="text-toss-blue dark:text-sky-400 font-black">{totalProgress}%</span>
                 </div>
                 <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-800/20">
-                  <span className="text-slate-400 dark:text-slate-550 font-medium">종료일</span>
-                  <span className="text-slate-800 dark:text-slate-150 font-black">{activeProject.end_date || '미지정'}</span>
+                  <span className="text-slate-400 dark:text-slate-550 font-medium">수행 기간</span>
+                  <span className="text-slate-800 dark:text-slate-150 font-black text-[10.5px]">
+                    {activeProject.start_date || '미지정'} ~ {activeProject.end_date || '미지정'}
+                  </span>
                 </div>
-                <div className="flex flex-col gap-1 pt-1.5 mt-0.5">
-                  <span className="text-[9.5px] font-black text-slate-400 dark:text-slate-550 uppercase flex items-center gap-1"><Database className="w-3 h-3 text-toss-blue" /> 로컬 디렉토리 경로</span>
-                  <span className="font-mono bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 rounded-xl text-[9.5px] text-slate-500 dark:text-slate-400 break-all select-all text-left border border-slate-100 dark:border-slate-800/40">
+                <div className="flex flex-col gap-1 pt-1.5">
+                  <span className="text-[9px] font-black text-slate-400 dark:text-slate-550 uppercase flex items-center gap-1">
+                    <Database className="w-3 h-3 text-toss-blue" /> 로컬 디렉토리 경로
+                  </span>
+                  <span className="font-mono bg-slate-50/50 dark:bg-slate-950 px-2 py-1.5 rounded-xl text-[9px] text-slate-500 dark:text-slate-400 break-all select-all text-left border border-slate-100 dark:border-slate-800/40 leading-tight">
                     {activeProject.path}
                   </span>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Card C: 프로젝트 설명 편집 및 관리 */}
-        <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between min-h-[200px] hover:shadow-md transition-shadow text-left">
-          <div className="w-full flex flex-col h-full justify-between">
-            <div className="w-full">
-              <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-2.5">
-                <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">세부 정보 설명</span>
-                {!isEditingDesc && (
-                  <button 
-                    onClick={() => setIsEditingDesc(true)}
-                    className="text-xs font-bold text-toss-blue hover:underline bg-transparent border-none cursor-pointer"
-                  >
-                    설명 수정
-                  </button>
-                )}
-              </div>
-
-              {isEditingDesc ? (
-                <div className="flex flex-col gap-2">
-                  <textarea
-                    value={descInput}
-                    onChange={(e) => setDescInput(e.target.value)}
-                    placeholder="프로젝트의 주요 목표나 산출 규칙 등을 상세히 기록하세요."
-                    className="w-full h-20 p-2.5 text-xs rounded-xl border border-gray-200 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-850/50 text-slate-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-toss-blue resize-none scrollbar-thin text-left font-semibold"
-                  />
-                  <div className="flex justify-end gap-1.5">
-                    <button 
-                      onClick={() => {
-                        setIsEditingDesc(false);
-                        setDescInput(activeProject.description || '');
-                      }}
-                      className="px-2 py-1 text-[11px] font-bold rounded-lg bg-gray-100 hover:bg-gray-200 text-toss-gray-600 dark:bg-slate-800 dark:text-slate-400 border-none cursor-pointer"
-                    >
-                      취소
-                    </button>
-                    <button 
-                      onClick={handleSaveDescription}
-                      className="px-2 py-1 text-[11px] font-bold rounded-lg bg-toss-blue hover:bg-blue-600 text-white border-none cursor-pointer"
-                    >
-                      저장
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-wrap text-left max-h-24 overflow-y-auto scrollbar-thin font-medium">
-                  {activeProject.description || '등록된 프로젝트 세부 설명이 없습니다. "설명 수정"을 통해 업무 요건 및 규칙을 메모해 보세요.'}
-                </p>
-              )}
-            </div>
-            
-            {!isEditingDesc && (
-              <button
-                onClick={() => handleOpenFolder(activeProject.path)}
-                className="w-full py-2 mt-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/30 hover:bg-slate-100/60 dark:hover:bg-slate-800/40 text-slate-600 dark:text-slate-350 transition-colors font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
-              >
-                <Compass className="w-3.5 h-3.5 text-toss-blue" />
-                <span>로컬 탐색기에서 프로젝트 디렉토리 열기</span>
-              </button>
             )}
           </div>
         </div>
 
+        {/* Card B: 사업 정보 */}
+        <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between min-h-[380px] hover:shadow-md transition-shadow text-left">
+          <div className="w-full">
+            <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-3.5">
+              <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">사업 정보</span>
+            </div>
+            
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">계약금액</span>
+                <span className="text-base font-extrabold text-slate-850 dark:text-slate-100 leading-snug">
+                  {formatCurrency(activeProject.contract_amount)}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">중요도</span>
+                  <div className="flex">
+                    {activeProject.importance ? (
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold border ${
+                        activeProject.importance === 'Critical' ? 'text-rose-600 bg-rose-50 border-rose-100 dark:bg-rose-955/25 dark:border-rose-900/50' :
+                        activeProject.importance === 'High' ? 'text-amber-600 bg-amber-50 border-amber-100 dark:bg-amber-955/25 dark:border-amber-900/50' :
+                        activeProject.importance === 'Medium' ? 'text-toss-blue bg-blue-50 border-blue-100 dark:bg-blue-955/25 dark:border-blue-900/50' :
+                        'text-slate-600 bg-slate-50 border-slate-150 dark:bg-slate-800/40 dark:border-slate-700/50'
+                      }`}>
+                        {activeProject.importance}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400 font-bold italic">미지정</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">우선순위</span>
+                  <div className="flex">
+                    {activeProject.priority ? (
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold border ${
+                        activeProject.priority === 'P1' ? 'text-rose-600 bg-rose-50 border-rose-100 dark:bg-rose-955/25 dark:border-rose-900/50' :
+                        activeProject.priority === 'P2' ? 'text-orange-600 bg-orange-50 border-orange-100 dark:bg-orange-955/25 dark:border-orange-900/50' :
+                        activeProject.priority === 'P3' ? 'text-toss-blue bg-blue-50 border-blue-100 dark:bg-blue-955/25 dark:border-blue-900/50' :
+                        'text-slate-600 bg-slate-50 border-slate-150 dark:bg-slate-800/40 dark:border-slate-700/50'
+                      }`}>
+                        {activeProject.priority}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400 font-bold italic">미지정</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Card C: 발주처 정보 */}
+        <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between min-h-[380px] hover:shadow-md transition-shadow text-left">
+          <div className="w-full">
+            <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-3.5">
+              <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">발주처 정보</span>
+            </div>
+
+            <div className="flex flex-col gap-2.5 text-xs font-bold text-slate-750 dark:text-slate-300">
+              <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-800/20">
+                <span className="text-slate-400 dark:text-slate-500 font-medium">발주처명</span>
+                <span className="text-slate-800 dark:text-slate-150 font-black">
+                  {activeProject.client_name || <span className="text-slate-400 font-bold italic">미지정</span>}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-800/20">
+                <span className="text-slate-400 dark:text-slate-500 font-medium">지역</span>
+                <span className="text-slate-800 dark:text-slate-150 font-black">
+                  {activeProject.client_region || <span className="text-slate-400 font-bold italic">미지정</span>}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-800/20">
+                <span className="text-slate-400 dark:text-slate-500 font-medium">담당 부서</span>
+                <span className="text-slate-800 dark:text-slate-150 font-black">
+                  {activeProject.client_department || <span className="text-slate-400 font-bold italic">미지정</span>}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-800/20">
+                <span className="text-slate-400 dark:text-slate-500 font-medium">담당자</span>
+                <span className="text-slate-800 dark:text-slate-150 font-black">
+                  {activeProject.client_contact_name || <span className="text-slate-400 font-bold italic">미지정</span>}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-slate-800/20">
+                <span className="text-slate-400 dark:text-slate-500 font-medium">연락처</span>
+                <span className="text-slate-800 dark:text-slate-150 font-black">
+                  {activeProject.client_contact_phone || <span className="text-slate-400 font-bold italic">미지정</span>}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-0.5">
+                <span className="text-slate-400 dark:text-slate-500 font-medium">이메일</span>
+                <span className="text-slate-800 dark:text-slate-150 font-black select-all text-[11px] truncate max-w-[150px] md:max-w-none">
+                  {activeProject.client_contact_email || <span className="text-slate-400 font-bold italic">미지정</span>}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
+
+      {/* 프로젝트 개요 (설명, 사업 목적, 주요 범위, 특이사항) */}
+      <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm hover:shadow-md transition-shadow text-left">
+        <div className="flex items-center justify-between border-b border-gray-100/50 dark:border-slate-800/50 pb-3 mb-4">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-toss-blue shrink-0"></span>
+            <span className="text-sm font-black text-slate-800 dark:text-slate-200">프로젝트 개요 및 범위</span>
+          </div>
+          <button
+            onClick={() => handleOpenFolder(activeProject.path)}
+            className="text-[10px] font-bold text-toss-blue hover:underline bg-transparent border-none cursor-pointer flex items-center gap-0.5"
+          >
+            폴더 열기
+          </button>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="flex flex-col gap-1.5 text-left">
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">프로젝트 설명</span>
+            <div className="bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-800/40 p-4.5 rounded-2xl text-xs font-semibold text-slate-650 dark:text-slate-350 min-h-[80px] whitespace-pre-wrap leading-relaxed">
+              {activeProject.description || <span className="text-slate-400 italic">등록된 프로젝트 설명이 없습니다.</span>}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5 text-left">
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">사업 목적</span>
+            <div className="bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-800/40 p-4.5 rounded-2xl text-xs font-semibold text-slate-650 dark:text-slate-355 min-h-[80px] whitespace-pre-wrap leading-relaxed">
+              {activeProject.business_purpose || <span className="text-slate-400 italic">등록된 사업 목적이 없습니다.</span>}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5 text-left">
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">주요 범위</span>
+            <div className="bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-800/40 p-4.5 rounded-2xl text-xs font-semibold text-slate-650 dark:text-slate-355 min-h-[80px] whitespace-pre-wrap leading-relaxed">
+              {activeProject.major_scope || <span className="text-slate-400 italic">등록된 주요 범위가 없습니다.</span>}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5 text-left">
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">특이사항</span>
+            <div className="bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-800/40 p-4.5 rounded-2xl text-xs font-semibold text-slate-650 dark:text-slate-355 min-h-[80px] whitespace-pre-wrap leading-relaxed">
+              {activeProject.special_notes || <span className="text-slate-400 italic">등록된 특이사항이 없습니다.</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 프로젝트 개요 정보 수정 모달 */}
+      {isEditModalOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-955/40 dark:bg-slate-955/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setIsEditModalOpen(false)}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[28px] p-6 shadow-toss-lg max-w-2xl w-full max-h-[85vh] overflow-y-auto text-left animate-scale-in flex flex-col gap-5 scrollbar-thin"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex flex-col text-left">
+                <span className="text-xs font-bold text-toss-blue">Project Information Settings</span>
+                <h3 className="text-base font-extrabold text-toss-gray-900 dark:text-slate-100 mt-0.5">프로젝트 정보 수정</h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="p-2 rounded-xl hover:bg-toss-gray-100 dark:hover:bg-slate-800 text-toss-gray-400 cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAllInfo} className="flex flex-col gap-5">
+              {/* 사업 정보 */}
+              <div className="flex flex-col gap-3">
+                <h4 className="text-xs font-black text-toss-blue uppercase tracking-wider text-left">■ 사업 정보</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">계약금액 (원)</label>
+                    <input 
+                      type="text" 
+                      value={editContractAmount} 
+                      onChange={e => setEditContractAmount(e.target.value)} 
+                      placeholder="예: 45,000,000"
+                      className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-toss-blue/15 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">중요도</label>
+                    <select 
+                      value={editImportance} 
+                      onChange={e => setEditImportance(e.target.value)}
+                      className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-toss-blue/15 text-slate-800 dark:text-slate-100"
+                    >
+                      <option value="Critical">Critical</option>
+                      <option value="High">High</option>
+                      <option value="Medium">Medium</option>
+                      <option value="Low">Low</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">우선순위</label>
+                    <select 
+                      value={editPriority} 
+                      onChange={e => setEditPriority(e.target.value)}
+                      className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-toss-blue/15 text-slate-800 dark:text-slate-100"
+                    >
+                      <option value="P1">P1</option>
+                      <option value="P2">P2</option>
+                      <option value="P3">P3</option>
+                      <option value="P4">P4</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 발주처 정보 */}
+              <div className="flex flex-col gap-3">
+                <h4 className="text-xs font-black text-toss-blue uppercase tracking-wider text-left">■ 발주처 정보</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">발주처명</label>
+                    <input 
+                      type="text" 
+                      value={editClientName} 
+                      onChange={e => setEditClientName(e.target.value)} 
+                      placeholder="예: 홍천군청"
+                      className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-toss-blue/15 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">지역</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsRegionPickerOpen(true)}
+                      className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-toss-blue/15 text-slate-800 dark:text-slate-100 text-left flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors h-[38px] cursor-pointer"
+                    >
+                      <span>{editClientRegion || '지역 선택'}</span>
+                      <span className="text-slate-400 text-[10px]">선택</span>
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">담당 부서</label>
+                    <input 
+                      type="text" 
+                      value={editClientDepartment} 
+                      onChange={e => setEditClientDepartment(e.target.value)} 
+                      placeholder="예: 관광과"
+                      className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-toss-blue/15 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">담당자</label>
+                    <input 
+                      type="text" 
+                      value={editClientContactName} 
+                      onChange={e => setEditClientContactName(e.target.value)} 
+                      placeholder="예: 홍길동 주무관"
+                      className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-toss-blue/15 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">연락처</label>
+                    <input 
+                      type="text" 
+                      value={editClientContactPhone} 
+                      onChange={e => setEditClientContactPhone(e.target.value)} 
+                      placeholder="예: 033-430-1234"
+                      className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-toss-blue/15 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">이메일</label>
+                    <input 
+                      type="email" 
+                      value={editClientContactEmail} 
+                      onChange={e => setEditClientContactEmail(e.target.value)} 
+                      placeholder="예: abc@korea.kr"
+                      className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-toss-blue/15 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 프로젝트 개요 */}
+              <div className="flex flex-col gap-3">
+                <h4 className="text-xs font-black text-toss-blue uppercase tracking-wider text-left">■ 프로젝트 개요</h4>
+                <div className="flex flex-col gap-3.5 text-left">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">프로젝트 설명</label>
+                    <textarea 
+                      value={editDescription} 
+                      onChange={e => setEditDescription(e.target.value)} 
+                      placeholder="프로젝트 요건 및 기본 설명을 작성해 주세요."
+                      rows={2}
+                      className="w-full text-xs font-semibold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-toss-blue/15 resize-none text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">사업 목적</label>
+                    <textarea 
+                      value={editBusinessPurpose} 
+                      onChange={e => setEditBusinessPurpose(e.target.value)} 
+                      placeholder="사업의 주요 추진 배경 및 목적을 작성해 주세요."
+                      rows={2}
+                      className="w-full text-xs font-semibold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-toss-blue/15 resize-none text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">주요 범위</label>
+                    <textarea 
+                      value={editMajorScope} 
+                      onChange={e => setEditMajorScope(e.target.value)} 
+                      placeholder="수행할 업무 과업 및 설계 범위를 기술해 주세요."
+                      rows={2}
+                      className="w-full text-xs font-semibold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-toss-blue/15 resize-none text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-500">특이사항</label>
+                    <textarea 
+                      value={editSpecialNotes} 
+                      onChange={e => setEditSpecialNotes(e.target.value)} 
+                      placeholder="추가 약정이나 사업 특수 조건 등의 특이사항을 명시해 주세요."
+                      rows={2}
+                      className="w-full text-xs font-semibold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-toss-blue/15 resize-none text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 저장 / 취소 버튼 */}
+              <div className="flex justify-end gap-2 border-t border-slate-100 dark:border-slate-800 pt-4 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 rounded-xl bg-toss-blue text-white text-xs font-extrabold hover:bg-blue-600 cursor-pointer"
+                >
+                  저장하기
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <RegionPickerModal
+        isOpen={isRegionPickerOpen}
+        onClose={() => setIsRegionPickerOpen(false)}
+        onSelect={(code) => {
+          const selectedRegionName = REGION_CODES.find(r => r.code === code)?.name || code;
+          setEditClientRegion(selectedRegionName);
+        }}
+      />
 
       {/* 2. 대시보드 중앙: 일간 / 주간 / 월간 작업량 통합 분석 차트 (SVG 시각화) */}
       <div className="p-6 rounded-[28px] border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-900/60 shadow-sm hover:shadow-md transition-shadow">
@@ -1015,7 +1330,6 @@ export const ProjectOverview: React.FC = () => {
               <div className="flex flex-col max-h-56 overflow-y-auto pr-0.5 scrollbar-thin">
                 {assignments.map(assign => {
                   const userDetail = users.find(u => u.id === assign.user_id);
-                  const avatar = getAvatarInfo(assign.user_name || 'U');
                   
                   let pctColor = 'text-toss-gray-500 bg-toss-gray-100 dark:bg-slate-800 dark:text-slate-400';
                   if (assign.allocation_percent >= 100) {
@@ -1033,9 +1347,11 @@ export const ProjectOverview: React.FC = () => {
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         {/* Circle Avatar */}
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-[11px] shrink-0 bg-gradient-to-br ${avatar.gradient}`}>
-                          {avatar.initial}
-                        </div>
+                        <Avatar
+                          name={assign.user_name}
+                          profileImage={userDetail?.profile_image || assign.user_profile_image}
+                          className="w-7 h-7 text-[11px] font-black shrink-0"
+                        />
                         {/* Name and Position */}
                         <div className="flex flex-col text-left min-w-0">
                           <div className="flex items-baseline gap-1">

@@ -11,7 +11,7 @@ const router = express.Router();
 router.get('/', verifyToken, async (req, res) => {
   try {
     let sql = `
-      SELECT a.*, u.name as user_name, u.email as user_email, p.name as project_name, p.code as project_code
+      SELECT a.*, u.name as user_name, u.email as user_email, u.profile_image as user_profile_image, p.name as project_name, p.code as project_code
       FROM assignments a
       JOIN users u ON a.user_id = u.id
       JOIN projects p ON a.project_id = p.id
@@ -64,7 +64,7 @@ router.post('/', verifyToken, checkRole(['admin', 'manager']), async (req, res) 
     );
 
     const newAssignment = await dbGet(`
-      SELECT a.*, u.name as user_name, u.email as user_email, p.name as project_name, p.code as project_code
+      SELECT a.*, u.name as user_name, u.email as user_email, u.profile_image as user_profile_image, p.name as project_name, p.code as project_code
       FROM assignments a
       JOIN users u ON a.user_id = u.id
       JOIN projects p ON a.project_id = p.id
@@ -127,7 +127,7 @@ router.put('/:id', verifyToken, checkRole(['admin', 'manager']), async (req, res
     await dbRun(`UPDATE assignments SET ${updateFields.join(', ')} WHERE id = ?`, params);
 
     const updated = await dbGet(`
-      SELECT a.*, u.name as user_name, u.email as user_email, p.name as project_name, p.code as project_code
+      SELECT a.*, u.name as user_name, u.email as user_email, u.profile_image as user_profile_image, p.name as project_name, p.code as project_code
       FROM assignments a
       JOIN users u ON a.user_id = u.id
       JOIN projects p ON a.project_id = p.id

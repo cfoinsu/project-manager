@@ -5,6 +5,7 @@ import {
   ShieldCheck, 
   Plus, 
   ChevronRight, 
+  ChevronDown,
   Activity, 
   PlayCircle, 
   CheckCircle,
@@ -18,16 +19,21 @@ import {
   MoreVertical
 } from 'lucide-react';
 import type { Project } from '../types';
-import { REGION_CODES, PROJECT_TYPE_CODES } from '../types';
+import { getRegionCodes, PROJECT_TYPE_CODES } from '../types';
 import { selectFolderNative, isTauri } from '../utils/tauriBridge';
 import { generateProjectCode, getProcesses } from '../utils/db';
 import { RangeDatePicker } from './RangeDatePicker';
 import { CustomSelect } from './CustomSelect';
+import { RegionPickerModal } from './RegionPickerModal';
 
 export const DashboardView: React.FC = () => {
+  const REGION_CODES = getRegionCodes();
   const { projects, templates, folderTemplates, addProject, removeProject, updateProjectInfo, selectProject, setView, setPendingTab } = useProjectStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [projectStatusFilter, setProjectStatusFilter] = useState<'전체' | '대기' | '진행중' | '완료'>('전체');
+
+  const [isRegionPickerOpen, setIsRegionPickerOpen] = useState(false);
+  const [regionPickerTarget, setRegionPickerTarget] = useState<'create' | 'edit'>('create');
   
   // 로드된 각 프로젝트의 진행도 상태
   const [projectProgressMap, setProjectProgressMap] = useState<Record<string, number>>({});
@@ -842,9 +848,9 @@ export const DashboardView: React.FC = () => {
               )}
             </div>
             
-            <form onSubmit={handleCreateProject} className="flex flex-col gap-4">
+            <form onSubmit={handleCreateProject} className="flex flex-col gap-4 overflow-y-auto max-h-[75vh] pr-1.5 scrollbar-thin">
               
-              {/* ─── Project Code Section ─── */}
+              {/* ─── 1. Project Code Section ─── */}
               <div className="bg-gray-50/50 dark:bg-slate-950/45 rounded-2xl p-4 flex flex-col gap-3.5 border border-gray-100 dark:border-slate-800/40">
                 <div className="flex items-center gap-2">
                   <Hash className="w-4 h-4 text-toss-blue" />
@@ -857,17 +863,21 @@ export const DashboardView: React.FC = () => {
                     <label className="text-xs font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
                       <MapPin className="w-3 h-3" /> 지역 코드
                     </label>
-                    <CustomSelect
-                      value={regionCode}
-                      onChange={(e) => setRegionCode(e.target.value)}
-                      required
-                      className="text-xs px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-toss-blue/15 transition-all font-bold cursor-pointer"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRegionPickerTarget('create');
+                        setIsRegionPickerOpen(true);
+                      }}
+                      className="text-xs px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-toss-blue/15 transition-all font-bold cursor-pointer flex items-center justify-between text-toss-gray-800 dark:text-slate-355 hover:bg-gray-50/50 dark:hover:bg-slate-800/80 text-left h-[38px]"
                     >
-                      <option value="">선택</option>
-                      {REGION_CODES.map(r => (
-                        <option key={r.code} value={r.code}>{r.code} - {r.name}</option>
-                      ))}
-                    </CustomSelect>
+                      <span className="truncate">
+                        {regionCode 
+                          ? `${REGION_CODES.find(r => r.code === regionCode)?.name || regionCode} (${regionCode})`
+                          : '선택'}
+                      </span>
+                      <ChevronDown className="w-3.5 h-3.5 text-toss-gray-400 shrink-0" />
+                    </button>
                   </div>
 
                   {/* Project Type */}
@@ -912,35 +922,20 @@ export const DashboardView: React.FC = () => {
                 </div>
               </div>
 
-                {/* Select Process Template */}
+              {/* ─── 2. Project Name ─── */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">적용할 프로세스 템플릿 (공정 및 일정 연동)</label>
-                <CustomSelect
-                  value={selectedTemplateId}
-                  onChange={(e) => setSelectedTemplateId(e.target.value)}
-                  className="toss-input cursor-pointer text-xs"
-                >
-                  <option value="">적용할 프로세스 템플릿 선택 (선택사항)</option>
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </CustomSelect>
+                <label className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">프로젝트 명</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="프로젝트명을 입력해 주세요"
+                  required
+                  className="toss-input text-xs"
+                />
               </div>
 
-              {/* Select Folder Template */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">적용할 폴더 양식 (물리 폴더 및 서류 자동 생성)</label>
-                <CustomSelect
-                  value={selectedFolderTemplateId}
-                  onChange={(e) => setSelectedFolderTemplateId(e.target.value)}
-                  className="toss-input cursor-pointer text-xs"
-                >
-                  <option value="">적용할 폴더 양식 선택 (선택사항)</option>
-                  {folderTemplates.map(ft => (
-                    <option key={ft.id} value={ft.id}>{ft.name}</option>
-                  ))}
-                </CustomSelect>
-              </div>
+              {/* ─── 3. Project Period ─── */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">프로젝트 기간</label>
                 <RangeDatePicker
@@ -954,9 +949,9 @@ export const DashboardView: React.FC = () => {
                 />
               </div>
 
-              {/* Local Folder path with designated button */}
+              {/* ─── 4. Folder Path ─── */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">스캔할 로컬 폴더 경로</label>
+                <label className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">스캔할 로컬 폴더 경로</label>
                 <div className="flex gap-2">
                   <input 
                     type="text" 
@@ -964,7 +959,7 @@ export const DashboardView: React.FC = () => {
                     onChange={(e) => setPath(e.target.value)}
                     placeholder="예: C:\Projects\Hongcheon"
                     required
-                    className="toss-input flex-1"
+                    className="toss-input flex-1 text-xs"
                   />
                   <button
                     type="button"
@@ -979,16 +974,30 @@ export const DashboardView: React.FC = () => {
                 </span>
               </div>
 
-              {/* Select template */}
+              {/* ─── 5. Folder Template ─── */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">적용할 폴더 양식 (폴더/서류 자동 생성)</label>
+                <label className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">적용할 폴더 양식 (폴더/서류 자동 생성)</label>
+                <CustomSelect
+                  value={selectedFolderTemplateId}
+                  onChange={(e) => setSelectedFolderTemplateId(e.target.value)}
+                  className="toss-input cursor-pointer text-xs"
+                >
+                  <option value="">적용할 폴더 양식 선택 (선택사항)</option>
+                  {folderTemplates.map(ft => (
+                    <option key={ft.id} value={ft.id}>{ft.name}</option>
+                  ))}
+                </CustomSelect>
+              </div>
+
+              {/* ─── 6. Process Template ─── */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">적용할 프로세스 템플릿 (공정 및 일정 연동)</label>
                 <CustomSelect
                   value={selectedTemplateId}
                   onChange={(e) => setSelectedTemplateId(e.target.value)}
-                  required
-                  className="toss-input cursor-pointer"
+                  className="toss-input cursor-pointer text-xs"
                 >
-                  <option value="">적용할 폴더 양식 선택</option>
+                  <option value="">적용할 프로세스 템플릿 선택 (선택사항)</option>
                   {templates.map(t => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
@@ -1077,16 +1086,21 @@ export const DashboardView: React.FC = () => {
                     <label className="text-xs font-bold text-toss-gray-400 dark:text-slate-500 flex items-center gap-1">
                       <MapPin className="w-3 h-3" /> 새 지역 코드
                     </label>
-                    <CustomSelect
-                      value={editRegionCode}
-                      onChange={(e) => setEditRegionCode(e.target.value)}
-                      className="text-xs px-3 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-toss-blue/15 font-bold cursor-pointer"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRegionPickerTarget('edit');
+                        setIsRegionPickerOpen(true);
+                      }}
+                      className="text-xs px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-toss-blue/15 transition-all font-bold cursor-pointer flex items-center justify-between text-toss-gray-800 dark:text-slate-355 hover:bg-gray-50/50 dark:hover:bg-slate-800/80 text-left h-[38px]"
                     >
-                      <option value="">유지</option>
-                      {REGION_CODES.map(r => (
-                        <option key={r.code} value={r.code}>{r.code} - {r.name}</option>
-                      ))}
-                    </CustomSelect>
+                      <span className="truncate">
+                        {editRegionCode 
+                          ? `${REGION_CODES.find(r => r.code === editRegionCode)?.name || editRegionCode} (${editRegionCode})`
+                          : '유지'}
+                      </span>
+                      <ChevronDown className="w-3.5 h-3.5 text-toss-gray-400 shrink-0" />
+                    </button>
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-bold text-toss-gray-400 dark:text-slate-500 flex items-center gap-1">
@@ -1193,6 +1207,18 @@ export const DashboardView: React.FC = () => {
           </div>
         );
       })()}
+
+      <RegionPickerModal
+        isOpen={isRegionPickerOpen}
+        onClose={() => setIsRegionPickerOpen(false)}
+        onSelect={(code) => {
+          if (regionPickerTarget === 'create') {
+            setRegionCode(code);
+          } else {
+            setEditRegionCode(code);
+          }
+        }}
+      />
     </div>
   );
 };

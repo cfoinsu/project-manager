@@ -16,6 +16,13 @@ interface AuthState {
   login: (username: string, password: string) => Promise<{ success: boolean; status?: 'device_registration_required' | 'success'; userId?: string; error?: string }>;
   registerCurrentDevice: (userId: string) => Promise<boolean>;
   changePassword: (newPassword: string) => Promise<boolean>;
+  updateUserProfile: (updates: {
+    name: string;
+    email?: string | null;
+    phone?: string | null;
+    profile_image?: string | null;
+    password?: string | null;
+  }) => Promise<boolean>;
   logout: () => void;
   checkSession: () => Promise<void>;
   clearError: () => void;
@@ -159,6 +166,22 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({ user: u });
       }
       set({ loading: false });
+      return true;
+    } catch (err: any) {
+      set({ error: err.message, loading: false });
+      return false;
+    }
+  },
+
+  updateUserProfile: async (updates) => {
+    set({ loading: true, error: null });
+    try {
+      const isServer = useAuthStore.getState().serverMode;
+      const currentUser = useAuthStore.getState().user;
+      if (!currentUser) throw new Error('로그인 정보가 없습니다.');
+      const updatedUser = await api.updateUserProfile(isServer, currentUser.id, updates);
+      localStorage.setItem('pa_user', JSON.stringify(updatedUser));
+      set({ user: updatedUser, loading: false });
       return true;
     } catch (err: any) {
       set({ error: err.message, loading: false });

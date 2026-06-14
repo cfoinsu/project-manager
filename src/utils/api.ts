@@ -346,7 +346,9 @@ export const addUser = async (serverMode: boolean, user: Omit<User, 'id'> & { pa
       role: user.role,
       department: user.department || null,
       position: user.position || null,
-      job_role: user.job_role || null
+      job_role: user.job_role || null,
+      phone: user.phone || null,
+      profile_image: user.profile_image || null
     });
   } else {
     return localFallbackAddUser(user);
@@ -377,7 +379,9 @@ export const updateUser = async (
       status: updates.status || null,
       department: updates.department || null,
       position: updates.position || null,
-      job_role: updates.job_role || null
+      job_role: updates.job_role || null,
+      phone: updates.phone || null,
+      profile_image: updates.profile_image || null
     });
   } else {
     if (updates.adminPassword && updates.adminPassword !== 'admin123') {
@@ -472,6 +476,72 @@ export const changePassword = async (
     if (!userJson) throw new Error('로그인 정보가 없습니다.');
     const me = JSON.parse(userJson);
     localFallbackChangePassword(me.id);
+  }
+};
+
+export const updateUserProfile = async (
+  serverMode: boolean,
+  id: string,
+  updates: {
+    name: string;
+    email?: string | null;
+    phone?: string | null;
+    profile_image?: string | null;
+    password?: string | null;
+  }
+): Promise<User> => {
+  if (serverMode) {
+    const data = await apiRequest('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+    return data.user;
+  } else if (isTauri()) {
+    const invoke = await getInvoke();
+    let passwordHash: string | null = null;
+    if (updates.password) {
+      const salt = bcrypt.genSaltSync(10);
+      passwordHash = bcrypt.hashSync(updates.password, salt);
+    }
+    return invoke('db_update_profile', {
+      id,
+      name: updates.name,
+      email: updates.email || null,
+      phone: updates.phone || null,
+      profileImage: updates.profile_image || null,
+      passwordHash: passwordHash || null
+    });
+  } else {
+    const users = JSON.parse(localStorage.getItem('pa_fallback_users') || '[]');
+    const idx = users.findIndex((u: any) => u.id === id);
+    if (idx > -1) {
+      const updated = {
+        ...users[idx],
+        name: updates.name,
+        email: updates.email || null,
+        phone: updates.phone || null,
+        profile_image: updates.profile_image || null,
+        updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19)
+      };
+      users[idx] = updated;
+      localStorage.setItem('pa_fallback_users', JSON.stringify(users));
+      return updated;
+    }
+    throw new Error('사용자를 찾을 수 없습니다.');
+  }
+};
+
+export const getAdminContact = async (serverMode: boolean): Promise<User | null> => {
+  if (serverMode) {
+    const data = await apiRequest('/auth/admin-contact');
+    return data.admin;
+  } else if (isTauri()) {
+    const invoke = await getInvoke();
+    return invoke('db_get_admin_contact');
+  } else {
+    const users = JSON.parse(localStorage.getItem('pa_fallback_users') || '[]');
+    const admin = users.find((u: any) => u.role === 'admin');
+    return admin || null;
   }
 };
 

@@ -17,7 +17,7 @@ const verifyAdminPassword = async (adminId, password) => {
 
 // 1. POST /auth/register - admin만 호출 가능 (신규 사용자 추가)
 router.post('/register', verifyToken, checkRole(['admin']), async (req, res) => {
-  const { username, name, email, password, role, department, position, job_role } = req.body;
+  const { username, name, email, password, role, department, position, job_role, phone, profile_image } = req.body;
 
   if (!username || !name || !password || !role) {
     return res.status(400).json({ message: '필수 필드(username, name, password, role)를 입력해 주세요.' });
@@ -40,13 +40,13 @@ router.post('/register', verifyToken, checkRole(['admin']), async (req, res) => 
     const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
     await dbRun(
-      'INSERT INTO users (id, username, name, email, password_hash, role, status, force_password_change, department, position, job_role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [userId, username, name, email || null, passwordHash, role, 'active', 1, department || null, position || null, job_role || null, nowStr, nowStr]
+      'INSERT INTO users (id, username, name, email, password_hash, role, status, force_password_change, department, position, job_role, phone, profile_image, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [userId, username, name, email || null, passwordHash, role, 'active', 1, department || null, position || null, job_role || null, phone || null, profile_image || null, nowStr, nowStr]
     );
 
     return res.status(201).json({
       message: '사용자가 성공적으로 등록되었습니다.',
-      user: { id: userId, username, name, email, role, department, position, job_role }
+      user: { id: userId, username, name, email, role, department, position, job_role, phone, profile_image }
     });
   } catch (error) {
     console.error('Register failed:', error);
@@ -117,6 +117,8 @@ router.post('/login', async (req, res) => {
         department: user.department,
         position: user.position,
         job_role: user.job_role,
+        phone: user.phone,
+        profile_image: user.profile_image,
         last_login_at: nowStr
       }
     });
@@ -182,7 +184,7 @@ router.post('/change-password', verifyToken, async (req, res) => {
 router.get('/me', verifyToken, async (req, res) => {
   try {
     const user = await dbGet(
-      'SELECT id, username, name, email, role, status, force_password_change, department, position, job_role, created_at, updated_at, last_login_at FROM users WHERE id = ?',
+      'SELECT id, username, name, email, role, status, force_password_change, department, position, job_role, phone, profile_image, created_at, updated_at, last_login_at FROM users WHERE id = ?',
       [req.user.id]
     );
     if (!user) {
@@ -199,7 +201,7 @@ router.get('/me', verifyToken, async (req, res) => {
 router.get('/users', verifyToken, checkRole(['admin']), async (req, res) => {
   try {
     const users = await dbAll(
-      'SELECT id, username, name, email, role, status, device_hash, force_password_change, department, position, job_role, created_at, updated_at, last_login_at FROM users ORDER BY name ASC'
+      'SELECT id, username, name, email, role, status, device_hash, force_password_change, department, position, job_role, phone, profile_image, created_at, updated_at, last_login_at FROM users ORDER BY name ASC'
     );
     return res.json({ users });
   } catch (error) {
@@ -211,7 +213,7 @@ router.get('/users', verifyToken, checkRole(['admin']), async (req, res) => {
 // 5. PUT /auth/users/:id - admin 전용 사용자 정보 수정 (비밀번호 재인증 필수)
 router.put('/users/:id', verifyToken, checkRole(['admin']), async (req, res) => {
   const { id } = req.params;
-  const { name, email, role, status, department, position, job_role, adminPassword } = req.body;
+  const { name, email, role, status, department, position, job_role, phone, profile_image, adminPassword } = req.body;
 
   if (!name || !role) {
     return res.status(400).json({ message: '이름과 역할은 필수 입력 항목입니다.' });
@@ -226,8 +228,8 @@ router.put('/users/:id', verifyToken, checkRole(['admin']), async (req, res) => 
     const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
     await dbRun(
-      'UPDATE users SET name = ?, email = ?, role = ?, status = ?, department = ?, position = ?, job_role = ?, updated_at = ? WHERE id = ?',
-      [name, email || null, role, status || 'active', department || null, position || null, job_role || null, nowStr, id]
+      'UPDATE users SET name = ?, email = ?, role = ?, status = ?, department = ?, position = ?, job_role = ?, phone = ?, profile_image = ?, updated_at = ? WHERE id = ?',
+      [name, email || null, role, status || 'active', department || null, position || null, job_role || null, phone || null, profile_image || null, nowStr, id]
     );
 
     return res.json({ message: '사용자 정보가 성공적으로 수정되었습니다.' });
@@ -375,6 +377,61 @@ router.delete('/org-info/:type/:id', verifyToken, checkRole(['admin']), async (r
     return res.json({ message: '성공적으로 삭제되었습니다.' });
   } catch (error) {
     console.error(`Delete ${type} failed:`, error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 3.1 PUT /auth/profile - 로그인한 사용자의 개인 정보 수정 (이름, 이메일, 연락처, 프로필사진, 비밀번호)
+router.put('/profile', verifyToken, async (req, res) => {
+  const { name, email, phone, profile_image, password } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ message: '이름은 필수 입력 항목입니다.' });
+  }
+
+  try {
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    if (password) {
+      if (password.length < 6) {
+        return res.status(400).json({ message: '비밀번호는 최소 6자 이상이어야 합니다.' });
+      }
+      const passwordHash = await bcrypt.hash(password, 10);
+      await dbRun(
+        'UPDATE users SET name = ?, email = ?, phone = ?, profile_image = ?, password_hash = ?, updated_at = ? WHERE id = ?',
+        [name, email || null, phone || null, profile_image || null, passwordHash, nowStr, req.user.id]
+      );
+    } else {
+      await dbRun(
+        'UPDATE users SET name = ?, email = ?, phone = ?, profile_image = ?, updated_at = ? WHERE id = ?',
+        [name, email || null, phone || null, profile_image || null, nowStr, req.user.id]
+      );
+    }
+
+    const updatedUser = await dbGet(
+      'SELECT id, username, name, email, role, status, force_password_change, department, position, job_role, phone, profile_image, created_at, updated_at, last_login_at FROM users WHERE id = ?',
+      [req.user.id]
+    );
+
+    return res.json({
+      message: '프로필이 성공적으로 수정되었습니다.',
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error('Update profile failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 7. GET /auth/admin-contact - 최고 관리자 연락처 조회 (로그인 화면 표시용)
+router.get('/admin-contact', async (req, res) => {
+  try {
+    const admin = await dbGet(
+      'SELECT name, email, phone FROM users WHERE role = "admin" ORDER BY created_at ASC LIMIT 1'
+    );
+    return res.json({ admin: admin || null });
+  } catch (error) {
+    console.error('Get admin contact failed:', error);
     return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
   }
 });

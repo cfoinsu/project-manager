@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { FolderNode } from '../types';
 import { Folder, FileText, FileSpreadsheet, Image, FileCode, ChevronRight, ChevronDown, MoreVertical, ExternalLink, Copy, FolderOpen } from 'lucide-react';
-import { openFile, openInExplorer } from '../utils/tauriBridge';
+import { openFile, openInExplorer, writeFileBytes, moveFileOrDir } from '../utils/tauriBridge';
+import { useProjectStore } from '../store/projectStore';
 
 interface FolderTreeProps {
   node: FolderNode;
@@ -19,6 +20,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   onShowToast
 }) => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [dragOverPath, setDragOverPath] = useState<string | null>(null);
 
   const expandAll = () => {
     const next: Record<string, boolean> = {};
@@ -216,6 +218,8 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
       }
     }
 
+    const isDragOver = dragOverPath === n.path;
+
     return (
       <div key={n.path} className="select-none">
         {/* Row element */}
@@ -224,7 +228,73 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
           onDoubleClick={() => handleNodeDoubleClick(n)}
           onContextMenu={(e) => handleContextMenu(e, n)}
           style={{ paddingLeft: `${n.depth * 14 + 8}px` }}
-          className={`group cds--tree-node ${isSelected ? 'cds--tree-node-active' : ''}`}
+          className={`group cds--tree-node ${isSelected ? 'cds--tree-node-active' : ''} ${isDragOver ? 'bg-toss-blue/10 border border-dashed border-toss-blue/40 rounded-xl' : ''}`}
+          draggable={n.path !== node.path}
+          onDragStart={(e) => {
+            e.dataTransfer.setData('text/plain', n.path);
+            e.dataTransfer.effectAllowed = 'move';
+          }}
+          onDragOver={(e) => {
+            if (n.is_dir) {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+            }
+          }}
+          onDragEnter={(e) => {
+            if (n.is_dir) {
+              e.preventDefault();
+              setDragOverPath(n.path);
+            }
+          }}
+          onDragLeave={() => {
+            setDragOverPath(null);
+          }}
+          onDrop={async (e) => {
+            e.preventDefault();
+            setDragOverPath(null);
+            if (!n.is_dir) return;
+
+            // Check if dragging files from outside
+            const files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+              onShowToast(`${files.length}개 파일 업로드 중...`);
+              try {
+                for (let i = 0; i < files.length; i++) {
+                  const file = files[i];
+                  const destPath = `${n.path}\\${file.name}`;
+                  const arrayBuffer = await file.arrayBuffer();
+                  const bytes = new Uint8Array(arrayBuffer);
+                  await writeFileBytes(destPath, bytes);
+                }
+                onShowToast('파일 업로드 완료!');
+                await useProjectStore.getState().scanAndSync();
+              } catch (err) {
+                onShowToast(`업로드 오류: ${err}`);
+              }
+              return;
+            }
+
+            // Dragging folder/file from inside the tree
+            const srcPath = e.dataTransfer.getData('text/plain');
+            if (srcPath && srcPath !== n.path) {
+              if (n.path.startsWith(srcPath + '\\') || n.path === srcPath) {
+                onShowToast('자기 자신이나 하위 폴더로는 이동할 수 없습니다.');
+                return;
+              }
+
+              const name = srcPath.split('\\').pop() || srcPath.split('/').pop() || '';
+              const destPath = `${n.path}\\${name}`;
+
+              onShowToast('파일 이동 중...');
+              try {
+                await moveFileOrDir(srcPath, destPath);
+                onShowToast('이동 완료!');
+                await useProjectStore.getState().scanAndSync();
+              } catch (err) {
+                onShowToast(`이동 오류: ${err}`);
+              }
+            }
+          }}
         >
           <div className="cds--row-flex gap-1.5 overflow-hidden">
             {/* Collapse/Expand chevron */}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import { 
   Plus, 
@@ -11,10 +11,10 @@ import {
   FilePlus, 
   Folder,
   Trash2,
-  ChevronDown
+  ChevronDown,
+  X
 } from 'lucide-react';
 import type { FolderTemplateNode } from '../types';
-import { CustomSelect } from './CustomSelect';
 import { getDocuments, type DocTemplate } from '../utils/api';
 
 // Recursive Folder Tree Node Editor Component
@@ -23,6 +23,7 @@ interface TreeNodeEditorProps {
   path: number[];
   onUpdateNode: (path: number[], updatedNode: FolderTemplateNode) => void;
   onDeleteNode: (path: number[]) => void;
+  onOpenDocSelector: (path: number[]) => void;
   docTemplates: DocTemplate[];
 }
 
@@ -31,6 +32,7 @@ const TreeNodeEditor: React.FC<TreeNodeEditorProps> = ({
   path,
   onUpdateNode,
   onDeleteNode,
+  onOpenDocSelector,
   docTemplates
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -40,12 +42,8 @@ const TreeNodeEditor: React.FC<TreeNodeEditorProps> = ({
     onUpdateNode(path, updated);
   };
 
-  const handleDocTemplateChange = (val: string) => {
-    const updated = { ...node, template_doc_id: val || undefined };
-    const matched = docTemplates.find(dt => dt.id === val);
-    if (matched && !node.name) {
-      updated.name = matched.original_name;
-    }
+  const handleClearDocTemplate = () => {
+    const updated = { ...node, template_doc_id: undefined };
     onUpdateNode(path, updated);
   };
 
@@ -62,56 +60,19 @@ const TreeNodeEditor: React.FC<TreeNodeEditorProps> = ({
     setIsExpanded(true);
   };
 
-  const handleUpdateChild = (childIdx: number, childPath: number[], updatedChild: FolderTemplateNode) => {
-    const nextChildren = [...(node.children || [])];
-    
-    if (childPath.length === 1) {
-      nextChildren[childIdx] = updatedChild;
-    } else {
-      const subPath = childPath.slice(1);
-      const childNode = nextChildren[childIdx];
-      
-      const updateSubNode = (n: FolderTemplateNode, p: number[], newVal: FolderTemplateNode): FolderTemplateNode => {
-        if (p.length === 1) {
-          const childrenCopy = [...(n.children || [])];
-          childrenCopy[p[0]] = newVal;
-          return { ...n, children: childrenCopy };
-        } else {
-          const childrenCopy = [...(n.children || [])];
-          childrenCopy[p[0]] = updateSubNode(childrenCopy[p[0]], p.slice(1), newVal);
-          return { ...n, children: childrenCopy };
-        }
-      };
-      
-      nextChildren[childIdx] = updateSubNode(childNode, subPath, updatedChild);
+  const getFileParts = (filename: string) => {
+    const lastDotIdx = filename.lastIndexOf('.');
+    if (lastDotIdx === -1) {
+      return { base: filename, ext: '' };
     }
-    
-    onUpdateNode(path, { ...node, children: nextChildren });
+    return {
+      base: filename.substring(0, lastDotIdx),
+      ext: filename.substring(lastDotIdx)
+    };
   };
 
-  const handleDeleteChild = (childIdx: number, childPath: number[]) => {
-    const nextChildren = [...(node.children || [])];
-    if (childPath.length === 1) {
-      nextChildren.splice(childIdx, 1);
-    } else {
-      const subPath = childPath.slice(1);
-      const childNode = nextChildren[childIdx];
-      
-      const deleteSubNode = (n: FolderTemplateNode, p: number[]): FolderTemplateNode => {
-        if (p.length === 1) {
-          const childrenCopy = [...(n.children || [])];
-          childrenCopy.splice(p[0], 1);
-          return { ...n, children: childrenCopy };
-        } else {
-          const childrenCopy = [...(n.children || [])];
-          childrenCopy[p[0]] = deleteSubNode(childrenCopy[p[0]], p.slice(1));
-          return { ...n, children: childrenCopy };
-        }
-      };
-      nextChildren[childIdx] = deleteSubNode(childNode, subPath);
-    }
-    onUpdateNode(path, { ...node, children: nextChildren });
-  };
+  const matchedDoc = docTemplates.find(dt => dt.id === node.template_doc_id);
+  const { base: baseName, ext: fileExt } = getFileParts(node.name);
 
   return (
     <div className="flex flex-col gap-1.5 ml-4 pl-3.5 border-l border-toss-gray-200/60 dark:border-slate-800 relative py-1">
@@ -137,24 +98,58 @@ const TreeNodeEditor: React.FC<TreeNodeEditorProps> = ({
 
         <input
           type="text"
-          value={node.name}
-          onChange={(e) => handleNameChange(e.target.value)}
+          value={node.is_dir ? node.name : baseName}
+          onChange={(e) => {
+            const val = e.target.value;
+            if (node.is_dir) {
+              handleNameChange(val);
+            } else {
+              handleNameChange(val + fileExt);
+            }
+          }}
           placeholder={node.is_dir ? '폴더명 입력' : '파일명 입력'}
           required
-          className="text-xs px-2.5 py-1.5 bg-white dark:bg-slate-850 border border-toss-gray-200/50 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-toss-blue/60 transition-all font-semibold max-w-[160px]"
+          className="text-xs px-2.5 py-1.5 bg-white dark:bg-slate-855 border border-toss-gray-200/50 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-toss-blue/60 transition-all font-semibold max-w-[160px]"
         />
 
+        {!node.is_dir && fileExt && (
+          <span className="px-2 py-1 bg-slate-100 dark:bg-slate-855 text-slate-500 dark:text-slate-400 font-mono text-[10px] font-extrabold rounded-md border border-slate-200/30 shrink-0" title="확장자">
+            {fileExt}
+          </span>
+        )}
+
         {!node.is_dir && (
-          <CustomSelect
-            value={node.template_doc_id || ''}
-            onChange={(e) => handleDocTemplateChange(e.target.value)}
-            className="text-[11px] px-2 py-1 bg-white dark:bg-slate-850 border border-toss-gray-200/50 dark:border-slate-800 rounded-lg focus:outline-none font-semibold cursor-pointer max-w-[160px]"
-          >
-            <option value="">(연동할 서류 양식 선택)</option>
-            {docTemplates.map(dt => (
-              <option key={dt.id} value={dt.id}>{dt.original_name}</option>
-            ))}
-          </CustomSelect>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {matchedDoc ? (
+              <button
+                type="button"
+                onClick={() => onOpenDocSelector(path)}
+                className="px-2.5 py-1.5 bg-toss-blue-light/40 hover:bg-toss-blue-light/70 dark:bg-toss-blue/10 dark:hover:bg-toss-blue/20 text-toss-blue rounded-lg text-[11px] font-extrabold border border-toss-blue-light/50 transition-all cursor-pointer shrink-0"
+                title={`연동된 양식: ${matchedDoc.original_name}`}
+              >
+                양식 변경
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onOpenDocSelector(path)}
+                className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-855 border border-toss-gray-200/50 dark:border-slate-800 text-toss-gray-450 dark:text-slate-400 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0"
+              >
+                양식 연동
+              </button>
+            )}
+
+            {node.template_doc_id && (
+              <button
+                type="button"
+                onClick={handleClearDocTemplate}
+                className="p-1 hover:bg-rose-50 dark:hover:bg-rose-955/20 text-toss-red rounded-lg transition-colors cursor-pointer shrink-0"
+                title="연동 해제"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         )}
 
         {/* Action Buttons */}
@@ -198,8 +193,9 @@ const TreeNodeEditor: React.FC<TreeNodeEditorProps> = ({
               key={idx}
               node={child}
               path={[...path, idx]}
-              onUpdateNode={(childPath, updatedChild) => handleUpdateChild(idx, childPath, updatedChild)}
-              onDeleteNode={(childPath) => handleDeleteChild(idx, childPath)}
+              onUpdateNode={onUpdateNode}
+              onDeleteNode={onDeleteNode}
+              onOpenDocSelector={onOpenDocSelector}
               docTemplates={docTemplates}
             />
           ))}
@@ -220,6 +216,19 @@ export const FolderTemplateManagement: React.FC = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [docTemplates, setDocTemplates] = useState<DocTemplate[]>([]);
 
+  // Modal states for Document Template Selector
+  const [isDocSelectorOpen, setIsDocSelectorOpen] = useState(false);
+  const [activePathForDocSelector, setActivePathForDocSelector] = useState<number[] | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('전체');
+
+  useEffect(() => {
+    if (!isDocSelectorOpen) {
+      setSearchQuery('');
+      setSelectedCategory('전체');
+    }
+  }, [isDocSelectorOpen]);
+
   // Form states for creation
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -227,9 +236,7 @@ export const FolderTemplateManagement: React.FC = () => {
     {
       name: '01_기획',
       is_dir: true,
-      children: [
-        { name: '요구사항정의서.docx', is_dir: false }
-      ]
+      children: []
     },
     {
       name: '02_디자인',
@@ -260,6 +267,57 @@ export const FolderTemplateManagement: React.FC = () => {
 
   const activeTemplate = folderTemplates.find(t => t.id === selectedTemplateId) || folderTemplates[0];
 
+  const categories = useMemo(() => {
+    const cats = new Set<string>();
+    cats.add('전체');
+    docTemplates.forEach(dt => {
+      if (dt.category) cats.add(dt.category);
+    });
+    return Array.from(cats);
+  }, [docTemplates]);
+
+  const filteredTemplates = useMemo(() => {
+    return docTemplates.filter(dt => {
+      const matchesCategory = selectedCategory === '전체' || dt.category === selectedCategory;
+      const matchesSearch = 
+        dt.original_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (dt.tags && dt.tags.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (dt.description && dt.description.toLowerCase().includes(searchQuery.toLowerCase()));
+      return matchesCategory && matchesSearch;
+    });
+  }, [docTemplates, selectedCategory, searchQuery]);
+
+  const getNodeByPath = (nodeList: FolderTemplateNode[], p: number[]): FolderTemplateNode | null => {
+    if (p.length === 0) return null;
+    const idx = p[0];
+    if (idx === undefined || idx < 0 || idx >= nodeList.length) return null;
+    const current = nodeList[idx];
+    if (p.length === 1) {
+      return current;
+    }
+    if (current.children) {
+      return getNodeByPath(current.children, p.slice(1));
+    }
+    return null;
+  };
+
+  const handleSelectDocTemplate = (selectedDoc: DocTemplate) => {
+    if (!activePathForDocSelector) return;
+    
+    const currentNode = getNodeByPath(structure, activePathForDocSelector);
+
+    const nextNode = currentNode ? { ...currentNode } : { name: '', is_dir: false };
+    nextNode.template_doc_id = selectedDoc.id;
+    if (!nextNode.name || nextNode.name === '새 파일.docx') {
+      nextNode.name = selectedDoc.original_name;
+    }
+
+    handleUpdateNode(activePathForDocSelector, nextNode);
+    
+    setIsDocSelectorOpen(false);
+    setActivePathForDocSelector(null);
+  };
+
   const handleAddRootFolder = () => {
     setStructure([
       ...structure,
@@ -267,45 +325,48 @@ export const FolderTemplateManagement: React.FC = () => {
     ]);
   };
 
-  const handleUpdateNode = (path: number[], updatedNode: FolderTemplateNode) => {
-    const next = [...structure];
-    
-    const updateRecurse = (nodeList: FolderTemplateNode[], p: number[]): FolderTemplateNode[] => {
-      const copy = [...nodeList];
-      const idx = p[0];
-      if (p.length === 1) {
-        copy[idx] = updatedNode;
-      } else {
-        copy[idx] = {
-          ...copy[idx],
-          children: updateRecurse(copy[idx].children || [], p.slice(1))
-        };
-      }
-      return copy;
-    };
-    
-    setStructure(updateRecurse(next, path));
-  };
+  const handleOpenDocSelector = useCallback((p: number[]) => {
+    setActivePathForDocSelector(p);
+    setIsDocSelectorOpen(true);
+  }, []);
 
-  const handleDeleteNode = (path: number[]) => {
-    const next = [...structure];
-    
-    const deleteRecurse = (nodeList: FolderTemplateNode[], p: number[]): FolderTemplateNode[] => {
-      const copy = [...nodeList];
-      const idx = p[0];
-      if (p.length === 1) {
-        copy.splice(idx, 1);
-      } else {
-        copy[idx] = {
-          ...copy[idx],
-          children: deleteRecurse(copy[idx].children || [], p.slice(1))
-        };
-      }
-      return copy;
-    };
+  const handleUpdateNode = useCallback((path: number[], updatedNode: FolderTemplateNode) => {
+    setStructure(prev => {
+      const updateRecurse = (nodeList: FolderTemplateNode[], p: number[]): FolderTemplateNode[] => {
+        const copy = [...nodeList];
+        const idx = p[0];
+        if (p.length === 1) {
+          copy[idx] = updatedNode;
+        } else {
+          copy[idx] = {
+            ...copy[idx],
+            children: updateRecurse(copy[idx].children || [], p.slice(1))
+          };
+        }
+        return copy;
+      };
+      return updateRecurse(prev, path);
+    });
+  }, []);
 
-    setStructure(deleteRecurse(next, path));
-  };
+  const handleDeleteNode = useCallback((path: number[]) => {
+    setStructure(prev => {
+      const deleteRecurse = (nodeList: FolderTemplateNode[], p: number[]): FolderTemplateNode[] => {
+        const copy = [...nodeList];
+        const idx = p[0];
+        if (p.length === 1) {
+          copy.splice(idx, 1);
+        } else {
+          copy[idx] = {
+            ...copy[idx],
+            children: deleteRecurse(copy[idx].children || [], p.slice(1))
+          };
+        }
+        return copy;
+      };
+      return deleteRecurse(prev, path);
+    });
+  }, []);
 
   const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -325,9 +386,7 @@ export const FolderTemplateManagement: React.FC = () => {
       {
         name: '01_기획',
         is_dir: true,
-        children: [
-          { name: '요구사항정의서.docx', is_dir: false }
-        ]
+        children: []
       },
       {
         name: '02_디자인',
@@ -490,6 +549,7 @@ export const FolderTemplateManagement: React.FC = () => {
                     path={[idx]}
                     onUpdateNode={handleUpdateNode}
                     onDeleteNode={handleDeleteNode}
+                    onOpenDocSelector={handleOpenDocSelector}
                     docTemplates={docTemplates}
                   />
                 ))}
@@ -537,6 +597,123 @@ export const FolderTemplateManagement: React.FC = () => {
         )}
 
       </div>
+
+      {/* ─── Document Template Selector Modal ─── */}
+      {isDocSelectorOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-955/40 dark:bg-slate-955/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => {
+            setIsDocSelectorOpen(false);
+            setActivePathForDocSelector(null);
+          }}
+        >
+          <div 
+            className="bg-white/95 dark:bg-slate-900/95 border border-gray-100 dark:border-slate-800 rounded-[28px] p-6 shadow-toss-lg max-w-2xl w-full h-[500px] text-left animate-scale-in flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between shrink-0">
+              <div className="flex flex-col text-left">
+                <span className="text-xs font-bold text-toss-blue">Select Document Template</span>
+                <h3 className="text-base font-extrabold text-toss-gray-900 dark:text-slate-100 mt-0.5">양식 서류 선택</h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => {
+                  setIsDocSelectorOpen(false);
+                  setActivePathForDocSelector(null);
+                }}
+                className="p-2 rounded-xl hover:bg-toss-gray-100 dark:hover:bg-slate-800 text-toss-gray-400 cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative flex items-center shrink-0">
+              <input
+                type="text"
+                placeholder="서류 양식 명칭 또는 태그 검색..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full text-xs pl-4 pr-10 py-3 bg-slate-50 dark:bg-slate-855 border border-toss-gray-200/50 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-toss-blue/60 transition-all font-semibold text-toss-gray-800 dark:text-slate-200"
+              />
+              {searchQuery && (
+                <button 
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Content: 2 Columns */}
+            <div className="flex-1 flex gap-4 min-h-0">
+              {/* Left Column: Categories List */}
+              <div className="w-44 shrink-0 flex flex-col gap-1 overflow-y-auto pr-1">
+                <span className="text-[10px] font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1 px-2">카테고리</span>
+                {categories.map(cat => {
+                  const count = cat === '전체' 
+                    ? docTemplates.length 
+                    : docTemplates.filter(d => d.category === cat).length;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left cursor-pointer transition-all ${
+                        selectedCategory === cat
+                          ? 'bg-toss-blue/10 text-toss-blue dark:bg-toss-blue/20'
+                          : 'text-toss-gray-500 hover:bg-slate-55 dark:text-slate-400 dark:hover:bg-slate-850'
+                      }`}
+                    >
+                      <span className="truncate">{cat}</span>
+                      <span className="text-[10px] font-semibold opacity-70 ml-1">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Right Column: Files Grid/List */}
+              <div className="flex-1 flex flex-col gap-2 overflow-y-auto pr-1 border-l border-toss-gray-150 dark:border-slate-800/80 pl-4">
+                <span className="text-[10px] font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1">양식 파일 목록 ({filteredTemplates.length})</span>
+                {filteredTemplates.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-toss-gray-400 select-none py-10">
+                    <FileText className="w-10 h-10 text-toss-gray-300 mb-2 animate-pulse" />
+                    <p className="text-xs font-bold">검색 결과가 없습니다.</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {filteredTemplates.map(doc => (
+                      <div
+                        key={doc.id}
+                        onClick={() => handleSelectDocTemplate(doc)}
+                        className="flex items-center gap-3 p-3 border border-toss-gray-200/50 dark:border-slate-800 bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-850 rounded-2xl cursor-pointer transition-all group"
+                      >
+                        <FileText className="w-8 h-8 text-emerald-500 shrink-0" />
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-xs font-extrabold text-toss-gray-800 dark:text-slate-200 group-hover:text-toss-blue transition-colors truncate">
+                            {doc.original_name}
+                          </p>
+                          <p className="text-[10px] text-toss-gray-450 dark:text-slate-500 font-medium truncate mt-0.5">
+                            {doc.category ? `[${doc.category}] ` : ''}{doc.description || '설명 없음'}
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-semibold text-slate-400 bg-slate-50 dark:bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-200/30 shrink-0">
+                          {(doc.file_size / 1024).toFixed(1)} KB
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

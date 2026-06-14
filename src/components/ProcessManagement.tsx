@@ -144,26 +144,46 @@ const EditModal: React.FC<EditModalProps> = ({ proc, projectStartDate, projectEn
             </div>
           </div>
 
-          {/* 진행률 슬라이더 */}
+          {/* 진행률 슬라이더 및 입력 필드 */}
           <div className="flex flex-col gap-2">
             <div className="flex justify-between items-center">
               <label className="text-xs font-bold text-slate-500 dark:text-slate-400">진행률</label>
-              <span className="text-sm font-extrabold text-toss-blue">{progress}%</span>
+              <div className="relative flex items-center w-24">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={progress}
+                  onChange={e => setProgress(Math.min(Math.max(Number(e.target.value) || 0, 0), 100))}
+                  className="toss-input py-1 px-2.5 text-right pr-6 text-xs font-extrabold w-full h-[32px]"
+                />
+                <span className="absolute right-2 text-xs text-toss-gray-455 font-bold">%</span>
+              </div>
             </div>
             <input
               type="range"
               min={0}
               max={100}
-              step={5}
+              step={1}
               value={progress}
               onChange={e => setProgress(Number(e.target.value))}
-              className="w-full h-2 rounded-full accent-toss-blue cursor-pointer"
+              className="w-full h-1.5 bg-gray-150 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-toss-blue"
             />
-            <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden -mt-1 pointer-events-none">
-              <div
-                className="h-full rounded-full bg-toss-blue transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
+            <div className="flex gap-1 mt-0.5">
+              {[0, 25, 50, 75, 100].map(val => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setProgress(val)}
+                  className={`flex-1 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    progress === val
+                      ? 'bg-toss-blue text-white shadow-soft-sm'
+                      : 'bg-slate-100 dark:bg-slate-850 text-slate-550 hover:bg-slate-200 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {val}%
+                </button>
+              ))}
             </div>
           </div>
 
@@ -478,7 +498,7 @@ export const ProcessManagement: React.FC = () => {
                             minDate={activeProject.start_date}
                             maxDate={activeProject.end_date}
                             placeholder="프로세스 기간 선택"
-                            className="w-52"
+                            className="w-64"
                             compact={true}
                           />
                         )}

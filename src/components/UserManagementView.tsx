@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import type { User } from '../types';
 import { 
   Trash2, UserPlus, Shield, Search, Mail, UserCheck, AlertCircle, 
-  Settings2, UserCog, KeyRound, Laptop, Key, RefreshCw, Layers 
+  Settings2, UserCog, KeyRound, Laptop, Key, RefreshCw, Layers, Phone 
 } from 'lucide-react';
 import { CustomSelect } from './CustomSelect';
 
@@ -26,6 +26,7 @@ export const UserManagementView: React.FC = () => {
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'admin' | 'manager' | 'member' | 'user'>('member');
   const [dept, setDept] = useState('');
@@ -37,6 +38,7 @@ export const UserManagementView: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
   const [editRole, setEditRole] = useState<'admin' | 'manager' | 'member' | 'user'>('member');
   const [editStatus, setEditStatus] = useState<'active' | 'inactive'>('active');
   const [editDept, setEditDept] = useState('');
@@ -96,6 +98,7 @@ export const UserManagementView: React.FC = () => {
         username,
         name,
         email: email || null,
+        phone: phone || null,
         password,
         role,
         status: 'active',
@@ -109,6 +112,7 @@ export const UserManagementView: React.FC = () => {
       setName('');
       setUsername('');
       setEmail('');
+      setPhone('');
       setPassword('');
       setRole('member');
       setDept('');
@@ -160,6 +164,7 @@ export const UserManagementView: React.FC = () => {
     setSelectedUser(u);
     setEditName(u.name);
     setEditEmail(u.email || '');
+    setEditPhone(u.phone || '');
     setEditRole(u.role);
     setEditStatus(u.status);
     setEditDept(u.department || '');
@@ -180,6 +185,7 @@ export const UserManagementView: React.FC = () => {
       await api.updateUser(serverMode, selectedUser.id, {
         name: editName,
         email: editEmail || null,
+        phone: editPhone || null,
         role: editRole,
         status: editStatus,
         department: editDept || null,
@@ -491,6 +497,20 @@ export const UserManagementView: React.FC = () => {
               </div>
 
               <div className="space-y-1">
+                <label className="text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider">연락처 (선택)</label>
+                <div className="relative flex items-center">
+                  <Phone className="absolute left-3.5 w-4 h-4 text-toss-gray-400" />
+                  <input
+                    type="text"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="예: 010-1234-5678"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-toss-gray-50 dark:bg-slate-800 border-none rounded-xl focus:outline-none focus:ring-1 focus:ring-toss-blue/60 transition-all font-semibold text-toss-gray-800 dark:text-slate-100"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
                 <label className="text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider">초기 비밀번호 *</label>
                 <input
                   type="password"
@@ -760,6 +780,16 @@ export const UserManagementView: React.FC = () => {
                     type="email"
                     value={editEmail}
                     onChange={(e) => setEditEmail(e.target.value)}
+                    className="w-full px-3 py-2 bg-toss-gray-50 dark:bg-slate-800 border border-toss-gray-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-toss-gray-800 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-toss-gray-400 dark:text-slate-500 uppercase">연락처</label>
+                  <input
+                    type="text"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
                     className="w-full px-3 py-2 bg-toss-gray-50 dark:bg-slate-800 border border-toss-gray-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-toss-gray-800 dark:text-slate-100"
                   />
                 </div>

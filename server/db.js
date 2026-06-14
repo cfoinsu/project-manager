@@ -67,6 +67,8 @@ export const initDatabase = async () => {
         department TEXT,
         position TEXT,
         job_role TEXT,
+        phone TEXT,
+        profile_image TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         last_login_at TEXT
@@ -85,6 +87,8 @@ export const initDatabase = async () => {
       'ALTER TABLE users ADD COLUMN department TEXT',
       'ALTER TABLE users ADD COLUMN position TEXT',
       'ALTER TABLE users ADD COLUMN job_role TEXT',
+      'ALTER TABLE users ADD COLUMN phone TEXT',
+      'ALTER TABLE users ADD COLUMN profile_image TEXT',
     ];
     for (const sql of columnsToAlter) {
       try {
@@ -170,6 +174,18 @@ export const initDatabase = async () => {
       'ALTER TABLE projects ADD COLUMN health_score INTEGER DEFAULT 100',
       'ALTER TABLE projects ADD COLUMN updated_at TEXT',
       'ALTER TABLE projects ADD COLUMN description TEXT DEFAULT ""',
+      'ALTER TABLE projects ADD COLUMN contract_amount TEXT',
+      'ALTER TABLE projects ADD COLUMN importance TEXT',
+      'ALTER TABLE projects ADD COLUMN priority TEXT',
+      'ALTER TABLE projects ADD COLUMN client_name TEXT',
+      'ALTER TABLE projects ADD COLUMN client_region TEXT',
+      'ALTER TABLE projects ADD COLUMN client_department TEXT',
+      'ALTER TABLE projects ADD COLUMN client_contact_name TEXT',
+      'ALTER TABLE projects ADD COLUMN client_contact_phone TEXT',
+      'ALTER TABLE projects ADD COLUMN client_contact_email TEXT',
+      'ALTER TABLE projects ADD COLUMN business_purpose TEXT',
+      'ALTER TABLE projects ADD COLUMN major_scope TEXT',
+      'ALTER TABLE projects ADD COLUMN special_notes TEXT',
     ];
     for (const sql of projectColumnsToAlter) {
       try {

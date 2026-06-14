@@ -41,32 +41,384 @@ export interface RuleCheckReport {
 
 // Database models for Project Atlas
 // 지역 코드 상수 정의
-export const REGION_CODES: { code: string; name: string }[] = [
-  { code: 'SE', name: '서울특별시' },
-  { code: 'BS', name: '부산광역시' },
-  { code: 'DG', name: '대구광역시' },
-  { code: 'IC', name: '인천광역시' },
-  { code: 'GJ', name: '광주광역시' },
-  { code: 'DJ', name: '대전광역시' },
-  { code: 'US', name: '울산광역시' },
-  { code: 'SJ', name: '세종특별자치시' },
-  { code: 'GG', name: '경기도' },
-  { code: 'CB', name: '충청북도' },
-  { code: 'CN', name: '충청남도' },
-  { code: 'JB', name: '전라북도' },
-  { code: 'JN', name: '전라남도' },
-  { code: 'GB', name: '경상북도' },
-  { code: 'GN', name: '경상남도' },
-  { code: 'GW', name: '강원특별자치도' },
-  { code: 'JJ', name: '제주특별자치도' },
-  { code: 'HC', name: '홍천군' },
-  { code: 'YG', name: '양구군' },
-  { code: 'CC', name: '춘천시' },
-  { code: 'WJ', name: '원주시' },
-  { code: 'SC', name: '속초시' },
-  { code: 'GR', name: '강릉시' },
-  { code: 'ET', name: '기타' },
+export interface SubRegion {
+  code: string;
+  name: string;
+}
+
+export interface RegionGroup {
+  name: string;
+  subRegions: SubRegion[];
+}
+
+export const KOREA_REGIONS: RegionGroup[] = [
+  {
+    name: '서울특별시',
+    subRegions: [
+      { code: 'SE', name: '서울 전역' },
+      { code: 'SEGN', name: '강남구' },
+      { code: 'SEGD', name: '강동구' },
+      { code: 'SEGB', name: '강북구' },
+      { code: 'SEGS', name: '강서구' },
+      { code: 'SEGA', name: '관악구' },
+      { code: 'SEGJ', name: '광진구' },
+      { code: 'SEGR', name: '구로구' },
+      { code: 'SEGC', name: '금천구' },
+      { code: 'SENW', name: '노원구' },
+      { code: 'SEDB', name: '도봉구' },
+      { code: 'SEDD', name: '동대문구' },
+      { code: 'SEDJ', name: '동작구' },
+      { code: 'SEMP', name: '마포구' },
+      { code: 'SESD', name: '서대문구' },
+      { code: 'SESC', name: '서초구' },
+      { code: 'SEST', name: '성동구' },
+      { code: 'SESB', name: '성북구' },
+      { code: 'SESP', name: '송파구' },
+      { code: 'SEYC', name: '양천구' },
+      { code: 'SEYD', name: '영등포구' },
+      { code: 'SEYS', name: '용산구' },
+      { code: 'SEEP', name: '은평구' },
+      { code: 'SEJR', name: '종로구' },
+      { code: 'SEJG', name: '중구' },
+      { code: 'SEJL', name: '중랑구' },
+    ]
+  },
+  {
+    name: '부산광역시',
+    subRegions: [
+      { code: 'BS', name: '부산 전역' },
+      { code: 'BSJG', name: '중구' },
+      { code: 'BSSG', name: '서구' },
+      { code: 'BSDG', name: '동구' },
+      { code: 'BSYD', name: '영도구' },
+      { code: 'BSBJ', name: '부산진구' },
+      { code: 'BSDR', name: '동래구' },
+      { code: 'BSNG', name: '남구' },
+      { code: 'BSBG', name: '북구' },
+      { code: 'BSHU', name: '해운대구' },
+      { code: 'BSSH', name: '사하구' },
+      { code: 'BSGJ', name: '금정구' },
+      { code: 'BSGS', name: '강서구' },
+      { code: 'BSYJ', name: '연제구' },
+      { code: 'BSSY', name: '수영구' },
+      { code: 'BSSS', name: '사상구' },
+      { code: 'BSKG', name: '기장군' },
+    ]
+  },
+  {
+    name: '대구광역시',
+    subRegions: [
+      { code: 'DG', name: '대구 전역' },
+      { code: 'DGJG', name: '중구' },
+      { code: 'DGDG', name: '동구' },
+      { code: 'DGSG', name: '서구' },
+      { code: 'DGNG', name: '남구' },
+      { code: 'DGBG', name: '북구' },
+      { code: 'DGSS', name: '수성구' },
+      { code: 'DGLS', name: '달서구' },
+      { code: 'DGDS', name: '달성군' },
+      { code: 'DGGW', name: '군위군' },
+    ]
+  },
+  {
+    name: '인천광역시',
+    subRegions: [
+      { code: 'IC', name: '인천 전역' },
+      { code: 'ICJG', name: '중구' },
+      { code: 'ICDG', name: '동구' },
+      { code: 'ICMH', name: '미추홀구' },
+      { code: 'ICYS', name: '연수구' },
+      { code: 'ICND', name: '남동구' },
+      { code: 'ICBP', name: '부평구' },
+      { code: 'ICKY', name: '계양구' },
+      { code: 'ICSG', name: '서구' },
+      { code: 'ICGH', name: '강화군' },
+      { code: 'ICOJ', name: '옹진군' },
+    ]
+  },
+  {
+    name: '광주광역시',
+    subRegions: [
+      { code: 'GJ', name: '광주 전역' },
+      { code: 'GJDG', name: '동구' },
+      { code: 'GJSG', name: '서구' },
+      { code: 'GJNG', name: '남구' },
+      { code: 'GJBG', name: '북구' },
+      { code: 'GJKS', name: '광산구' },
+    ]
+  },
+  {
+    name: '대전광역시',
+    subRegions: [
+      { code: 'DJ', name: '대전 전역' },
+      { code: 'DJDG', name: '동구' },
+      { code: 'DJJG', name: '중구' },
+      { code: 'DJSG', name: '서구' },
+      { code: 'DJYS', name: '유성구' },
+      { code: 'DJDD', name: '대덕구' },
+    ]
+  },
+  {
+    name: '울산광역시',
+    subRegions: [
+      { code: 'US', name: '울산 전역' },
+      { code: 'USJG', name: '중구' },
+      { code: 'USNG', name: '남구' },
+      { code: 'USDG', name: '동구' },
+      { code: 'USBG', name: '북구' },
+      { code: 'USUJ', name: '울주군' },
+    ]
+  },
+  {
+    name: '세종특별자치시',
+    subRegions: [
+      { code: 'SJ', name: '세종 전역' },
+      { code: 'SJS', name: '세종시' },
+    ]
+  },
+  {
+    name: '경기도',
+    subRegions: [
+      { code: 'GG', name: '경기 전역' },
+      { code: 'GGSU', name: '수원시' },
+      { code: 'GGSN', name: '성남시' },
+      { code: 'GGYB', name: '의정부시' },
+      { code: 'GGAY', name: '안양시' },
+      { code: 'GGBC', name: '부천시' },
+      { code: 'GGGM', name: '광명시' },
+      { code: 'GGPT', name: '평택시' },
+      { code: 'GGDC', name: '동두천시' },
+      { code: 'GGAS', name: '안산시' },
+      { code: 'GGGY', name: '고양시' },
+      { code: 'GGGC', name: '과천시' },
+      { code: 'GGGR', name: '구리시' },
+      { code: 'GGNY', name: '남양주시' },
+      { code: 'GGOS', name: '오산시' },
+      { code: 'GGSH', name: '시흥시' },
+      { code: 'GGNP', name: '군포시' },
+      { code: 'GGUW', name: '의왕시' },
+      { code: 'GGHN', name: '하남시' },
+      { code: 'GGYI', name: '용인시' },
+      { code: 'GGPJ', name: '파주시' },
+      { code: 'GGIC', name: '이천시' },
+      { code: 'GGAN', name: '안성시' },
+      { code: 'GGKP', name: '김포시' },
+      { code: 'GGHS', name: '화성시' },
+      { code: 'GGGJ', name: '광주시' },
+      { code: 'GGYJ', name: '양주시' },
+      { code: 'GGPC', name: '포천시' },
+      { code: 'GGYU', name: '여주시' },
+      { code: 'GGYC', name: '연천군' },
+      { code: 'GGAP', name: '가평군' },
+      { code: 'GGYP', name: '양평군' },
+    ]
+  },
+  {
+    name: '강원특별자치도',
+    subRegions: [
+      { code: 'GW', name: '강원 전역' },
+      { code: 'HC', name: '홍천군' },
+      { code: 'YG', name: '양구군' },
+      { code: 'CC', name: '춘천시' },
+      { code: 'WJ', name: '원주시' },
+      { code: 'SC', name: '속초시' },
+      { code: 'GR', name: '강릉시' },
+      { code: 'GWDH', name: '동해시' },
+      { code: 'GWTB', name: '태백시' },
+      { code: 'GWSC', name: '삼척시' },
+      { code: 'GWHS', name: '횡성군' },
+      { code: 'GWYW', name: '영월군' },
+      { code: 'GWPC', name: '평창군' },
+      { code: 'GWJS', name: '정선군' },
+      { code: 'GWCW', name: '철원군' },
+      { code: 'GWHC', name: '화천군' },
+      { code: 'GWIJ', name: '인제군' },
+      { code: 'GWGS', name: '고성군' },
+      { code: 'GWYY', name: '양양군' },
+    ]
+  },
+  {
+    name: '충청북도',
+    subRegions: [
+      { code: 'CB', name: '충북 전역' },
+      { code: 'CBCJ', name: '청주시' },
+      { code: 'CBCU', name: '충주시' },
+      { code: 'CBJC', name: '제천시' },
+      { code: 'CBBE', name: '보은군' },
+      { code: 'CBOC', name: '옥천군' },
+      { code: 'CBYD', name: '영동군' },
+      { code: 'CBZP', name: '증평군' },
+      { code: 'CBJN', name: '진천군' },
+      { code: 'CBGS', name: '괴산군' },
+      { code: 'CBES', name: '음성군' },
+      { code: 'CBDY', name: '단양군' },
+    ]
+  },
+  {
+    name: '충청남도',
+    subRegions: [
+      { code: 'CN', name: '충남 전역' },
+      { code: 'CNCA', name: '천안시' },
+      { code: 'CNGJ', name: '공주시' },
+      { code: 'CNBR', name: '보령시' },
+      { code: 'CNAS', name: '아산시' },
+      { code: 'CNSS', name: '서산시' },
+      { code: 'CNNS', name: '논산시' },
+      { code: 'CNGR', name: '계룡시' },
+      { code: 'CNDJ', name: '당진시' },
+      { code: 'CNKS', name: '금산군' },
+      { code: 'CNBY', name: '부여군' },
+      { code: 'CNSC', name: '서천군' },
+      { code: 'CNCY', name: '청양군' },
+      { code: 'CNHS', name: '홍성군' },
+      { code: 'CNYS', name: '예산군' },
+      { code: 'CNTA', name: '태안군' },
+    ]
+  },
+  {
+    name: '전북특별자치도',
+    subRegions: [
+      { code: 'JB', name: '전북 전역' },
+      { code: 'JBJJ', name: '전주시' },
+      { code: 'JBGS', name: '군산시' },
+      { code: 'JBIS', name: '익산시' },
+      { code: 'JBJE', name: '정읍시' },
+      { code: 'JBNW', name: '남원시' },
+      { code: 'JBGJ', name: '김제시' },
+      { code: 'JBWJ', name: '완주군' },
+      { code: 'JBJA', name: '진안군' },
+      { code: 'JBMJ', name: '무주군' },
+      { code: 'JBJS', name: '장수군' },
+      { code: 'JBIS2', name: '임실군' },
+      { code: 'JBSC', name: '순창군' },
+      { code: 'JBGC', name: '고창군' },
+      { code: 'JBBA', name: '부안군' },
+    ]
+  },
+  {
+    name: '전라남도',
+    subRegions: [
+      { code: 'JN', name: '전남 전역' },
+      { code: 'JNMP', name: '목포시' },
+      { code: 'JNYS', name: '여수시' },
+      { code: 'JNSC', name: '순천시' },
+      { code: 'JNNJ', name: '나주시' },
+      { code: 'JNGY', name: '광양시' },
+      { code: 'JNDY', name: '담양군' },
+      { code: 'JNGS', name: '곡성군' },
+      { code: 'JNGR', name: '구례군' },
+      { code: 'JNGH', name: '고흥군' },
+      { code: 'JNBS', name: '보성군' },
+      { code: 'JNHS', name: '화순군' },
+      { code: 'JNJH', name: '장흥군' },
+      { code: 'JNGJ', name: '강진군' },
+      { code: 'JNHN', name: '해남군' },
+      { code: 'JNYA', name: '영암군' },
+      { code: 'JNMA', name: '무안군' },
+      { code: 'JNHP', name: '함평군' },
+      { code: 'JNYG', name: '영광군' },
+      { code: 'JNJS', name: '장성군' },
+      { code: 'JNWD', name: '완도군' },
+      { code: 'JNDJ', name: '진도군' },
+      { code: 'JNSA', name: '신안군' },
+    ]
+  },
+  {
+    name: '경상북도',
+    subRegions: [
+      { code: 'GB', name: '경북 전역' },
+      { code: 'GBPH', name: '포항시' },
+      { code: 'GBGJ', name: '경주시' },
+      { code: 'GBGC', name: '김천시' },
+      { code: 'GBAD', name: '안동시' },
+      { code: 'GBGM', name: '구미시' },
+      { code: 'GBYJ', name: '영주시' },
+      { code: 'GBYC', name: '영천시' },
+      { code: 'GBSJ', name: '상주시' },
+      { code: 'GBMG', name: '문경시' },
+      { code: 'GBGS2', name: '경산시' },
+      { code: 'GBUS', name: '의성군' },
+      { code: 'GBCS', name: '청송군' },
+      { code: 'GBYY', name: '영양군' },
+      { code: 'GBYD', name: '영덕군' },
+      { code: 'GBCD', name: '청도군' },
+      { code: 'GBGR', name: '고령군' },
+      { code: 'GBSJ2', name: '성주군' },
+      { code: 'GBCG', name: '칠곡군' },
+      { code: 'GBYC2', name: '예천군' },
+      { code: 'GBBH', name: '봉화군' },
+      { code: 'GBUJ', name: '울진군' },
+      { code: 'GBUR', name: '울릉군' },
+    ]
+  },
+  {
+    name: '경상남도',
+    subRegions: [
+      { code: 'GN', name: '경남 전역' },
+      { code: 'GNCW', name: '창원시' },
+      { code: 'GNJJ', name: '진주시' },
+      { code: 'GNTY', name: '통영시' },
+      { code: 'GNSC', name: '사천시' },
+      { code: 'GNKH', name: '김해시' },
+      { code: 'GNMY', name: '밀양시' },
+      { code: 'GNGJ', name: '거제시' },
+      { code: 'GNYS', name: '양산시' },
+      { code: 'GNYR', name: '의령군' },
+      { code: 'GNHA', name: '함안군' },
+      { code: 'GNCN', name: '창녕군' },
+      { code: 'GNGS2', name: '고성군' },
+      { code: 'GNNH', name: '남해군' },
+      { code: 'GNHD', name: '하동군' },
+      { code: 'GNSC2', name: '산청군' },
+      { code: 'GNHY', name: '함양군' },
+      { code: 'GNGC', name: '거창군' },
+      { code: 'GNHC', name: '합천군' },
+    ]
+  },
+  {
+    name: '제주특별자치도',
+    subRegions: [
+      { code: 'JJ', name: '제주 전역' },
+      { code: 'JJJU', name: '제주시' },
+      { code: 'JJSG', name: '서귀포시' },
+    ]
+  },
+  {
+    name: '기타',
+    subRegions: [
+      { code: 'ET', name: '기타' }
+    ]
+  }
 ];
+
+export const getKoreaRegions = (): RegionGroup[] => {
+  try {
+    const saved = localStorage.getItem('pa_custom_regions');
+    return saved ? JSON.parse(saved) : KOREA_REGIONS;
+  } catch {
+    return KOREA_REGIONS;
+  }
+};
+
+export const getRegionCodes = (): { code: string; name: string }[] => {
+  return getKoreaRegions().flatMap(group =>
+    group.subRegions.map(sub => ({
+      code: sub.code,
+      name: sub.name === '서울 전역' || sub.name === '부산 전역' || sub.name === '대구 전역' || sub.name === '인천 전역' || sub.name === '광주 전역' || sub.name === '대전 전역' || sub.name === '울산 전역' || sub.name === '세종 전역' || sub.name === '경기 전역' || sub.name === '강원 전역' || sub.name === '충북 전역' || sub.name === '충남 전역' || sub.name === '전북 전역' || sub.name === '전남 전역' || sub.name === '경북 전역' || sub.name === '경남 전역' || sub.name === '제주 전역' || sub.name === '기타'
+        ? sub.name
+        : `${group.name} ${sub.name}`
+    }))
+  );
+};
+
+export const REGION_CODES: { code: string; name: string }[] = KOREA_REGIONS.flatMap(group =>
+  group.subRegions.map(sub => ({
+    code: sub.code,
+    name: sub.name === '서울 전역' || sub.name === '부산 전역' || sub.name === '대구 전역' || sub.name === '인천 전역' || sub.name === '광주 전역' || sub.name === '대전 전역' || sub.name === '울산 전역' || sub.name === '세종 전역' || sub.name === '경기 전역' || sub.name === '강원 전역' || sub.name === '충북 전역' || sub.name === '충남 전역' || sub.name === '전북 전역' || sub.name === '전남 전역' || sub.name === '경북 전역' || sub.name === '경남 전역' || sub.name === '제주 전역' || sub.name === '기타'
+      ? sub.name
+      : `${group.name} ${sub.name}`
+  }))
+);
 
 // 프로젝트 유형 코드 정의
 export const PROJECT_TYPE_CODES: { code: string; name: string }[] = [
@@ -92,6 +444,24 @@ export interface Project {
   start_date?: string;
   end_date?: string;
   description?: string;
+
+  // 사업 정보
+  contract_amount?: string; // 계약금액
+  importance?: string;     // 중요도 (Critical, High, Medium, Low)
+  priority?: string;       // 우선순위 (P1, P2, P3, P4)
+
+  // 발주처 정보
+  client_name?: string;       // 발주처명
+  client_region?: string;     // 지역
+  client_department?: string; // 담당 부서
+  client_contact_name?: string;  // 담당자
+  client_contact_phone?: string; // 연락처
+  client_contact_email?: string; // 이메일
+
+  // 프로젝트 개요 추가 정보
+  business_purpose?: string;  // 사업 목적
+  major_scope?: string;       // 주요 범위
+  special_notes?: string;     // 특이사항
 }
 
 export interface Process {
@@ -140,6 +510,7 @@ export interface WorkLog {
   author_name?: string;
   author_department?: string | null;
   author_position?: string | null;
+  author_profile_image?: string | null;
   content: string;          // 수행 내용
   hours?: number | null;    // 작업 시간 (선택)
   log_date: string;         // YYYY-MM-DD
@@ -217,6 +588,8 @@ export interface User {
   department?: string | null;
   position?: string | null;
   job_role?: string | null;
+  phone?: string | null;
+  profile_image?: string | null;
   created_at?: string;
   updated_at?: string;
   last_login_at?: string | null;
@@ -232,6 +605,7 @@ export interface Assignment {
   end_date: string;
   user_name?: string;
   user_email?: string;
+  user_profile_image?: string | null;
   project_name?: string;
   project_code?: string;
 }
@@ -274,6 +648,7 @@ export interface Comment {
   // Joined fields
   author_name?: string;
   author_email?: string;
+  author_profile_image?: string | null;
   author_department?: string | null;
   author_position?: string | null;
   author_job_role?: string | null;

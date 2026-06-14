@@ -140,7 +140,18 @@ export const ProjectScheduleCalendarView: React.FC = () => {
   });
 
   // Invitation response feedback states
-  const [joiningFeedback, setJoiningFeedback] = useState<Record<string, 'yes' | 'no'>>({});
+  const [joiningFeedback, setJoiningFeedback] = useState<Record<string, 'yes' | 'no'>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('pa_calendar_feedback') || '{}');
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pa_calendar_feedback', JSON.stringify(joiningFeedback));
+  }, [joiningFeedback]);
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Show local toast feedback
@@ -958,10 +969,10 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                                 <div
                                   key={ev.id}
                                   onClick={(e) => {
+                                    e.preventDefault();
                                     e.stopPropagation();
-                                    setSelectedDateStr(ev.start || ev.end || selectedDateStr);
                                   }}
-                                  className={`cds--month-gantt-bar border ${isProcess ? '' : ev.colorClass}`}
+                                  className={`cds--month-gantt-bar border ${isProcess ? '' : ev.colorClass} cursor-default`}
                                   style={{
                                     left: `${left}%`,
                                     width: `calc(${width}% - 4px)`,

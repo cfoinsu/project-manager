@@ -28,7 +28,8 @@ router.post('/', verifyToken, async (req, res) => {
 
     const created = await dbGet(
       `SELECT c.*, u.name AS author_name, u.email AS author_email,
-              u.department AS author_department, u.position AS author_position, u.job_role AS author_job_role
+              u.department AS author_department, u.position AS author_position, u.job_role AS author_job_role,
+              u.profile_image AS author_profile_image
        FROM comments c
        JOIN users u ON c.user_id = u.id
        WHERE c.id = ?`,
@@ -56,7 +57,8 @@ router.get('/', verifyToken, async (req, res) => {
         u.email AS author_email,
         u.department AS author_department,
         u.position AS author_position,
-        u.job_role AS author_job_role
+        u.job_role AS author_job_role,
+        u.profile_image AS author_profile_image
       FROM comments c
       JOIN users u ON c.user_id = u.id
       WHERE 1=1

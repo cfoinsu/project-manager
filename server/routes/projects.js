@@ -134,6 +134,59 @@ router.post('/', verifyToken, checkRole(['admin', 'manager']), async (req, res) 
   }
 });
 
+// 2.5 PUT /projects/:id - 프로젝트 수정 (admin, manager 가능)
+router.put('/:id', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+  const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  try {
+    const existing = await dbGet('SELECT id FROM projects WHERE id = ?', [id]);
+    if (!existing) {
+      return res.status(404).json({ message: '프로젝트를 찾을 수 없습니다.' });
+    }
+
+    const fields = [];
+    const values = [];
+
+    const allowedFields = [
+      'name', 'code', 'status', 'start_date', 'end_date', 'description',
+      'contract_amount', 'importance', 'priority', 'client_name', 'client_region',
+      'client_department', 'client_contact_name', 'client_contact_phone', 'client_contact_email',
+      'business_purpose', 'major_scope', 'special_notes'
+    ];
+
+    for (const field of allowedFields) {
+      if (updates[field] !== undefined) {
+        fields.push(`${field} = ?`);
+        values.push(updates[field]);
+      }
+    }
+
+    if (fields.length === 0) {
+      return res.json({ message: '수정할 내용이 없습니다.' });
+    }
+
+    fields.push('updated_at = ?');
+    values.push(nowStr);
+    values.push(id);
+
+    await dbRun(
+      `UPDATE projects SET ${fields.join(', ')} WHERE id = ?`,
+      values
+    );
+
+    const project = await dbGet('SELECT * FROM projects WHERE id = ?', [id]);
+    return res.json({
+      message: '프로젝트가 성공적으로 수정되었습니다.',
+      project
+    });
+  } catch (error) {
+    console.error('Update project failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
 // 3. DELETE /projects/:id - 프로젝트 삭제 (admin, manager 가능)
 router.delete('/:id', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
   const { id } = req.params;

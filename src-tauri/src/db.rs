@@ -16,6 +16,18 @@ pub struct Project {
     pub start_date: String,
     pub end_date: String,
     pub description: Option<String>,
+    pub contract_amount: Option<String>,
+    pub importance: Option<String>,
+    pub priority: Option<String>,
+    pub client_name: Option<String>,
+    pub client_region: Option<String>,
+    pub client_department: Option<String>,
+    pub client_contact_name: Option<String>,
+    pub client_contact_phone: Option<String>,
+    pub client_contact_email: Option<String>,
+    pub business_purpose: Option<String>,
+    pub major_scope: Option<String>,
+    pub special_notes: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -90,6 +102,8 @@ pub struct User {
     pub department: Option<String>,
     pub position: Option<String>,
     pub job_role: Option<String>,
+    pub phone: Option<String>,
+    pub profile_image: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub last_login_at: Option<String>,
@@ -106,6 +120,7 @@ pub struct Assignment {
     pub end_date: String,
     pub user_name: Option<String>,
     pub user_email: Option<String>,
+    pub user_profile_image: Option<String>,
     pub project_name: Option<String>,
     pub project_code: Option<String>,
 }
@@ -147,6 +162,18 @@ pub fn init_db(db_path: &PathBuf) -> Result<()> {
     let _ = conn.execute("ALTER TABLE projects ADD COLUMN start_date TEXT NOT NULL DEFAULT ''", []);
     let _ = conn.execute("ALTER TABLE projects ADD COLUMN end_date TEXT NOT NULL DEFAULT ''", []);
     let _ = conn.execute("ALTER TABLE projects ADD COLUMN description TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN contract_amount TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN importance TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN priority TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN client_name TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN client_region TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN client_department TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN client_contact_name TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN client_contact_phone TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN client_contact_email TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN business_purpose TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN major_scope TEXT", []);
+    let _ = conn.execute("ALTER TABLE projects ADD COLUMN special_notes TEXT", []);
 
     // 2. Create Processes Table
     conn.execute(
@@ -323,6 +350,8 @@ pub fn init_db(db_path: &PathBuf) -> Result<()> {
             department TEXT,
             position TEXT,
             job_role TEXT,
+            phone TEXT,
+            profile_image TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             last_login_at TEXT
@@ -341,6 +370,8 @@ pub fn init_db(db_path: &PathBuf) -> Result<()> {
     let _ = conn.execute("ALTER TABLE users ADD COLUMN department TEXT", []);
     let _ = conn.execute("ALTER TABLE users ADD COLUMN position TEXT", []);
     let _ = conn.execute("ALTER TABLE users ADD COLUMN job_role TEXT", []);
+    let _ = conn.execute("ALTER TABLE users ADD COLUMN phone TEXT", []);
+    let _ = conn.execute("ALTER TABLE users ADD COLUMN profile_image TEXT", []);
 
     // Set default value for status if null
     let _ = conn.execute("UPDATE users SET status = 'active' WHERE status IS NULL", []);
@@ -463,7 +494,7 @@ pub fn db_get_projects(app_handle: tauri::AppHandle) -> Result<Vec<Project>, Str
     let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
     
     let mut stmt = conn
-        .prepare("SELECT id, code, name, path, status, health_score, created_at, updated_at, start_date, end_date, description FROM projects ORDER BY created_at DESC")
+        .prepare("SELECT id, code, name, path, status, health_score, created_at, updated_at, start_date, end_date, description, contract_amount, importance, priority, client_name, client_region, client_department, client_contact_name, client_contact_phone, client_contact_email, business_purpose, major_scope, special_notes FROM projects ORDER BY created_at DESC")
         .map_err(|e| e.to_string())?;
         
     let project_iter = stmt
@@ -480,6 +511,18 @@ pub fn db_get_projects(app_handle: tauri::AppHandle) -> Result<Vec<Project>, Str
                 start_date: row.get(8)?,
                 end_date: row.get(9)?,
                 description: row.get(10)?,
+                contract_amount: row.get(11)?,
+                importance: row.get(12)?,
+                priority: row.get(13)?,
+                client_name: row.get(14)?,
+                client_region: row.get(15)?,
+                client_department: row.get(16)?,
+                client_contact_name: row.get(17)?,
+                client_contact_phone: row.get(18)?,
+                client_contact_email: row.get(19)?,
+                business_purpose: row.get(20)?,
+                major_scope: row.get(21)?,
+                special_notes: row.get(22)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -525,6 +568,18 @@ pub fn db_create_project(
         start_date: project_start,
         end_date: project_end,
         description: Some(project_desc),
+        contract_amount: None,
+        importance: None,
+        priority: None,
+        client_name: None,
+        client_region: None,
+        client_department: None,
+        client_contact_name: None,
+        client_contact_phone: None,
+        client_contact_email: None,
+        business_purpose: None,
+        major_scope: None,
+        special_notes: None,
     };
 
     tx.execute(
@@ -975,6 +1030,18 @@ pub fn db_update_project(
     start_date: Option<String>,
     end_date: Option<String>,
     description: Option<String>,
+    contract_amount: Option<String>,
+    importance: Option<String>,
+    priority: Option<String>,
+    client_name: Option<String>,
+    client_region: Option<String>,
+    client_department: Option<String>,
+    client_contact_name: Option<String>,
+    client_contact_phone: Option<String>,
+    client_contact_email: Option<String>,
+    business_purpose: Option<String>,
+    major_scope: Option<String>,
+    special_notes: Option<String>,
 ) -> Result<(), String> {
     let db_path = get_db_path(&app_handle);
     let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
@@ -1004,6 +1071,54 @@ pub fn db_update_project(
         conn.execute("UPDATE projects SET description = ?, updated_at = ? WHERE id = ?", params![desc, now, id])
             .map_err(|e| e.to_string())?;
     }
+    if let Some(ca) = contract_amount {
+        conn.execute("UPDATE projects SET contract_amount = ?, updated_at = ? WHERE id = ?", params![ca, now, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(imp) = importance {
+        conn.execute("UPDATE projects SET importance = ?, updated_at = ? WHERE id = ?", params![imp, now, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(prio) = priority {
+        conn.execute("UPDATE projects SET priority = ?, updated_at = ? WHERE id = ?", params![prio, now, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(cn) = client_name {
+        conn.execute("UPDATE projects SET client_name = ?, updated_at = ? WHERE id = ?", params![cn, now, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(cr) = client_region {
+        conn.execute("UPDATE projects SET client_region = ?, updated_at = ? WHERE id = ?", params![cr, now, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(cd) = client_department {
+        conn.execute("UPDATE projects SET client_department = ?, updated_at = ? WHERE id = ?", params![cd, now, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(ccn) = client_contact_name {
+        conn.execute("UPDATE projects SET client_contact_name = ?, updated_at = ? WHERE id = ?", params![ccn, now, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(ccp) = client_contact_phone {
+        conn.execute("UPDATE projects SET client_contact_phone = ?, updated_at = ? WHERE id = ?", params![ccp, now, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(cce) = client_contact_email {
+        conn.execute("UPDATE projects SET client_contact_email = ?, updated_at = ? WHERE id = ?", params![cce, now, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(bp) = business_purpose {
+        conn.execute("UPDATE projects SET business_purpose = ?, updated_at = ? WHERE id = ?", params![bp, now, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(ms) = major_scope {
+        conn.execute("UPDATE projects SET major_scope = ?, updated_at = ? WHERE id = ?", params![ms, now, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(sn) = special_notes {
+        conn.execute("UPDATE projects SET special_notes = ?, updated_at = ? WHERE id = ?", params![sn, now, id])
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -1026,7 +1141,7 @@ pub fn db_get_users(app_handle: tauri::AppHandle) -> Result<Vec<User>, String> {
     let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
     
     let mut stmt = conn
-        .prepare("SELECT id, username, name, email, role, status, device_hash, force_password_change, department, position, job_role, created_at, updated_at, last_login_at FROM users ORDER BY name ASC")
+        .prepare("SELECT id, username, name, email, role, status, device_hash, force_password_change, department, position, job_role, created_at, updated_at, last_login_at, phone, profile_image FROM users ORDER BY name ASC")
         .map_err(|e| e.to_string())?;
         
     let user_iter = stmt
@@ -1043,6 +1158,8 @@ pub fn db_get_users(app_handle: tauri::AppHandle) -> Result<Vec<User>, String> {
                 department: row.get(8)?,
                 position: row.get(9)?,
                 job_role: row.get(10)?,
+                phone: row.get(14)?,
+                profile_image: row.get(15)?,
                 created_at: row.get(11)?,
                 updated_at: row.get(12)?,
                 last_login_at: row.get(13)?,
@@ -1067,6 +1184,8 @@ pub fn db_create_user(
     department: Option<String>,
     position: Option<String>,
     job_role: Option<String>,
+    phone: Option<String>,
+    profile_image: Option<String>,
 ) -> Result<User, String> {
     let db_path = get_db_path(&app_handle);
     let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
@@ -1078,8 +1197,8 @@ pub fn db_create_user(
     let default_hash = "$2a$10$T1K72n6eA2jWzL3L6W6.Nu0T7.S4S.R1R1R1R1R1R1R1R1R1R1"; // mock hash
 
     conn.execute(
-        "INSERT INTO users (id, username, name, email, password_hash, role, status, force_password_change, department, position, job_role, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO users (id, username, name, email, password_hash, role, status, force_password_change, department, position, job_role, phone, profile_image, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             user_id,
             username,
@@ -1092,6 +1211,8 @@ pub fn db_create_user(
             department,
             position,
             job_role,
+            phone,
+            profile_image,
             now,
             now
         ],
@@ -1109,6 +1230,8 @@ pub fn db_create_user(
         department,
         position,
         job_role,
+        phone,
+        profile_image,
         created_at: now.clone(),
         updated_at: now,
         last_login_at: None,
@@ -1126,6 +1249,8 @@ pub fn db_update_user(
     department: Option<String>,
     position: Option<String>,
     job_role: Option<String>,
+    phone: Option<String>,
+    profile_image: Option<String>,
 ) -> Result<(), String> {
     let db_path = get_db_path(&app_handle);
     let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
@@ -1143,10 +1268,95 @@ pub fn db_update_user(
     if let Some(s) = status {
         conn.execute("UPDATE users SET status = ?, updated_at = ? WHERE id = ?", params![s, now, id]).map_err(|e| e.to_string())?;
     }
-    conn.execute("UPDATE users SET department = ?, position = ?, job_role = ?, updated_at = ? WHERE id = ?", 
-        params![department, position, job_role, now, id]).map_err(|e| e.to_string())?;
+    conn.execute("UPDATE users SET department = ?, position = ?, job_role = ?, phone = ?, profile_image = ?, updated_at = ? WHERE id = ?", 
+        params![department, position, job_role, phone, profile_image, now, id]).map_err(|e| e.to_string())?;
     
     Ok(())
+}
+
+#[tauri::command]
+pub fn db_update_profile(
+    app_handle: tauri::AppHandle,
+    id: String,
+    name: String,
+    email: Option<String>,
+    phone: Option<String>,
+    profile_image: Option<String>,
+    password_hash: Option<String>,
+) -> Result<User, String> {
+    let db_path = get_db_path(&app_handle);
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    if let Some(ref ph) = password_hash {
+        conn.execute(
+            "UPDATE users SET name = ?, email = ?, phone = ?, profile_image = ?, password_hash = ?, updated_at = ? WHERE id = ?",
+            params![name, email, phone, profile_image, ph, now, id],
+        ).map_err(|e| e.to_string())?;
+    } else {
+        conn.execute(
+            "UPDATE users SET name = ?, email = ?, phone = ?, profile_image = ?, updated_at = ? WHERE id = ?",
+            params![name, email, phone, profile_image, now, id],
+        ).map_err(|e| e.to_string())?;
+    }
+
+    // Return the updated user object
+    let mut stmt = conn.prepare("SELECT id, username, name, email, role, status, device_hash, force_password_change, department, position, job_role, created_at, updated_at, last_login_at, phone, profile_image FROM users WHERE id = ?").map_err(|e| e.to_string())?;
+    let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
+    if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        Ok(User {
+            id: row.get(0)?,
+            username: row.get(1)?,
+            name: row.get(2)?,
+            email: row.get(3)?,
+            role: row.get(4)?,
+            status: row.get(5)?,
+            device_hash: row.get(6)?,
+            force_password_change: row.get(7)?,
+            department: row.get(8)?,
+            position: row.get(9)?,
+            job_role: row.get(10)?,
+            created_at: row.get(11)?,
+            updated_at: row.get(12)?,
+            last_login_at: row.get(13)?,
+            phone: row.get(14)?,
+            profile_image: row.get(15)?,
+        })
+    } else {
+        Err("사용자를 찾을 수 없습니다.".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn db_get_admin_contact(app_handle: tauri::AppHandle) -> Result<Option<User>, String> {
+    let db_path = get_db_path(&app_handle);
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    
+    let mut stmt = conn.prepare("SELECT id, username, name, email, role, status, device_hash, force_password_change, department, position, job_role, created_at, updated_at, last_login_at, phone, profile_image FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1").map_err(|e| e.to_string())?;
+    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+    
+    if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        Ok(Some(User {
+            id: row.get(0)?,
+            username: row.get(1)?,
+            name: row.get(2)?,
+            email: row.get(3)?,
+            role: row.get(4)?,
+            status: row.get(5)?,
+            device_hash: row.get(6)?,
+            force_password_change: row.get(7)?,
+            department: row.get(8)?,
+            position: row.get(9)?,
+            job_role: row.get(10)?,
+            created_at: row.get(11)?,
+            updated_at: row.get(12)?,
+            last_login_at: row.get(13)?,
+            phone: row.get(14)?,
+            profile_image: row.get(15)?,
+        }))
+    } else {
+        Ok(None)
+    }
 }
 
 #[tauri::command]
@@ -1351,7 +1561,7 @@ pub fn db_get_assignments(app_handle: tauri::AppHandle) -> Result<Vec<Assignment
     let mut stmt = conn
         .prepare(
             "SELECT a.id, a.user_id, a.project_id, a.role, a.allocation_percent, a.start_date, a.end_date, \
-             u.name as user_name, u.email as user_email, p.name as project_name, p.code as project_code \
+             u.name as user_name, u.email as user_email, u.profile_image as user_profile_image, p.name as project_name, p.code as project_code \
              FROM assignments a \
              JOIN users u ON a.user_id = u.id \
              JOIN projects p ON a.project_id = p.id \
@@ -1371,8 +1581,9 @@ pub fn db_get_assignments(app_handle: tauri::AppHandle) -> Result<Vec<Assignment
                 end_date: row.get(6)?,
                 user_name: Some(row.get(7)?),
                 user_email: Some(row.get(8)?),
-                project_name: Some(row.get(9)?),
-                project_code: Some(row.get(10)?),
+                user_profile_image: row.get(9)?,
+                project_name: Some(row.get(10)?),
+                project_code: Some(row.get(11)?),
             })
         })
         .map_err(|e| e.to_string())?;

@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import type { Project, Process, Task, Document, Template, FolderNode, FolderTemplate, FolderTemplateNode } from '../types';
 import * as db from '../utils/db';
 import { scanDirectory, createDirectory, writeFileBytes } from '../utils/tauriBridge';
-import { downloadDocumentBytes } from '../utils/api';
+import { downloadDocumentBytes, createWorkLog } from '../utils/api';
+import { useAuthStore } from './authStore';
 
 interface ProjectState {
   projects: Project[];
@@ -27,7 +28,7 @@ interface ProjectState {
   setView: (view: string) => void;
   addProject: (name: string, path: string, code: string, templateId?: string, folderTemplateId?: string, startDate?: string, endDate?: string, description?: string) => Promise<Project>;
   removeProject: (id: string) => Promise<void>;
-  updateProjectInfo: (id: string, updates: { name?: string; code?: string; status?: string; start_date?: string; end_date?: string; description?: string }) => Promise<void>;
+  updateProjectInfo: (id: string, updates: Partial<Project>) => Promise<void>;
   
   // Process & Task Actions
   addProcess: (name: string, description: string) => Promise<void>;
@@ -337,6 +338,32 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     await db.saveTasks([newTask]);
     set({ tasks: updatedTasks });
+
+    try {
+      const user = useAuthStore.getState().user;
+      const userName = user?.name || '알 수 없음';
+      
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hour = String(now.getHours()).padStart(2, '0');
+      const minute = String(now.getMinutes()).padStart(2, '0');
+      const second = String(now.getSeconds()).padStart(2, '0');
+      const logDate = `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+
+      const token = localStorage.getItem('pa_token');
+      const serverMode = !!token && !token.startsWith('mock-jwt-token-for-');
+
+      await createWorkLog(serverMode, {
+        task_id: newTask.id,
+        content: `[작업 추가] ${userName}님이 새로운 작업 [${title}]을(를) 추가했습니다.`,
+        hours: null,
+        log_date: logDate
+      });
+    } catch (err) {
+      console.error('Failed to create task addition log:', err);
+    }
     
     // Update process progress
     await get().scanAndSync();
@@ -347,6 +374,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const processId = task.process_id;
     const processTasks = tasks[processId] || [];
     
+    const oldTask = processTasks.find(t => t.id === task.id);
+    const statusChanged = oldTask && oldTask.status !== task.status;
+
     const updatedTasks = {
       ...tasks,
       [processId]: processTasks.map(t => t.id === task.id ? { ...task, updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19) } : t)
@@ -354,6 +384,35 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     await db.saveTasks([task]);
     set({ tasks: updatedTasks });
+
+    if (statusChanged) {
+      try {
+        const user = useAuthStore.getState().user;
+        const userName = user?.name || '알 수 없음';
+        
+        // Format current timestamp: YYYY-MM-DD HH:mm:ss
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hour = String(now.getHours()).padStart(2, '0');
+        const minute = String(now.getMinutes()).padStart(2, '0');
+        const second = String(now.getSeconds()).padStart(2, '0');
+        const logDate = `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+
+        const token = localStorage.getItem('pa_token');
+        const serverMode = !!token && !token.startsWith('mock-jwt-token-for-');
+
+        await createWorkLog(serverMode, {
+          task_id: task.id,
+          content: `[상태 변경] ${userName}님이 작업을 [${task.status}] 상태로 이동시켰습니다.`,
+          hours: null,
+          log_date: logDate
+        });
+      } catch (err) {
+        console.error('Failed to create status change log:', err);
+      }
+    }
     
     // Recalculate progress
     await get().scanAndSync();

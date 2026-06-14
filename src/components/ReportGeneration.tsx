@@ -1,5 +1,9 @@
 import React, { useMemo } from 'react';
 import { useProjectStore } from '../store/projectStore';
+import { useAuthStore } from '../store/authStore';
+import * as api from '../utils/api';
+import { User, UserCheck, Check } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { 
   Printer, 
   ShieldCheck, 
@@ -29,7 +33,162 @@ import {
 import type { FolderNode } from '../types';
 
 export const ReportGeneration: React.FC = () => {
-  const { activeProject, processes, documents, emptyFoldersList, duplicateFilesList, rootNode } = useProjectStore();
+  const { activeProject, processes, documents, emptyFoldersList, duplicateFilesList, rootNode, tasks } = useProjectStore();
+  const { user: currentUser, serverMode } = useAuthStore();
+
+  const [activeTab, setActiveTab] = useState<'diagnosis' | 'work' | 'handover'>('diagnosis');
+  const [users, setUsers] = useState<any[]>([]);
+
+  // Work Report states
+  const [workReportType, setWorkReportType] = useState<'worker' | 'manager'>('worker');
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [reportingPeriodStart, setReportingPeriodStart] = useState<string>('');
+  const [reportingPeriodEnd, setReportingPeriodEnd] = useState<string>('');
+  const [completedWorkText, setCompletedWorkText] = useState<string>('');
+  const [plannedWorkText, setPlannedWorkText] = useState<string>('');
+  const [issuesText, setIssuesText] = useState<string>('');
+
+  // Handover Report states
+  const [handoverFromUserId, setHandoverFromUserId] = useState<string>('');
+  const [handoverToUserId, setHandoverToUserId] = useState<string>('');
+  const [handoverDate, setHandoverDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [handoverOverview, setHandoverOverview] = useState<string>('');
+  const [handoverPendingIssues, setHandoverPendingIssues] = useState<string>('');
+  const [checkedProcessIds, setCheckedProcessIds] = useState<string[]>([]);
+  const [checkedDocIds, setCheckedDocIds] = useState<string[]>([]);
+
+  // Fetch users
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const usersData = await api.getUsers(serverMode);
+        setUsers(usersData);
+        if (currentUser) {
+          setSelectedUserId(currentUser.id);
+          setHandoverFromUserId(currentUser.id);
+        }
+      } catch (e) {
+        console.error('Failed to load users:', e);
+      }
+    };
+    fetchData();
+  }, [serverMode, currentUser]);
+
+  // Set default dates based on active project
+  useEffect(() => {
+    if (activeProject) {
+      setReportingPeriodStart(activeProject.start_date || '');
+      setReportingPeriodEnd(activeProject.end_date || '');
+    }
+  }, [activeProject]);
+
+  // Set process/doc checkboxes defaults for handover
+  useEffect(() => {
+    if (activeProject) {
+      setCheckedProcessIds(processes.map(p => p.id));
+      setCheckedDocIds(documents.filter(d => d.size > 0).map(d => d.id));
+    }
+  }, [activeProject, processes, documents]);
+  const selectedUser = useMemo(() => {
+    return users.find(u => u.id === selectedUserId);
+  }, [users, selectedUserId]);
+
+  const handoverFromUser = useMemo(() => {
+    return users.find(u => u.id === handoverFromUserId);
+  }, [users, handoverFromUserId]);
+
+  const handoverToUser = useMemo(() => {
+    return users.find(u => u.id === handoverToUserId);
+  }, [users, handoverToUserId]);
+
+  // Auto-update work report fields when user or report type or tasks change
+  useEffect(() => {
+    if (!activeProject) return;
+
+    if (workReportType === 'manager') {
+      const allCompleted: string[] = [];
+      const allActive: string[] = [];
+      Object.values(tasks || {}).forEach((taskArray: any) => {
+        taskArray.forEach((t: any) => {
+          if (t.status === '완료') {
+            allCompleted.push(t.title);
+          } else {
+            allActive.push(t.title);
+          }
+        });
+      });
+      setCompletedWorkText(allCompleted.length > 0 
+        ? allCompleted.map(t => `- ${t}`).join('\n') 
+        : '금주 완료된 프로젝트 작업이 없습니다.');
+      setPlannedWorkText(allActive.length > 0 
+        ? allActive.map(t => `- ${t}`).join('\n') 
+        : '다음 주 진행 예정인 프로젝트 작업이 없습니다.');
+      setIssuesText('프로젝트 이슈 및 리스크 요인 없음');
+    } else {
+      const u = users.find(userObj => userObj.id === selectedUserId);
+      const userCompletedTasks: string[] = [];
+      const userActiveTasks: string[] = [];
+      Object.values(tasks || {}).forEach((taskArray: any) => {
+        taskArray.forEach((t: any) => {
+          const isAssigned = t.assignees?.includes(selectedUserId) || t.assignee === u?.username;
+          if (isAssigned) {
+            if (t.status === '완료') {
+              userCompletedTasks.push(t.title);
+            } else {
+              userActiveTasks.push(t.title);
+            }
+          }
+        });
+      });
+      setCompletedWorkText(userCompletedTasks.length > 0 
+        ? userCompletedTasks.map(t => `- ${t}`).join('\n') 
+        : '금주 완료된 담당 작업이 없습니다.');
+      setPlannedWorkText(userActiveTasks.length > 0 
+        ? userActiveTasks.map(t => `- ${t}`).join('\n') 
+        : '다음 주 진행 예정인 담당 작업이 없습니다.');
+      setIssuesText('특이사항 없음');
+    }
+  }, [selectedUserId, workReportType, tasks, users, activeProject]);
+
+  // Auto-update handover text
+  useEffect(() => {
+    if (!activeProject) return;
+    const securedDocsCount = documents.filter(doc => doc.size > 0).length;
+    const totalProgressSum = processes.reduce((acc, p) => acc + p.progress, 0);
+    const avgProgress = processes.length > 0 ? totalProgressSum / processes.length : 1.0;
+    const actualProgress = Math.round(avgProgress * 100);
+
+    setHandoverOverview(
+      `[프로젝트명: ${activeProject.name}]의 현재 진척도(${actualProgress}%) 및 산출물(${securedDocsCount}/${documents.length}개 확보) 상태에 대한 업무 인수인계를 진행합니다.`
+    );
+
+    const detectedAnomalies = [];
+    // Critical: Design 완료 단계의 산출물 부재 감지
+    const designProc = processes.find(p => p.name.includes('디자인') || p.name.toLowerCase().includes('design'));
+    const designDocsMissing = documents.filter(d => (d.name.includes('디자인') || d.name.toLowerCase().includes('design') || d.type.includes('psd') || d.type.includes('figma')) && d.size === 0);
+    if (designProc && designProc.status === '완료' && designDocsMissing.length > 0) {
+      detectedAnomalies.push('- [위험] 디자인 단계가 완료되었으나 디자인 필수 산출물이 누락되었습니다.');
+    }
+    // Critical: 검수 단계의 테스트 결과서 부재 감지
+    const qaProc = processes.find(p => p.name.includes('검수') || p.name.includes('테스트') || p.name.toLowerCase().includes('qa') || p.name.toLowerCase().includes('test'));
+    const qaDocsMissing = documents.filter(d => (d.name.includes('테스트결과서') || d.name.includes('검수') || d.name.toLowerCase().includes('qa') || d.name.toLowerCase().includes('test')) && d.size === 0);
+    if (qaProc && (qaProc.status === '완료' || qaProc.status === '진행중') && qaDocsMissing.length > 0) {
+      detectedAnomalies.push('- [위험] 검수/테스트 단계가 활성화되었으나 테스트결과서(증적)가 누락되었습니다.');
+    }
+    if (emptyFoldersList.length > 5) {
+      detectedAnomalies.push(`- [주의] 프로젝트 내 방치된 빈 폴더가 ${emptyFoldersList.length}개 존재합니다.`);
+    }
+    if (duplicateFilesList.length > 5) {
+      detectedAnomalies.push(`- [주의] 동일한 이름을 가진 중복 파일이 ${duplicateFilesList.length}개 존재합니다.`);
+    }
+
+    setHandoverPendingIssues(
+      detectedAnomalies.length > 0
+        ? detectedAnomalies.join('\n')
+        : '인계 시점 기준, 감지된 프로젝트 리스크 또는 미결 사항이 없습니다.'
+    );
+  }, [activeProject, processes, documents, emptyFoldersList, duplicateFilesList]);
+
 
   if (!activeProject) {
     return (
@@ -383,394 +542,871 @@ export const ReportGeneration: React.FC = () => {
   return (
     <div className="w-full flex-1 overflow-y-auto pr-1 flex flex-col gap-6 text-left select-none pb-10">
       
-      {/* Printable CSS overrides targeting printable document exclusively */}
+      {/* Printable CSS overrides */}
       <style dangerouslySetInnerHTML={{__html: `
         @media print {
-          /* Hide all surrounding app structures */
+          html, body, #root, .w-full, .h-screen, .flex-1, .overflow-hidden, .relative, div {
+            overflow: visible !important;
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            position: static !important;
+          }
           body * {
-            visibility: hidden;
-            background: white !important;
+            visibility: hidden !important;
           }
-          
-          /* Show ONLY the targeted printable-report and its descendants */
           #printable-report, #printable-report * {
-            visibility: visible;
+            visibility: visible !important;
           }
-          
-          /* Set target position to absolute top-left with maximum area usage */
           #printable-report {
-            position: absolute;
-            left: 0;
-            top: 0;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
             width: 100% !important;
             max-width: 100% !important;
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 20px !important;
             box-shadow: none !important;
             border: none !important;
             background: white !important;
             color: black !important;
             display: block !important;
+            overflow: visible !important;
           }
-          
-          /* Avoid layout cutting during printer rendering */
           .toss-card {
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
             border: 1px solid #e5e7eb !important;
-            margin-bottom: 20px !important;
+            margin-bottom: 25px !important;
             box-shadow: none !important;
             background: white !important;
           }
-          
-          /* Expand grid layout to simple block columns for neat multi-page printing */
           .grid {
             display: block !important;
           }
-          
           .grid > * {
             width: 100% !important;
-            margin-bottom: 20px !important;
+            margin-bottom: 25px !important;
           }
-
           .print\\:hidden {
             display: none !important;
-          }
-          
-          .print\\:text-black {
-            color: black !important;
-          }
-          
-          .print\\:border-gray {
-            border-color: #e5e7eb !important;
           }
         }
       `}} />
 
-      {/* Action buttons (Hidden during printing) */}
-      <div className="flex justify-between items-center shrink-0 print:hidden select-none">
+      {/* Action Header (Hidden during printing) */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0 print:hidden select-none">
         <div className="flex flex-col">
           <span className="text-xs font-bold text-toss-blue mb-1">Audit & Diagnostic Reports</span>
-          <h1 className="text-3xl font-extrabold text-toss-gray-900 dark:text-slate-100 tracking-tight">프로젝트 운영 진단 리포트</h1>
+          <h1 className="text-3xl font-extrabold text-toss-gray-900 dark:text-slate-100 tracking-tight">보고서 출력 센터</h1>
         </div>
         <div className="flex gap-2.5">
           <button
             onClick={handlePrint}
-            className="toss-btn toss-btn-primary px-5 py-3 rounded-2xl flex items-center gap-1.5 font-bold shadow-md cursor-pointer hover:shadow-lg transition-all active:scale-95"
+            className="toss-btn toss-btn-primary px-5 py-3 rounded-2xl flex items-center gap-1.5 font-bold shadow-md cursor-pointer hover:shadow-lg transition-all active:scale-95 text-xs"
           >
-            <Printer className="w-4.5 h-4.5" />
-            <span>보고서 인쇄 (PDF 저장)</span>
+            <Printer className="w-4 h-4" />
+            <span>보고서 인쇄 / PDF 저장</span>
           </button>
         </div>
       </div>
 
-      {/* Main Targeted Printable Report Wrapper */}
+      {/* Tabs selector (Hidden during printing) */}
+      <div className="flex gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0 print:hidden select-none">
+        <button
+          onClick={() => setActiveTab('diagnosis')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+            activeTab === 'diagnosis'
+              ? 'bg-toss-blue text-white shadow-sm'
+              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/60 dark:text-slate-400'
+          }`}
+        >
+          프로젝트 운영 진단서
+        </button>
+        <button
+          onClick={() => setActiveTab('work')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+            activeTab === 'work'
+              ? 'bg-toss-blue text-white shadow-sm'
+              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/60 dark:text-slate-400'
+          }`}
+        >
+          작업 성과 보고서
+        </button>
+        <button
+          onClick={() => setActiveTab('handover')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+            activeTab === 'handover'
+              ? 'bg-toss-blue text-white shadow-sm'
+              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/60 dark:text-slate-400'
+          }`}
+        >
+          업무 인수인계서
+        </button>
+      </div>
+
+      {/* Input Options Panel for Edit Mode (Hidden during printing) */}
+      {activeTab === 'work' && (
+        <div className="toss-card bg-slate-50/50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl flex flex-col gap-4 text-xs print:hidden select-none">
+          <span className="font-extrabold text-toss-gray-800 dark:text-slate-350">작업 보고서 생성 옵션 설정</span>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-slate-450">보고 주체 구분</label>
+              <div className="flex gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setWorkReportType('worker')}
+                  className={`flex-1 py-1.5 rounded-lg font-bold text-[10px] cursor-pointer ${workReportType === 'worker' ? 'bg-white dark:bg-slate-700 text-toss-blue shadow-sm' : 'text-slate-455'}`}
+                >
+                  작업자용
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWorkReportType('manager')}
+                  className={`flex-1 py-1.5 rounded-lg font-bold text-[10px] cursor-pointer ${workReportType === 'manager' ? 'bg-white dark:bg-slate-700 text-toss-blue shadow-sm' : 'text-slate-455'}`}
+                >
+                  관리자용
+                </button>
+              </div>
+            </div>
+
+            {workReportType === 'worker' && (
+              <div className="flex flex-col gap-1.5">
+                <label className="font-bold text-slate-450">보고 작업자 선택</label>
+                <select
+                  value={selectedUserId}
+                  onChange={(e) => setSelectedUserId(e.target.value)}
+                  className="toss-input h-[38px] text-[11px] font-bold"
+                >
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.department || '부서 없음'} / {u.position || '직급 없음'})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-slate-455">보고 기간 시작일</label>
+              <input
+                type="date"
+                value={reportingPeriodStart}
+                onChange={(e) => setReportingPeriodStart(e.target.value)}
+                className="toss-input h-[38px] text-[11px]"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-slate-455">보고 기간 종료일</label>
+              <input
+                type="date"
+                value={reportingPeriodEnd}
+                onChange={(e) => setReportingPeriodEnd(e.target.value)}
+                className="toss-input h-[38px] text-[11px]"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 dark:border-slate-800/80 pt-3">
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-slate-450">금주 주요 완료 업무 (수정 가능)</label>
+              <textarea
+                value={completedWorkText}
+                onChange={(e) => setCompletedWorkText(e.target.value)}
+                rows={4}
+                className="toss-input p-3 text-[11px] font-mono leading-relaxed"
+                placeholder="금주 업무 내용을 입력하세요"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-slate-450">진행 중 및 차주 계획 업무 (수정 가능)</label>
+              <textarea
+                value={plannedWorkText}
+                onChange={(e) => setPlannedWorkText(e.target.value)}
+                rows={4}
+                className="toss-input p-3 text-[11px] font-mono leading-relaxed"
+                placeholder="차주 예정 업무 내용을 입력하세요"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-slate-450">건의 및 애로 사항 (수정 가능)</label>
+              <textarea
+                value={issuesText}
+                onChange={(e) => setIssuesText(e.target.value)}
+                rows={4}
+                className="toss-input p-3 text-[11px] font-mono leading-relaxed"
+                placeholder="애로 사항을 기술하세요"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'handover' && (
+        <div className="toss-card bg-slate-50/50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800 p-5 rounded-3xl flex flex-col gap-4 text-xs print:hidden select-none">
+          <span className="font-extrabold text-toss-gray-800 dark:text-slate-350">업무 인수인계서 생성 옵션 설정</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-slate-455">인계자(업무 넘기는 사람) 선택</label>
+              <select
+                value={handoverFromUserId}
+                onChange={(e) => setHandoverFromUserId(e.target.value)}
+                className="toss-input h-[38px] text-[11px] font-bold"
+              >
+                <option value="">인계자 선택</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>{u.name} ({u.department || '부서 없음'} / {u.position || '직급 없음'})</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-slate-455">인수자(업무 받는 사람) 선택</label>
+              <select
+                value={handoverToUserId}
+                onChange={(e) => setHandoverToUserId(e.target.value)}
+                className="toss-input h-[38px] text-[11px] font-bold"
+              >
+                <option value="">인수자 선택</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>{u.name} ({u.department || '부서 없음'} / {u.position || '직급 없음'})</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-slate-455">인수인계 기준 일자</label>
+              <input
+                type="date"
+                value={handoverDate}
+                onChange={(e) => setHandoverDate(e.target.value)}
+                className="toss-input h-[38px] text-[11px]"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-800/80 pt-3">
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-slate-450">인수인계 업무 개요 요약 (수정 가능)</label>
+              <textarea
+                value={handoverOverview}
+                onChange={(e) => setHandoverOverview(e.target.value)}
+                rows={4}
+                className="toss-input p-3 text-[11px] font-mono leading-relaxed"
+                placeholder="업무 인수인계 개요 요약을 입력하세요"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-slate-450">미결 업무 및 잔여 이슈 리스트 (수정 가능)</label>
+              <textarea
+                value={handoverPendingIssues}
+                onChange={(e) => setHandoverPendingIssues(e.target.value)}
+                rows={4}
+                className="toss-input p-3 text-[11px] font-mono leading-relaxed"
+                placeholder="미결 사항 및 이슈 리스트를 기입하세요"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-800/80 pt-3">
+            {/* Process Checklist */}
+            <div className="flex flex-col gap-2">
+              <span className="font-bold text-slate-450">인계할 업무 단계(프로세스) 체크리스트</span>
+              <div className="max-h-36 overflow-y-auto border border-slate-100 dark:border-slate-800 p-3 rounded-2xl bg-white dark:bg-slate-950/20 flex flex-col gap-1.5">
+                {processes.map(p => (
+                  <label key={p.id} className="flex items-center gap-2 cursor-pointer py-0.5">
+                    <input
+                      type="checkbox"
+                      checked={checkedProcessIds.includes(p.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setCheckedProcessIds(prev => [...prev, p.id]);
+                        } else {
+                          setCheckedProcessIds(prev => prev.filter(id => id !== p.id));
+                        }
+                      }}
+                      className="rounded text-toss-blue focus:ring-toss-blue w-3.5 h-3.5"
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-350">{p.name} ({Math.round(p.progress * 100)}% 진행)</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Document Checklist */}
+            <div className="flex flex-col gap-2">
+              <span className="font-bold text-slate-450">전달할 필수 증적 문서 체크리스트</span>
+              <div className="max-h-36 overflow-y-auto border border-slate-100 dark:border-slate-800 p-3 rounded-2xl bg-white dark:bg-slate-950/20 flex flex-col gap-1.5">
+                {documents.map(d => (
+                  <label key={d.id} className="flex items-center gap-2 cursor-pointer py-0.5">
+                    <input
+                      type="checkbox"
+                      checked={checkedDocIds.includes(d.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setCheckedDocIds(prev => [...prev, d.id]);
+                        } else {
+                          setCheckedDocIds(prev => prev.filter(id => id !== d.id));
+                        }
+                      }}
+                      className="rounded text-toss-blue focus:ring-toss-blue w-3.5 h-3.5"
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-350">{d.name} {d.size > 0 ? '✅ 확보됨' : '❌ 미등록'}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Target Printable Report Block */}
       <div id="printable-report" className="flex flex-col gap-6 max-w-5xl mx-auto w-full">
         
-        {/* Header Document Cover */}
-        <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-8 rounded-3xl flex flex-col gap-5">
-          <div className="flex justify-between items-start border-b border-toss-gray-150 dark:border-slate-800/80 pb-5">
-            <div className="flex flex-col gap-1 text-left">
-              <span className="text-xs font-extrabold text-toss-blue tracking-widest uppercase">Project Atlas System Diagnosis</span>
-              <h2 className="text-2xl font-black text-toss-gray-900 dark:text-slate-100 tracking-tight mt-1">
-                {activeProject.name} 운영 진단 결과
-              </h2>
-              <span className="text-xs text-toss-gray-450 dark:text-slate-500 font-semibold mt-1">
-                경로: {activeProject.path}
-              </span>
-            </div>
-            <div className="text-right flex flex-col items-end">
-              <span className="text-xs text-toss-gray-450 dark:text-slate-500 font-semibold flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5" /> {reportDate}
-              </span>
-              <span className="text-xs text-toss-gray-400 mt-1">Audit OS: Project Atlas OS</span>
-            </div>
-          </div>
-
-          {/* 1. Executive Summary Panel */}
-          <div className="flex flex-col md:flex-row items-start md:items-center gap-5 bg-toss-gray-50 dark:bg-slate-850 p-6 rounded-2xl border border-toss-gray-200/10">
-            <div className={`px-4.5 py-3.5 rounded-2xl flex flex-col items-center justify-center font-black text-center min-w-[100px] border shadow-sm ${statusGrade.color}`}>
-              <span className="text-xs font-bold uppercase tracking-wider">상태 등급</span>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className={`w-2 h-2 rounded-full ${statusGrade.dot} animate-pulse`}></span>
-                <span className="text-xl">{statusGrade.label}</span>
-              </div>
-            </div>
-            <div className="flex-1 text-left flex flex-col gap-1.5">
-              <h4 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200">
-                {statusGrade.label === '정상' ? '🟢 프로젝트가 안정적으로 관리되고 있습니다.' : `${statusGrade.label === '주의' ? '🟡' : '🔴'} 프로젝트에 즉각적인 관심이 요구됩니다.`}
-              </h4>
-              <p className="text-xs text-toss-gray-505 dark:text-slate-400 font-semibold leading-relaxed">
-                {statusGrade.desc} {recommendedActions.length > 0 && `우선적인 보완을 위해 아래 ${recommendedActions.length}가지 추천 조치 사항(Recommended Actions) 이행을 강력히 권장합니다.`}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* 2 & 3. Grid for Score and Schedule */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-          
-          {/* 2. Health Score Card & Circular Gauge */}
-          <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between items-center text-center min-h-[350px]">
-            <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider self-start flex items-center gap-1">
-              <ShieldCheck className="w-4 h-4 text-toss-blue" /> 2. 프로젝트 건강도
-            </span>
-
-            {/* Radial gauge */}
-            <div className="relative w-36 h-36 flex items-center justify-center my-4">
-              <svg className="w-full h-full -rotate-90">
-                <circle
-                  cx="72"
-                  cy="72"
-                  r="60"
-                  className="stroke-toss-gray-100 dark:stroke-slate-800 fill-transparent"
-                  strokeWidth="8"
-                />
-                <circle
-                  cx="72"
-                  cy="72"
-                  r="60"
-                  style={{
-                    stroke: gaugeColor,
-                    strokeWidth: '8',
-                    fill: 'transparent',
-                    transition: 'stroke-dashoffset 0.5s ease',
-                    strokeDasharray: `${circumference}`,
-                    strokeDashoffset: `${strokeDashoffset}`
-                  }}
-                />
-              </svg>
-              <div className="absolute flex flex-col items-center">
-                <span className="text-4xl font-black text-toss-gray-800 dark:text-slate-100 tracking-tighter">{healthScore}점</span>
-                <span className="text-[10px] text-toss-gray-400 font-bold mt-0.5">만점 100점</span>
-              </div>
-            </div>
-
-            {/* Score Breakdowns */}
-            <div className="w-full flex justify-between text-[10px] font-bold text-toss-gray-450 border-t border-toss-gray-100 dark:border-slate-800 pt-3 mt-2">
-              <div className="flex flex-col items-center">
-                <span>프로세스</span>
-                <span className="text-toss-blue font-extrabold mt-0.5">{processScore}/40</span>
-              </div>
-              <div className="w-px h-5 bg-toss-gray-200 dark:bg-slate-800"></div>
-              <div className="flex flex-col items-center">
-                <span>산출물</span>
-                <span className="text-toss-green font-extrabold mt-0.5">{docScore}/30</span>
-              </div>
-              <div className="w-px h-5 bg-toss-gray-200 dark:bg-slate-800"></div>
-              <div className="flex flex-col items-center">
-                <span>폴더구조</span>
-                <span className="text-purple-500 font-extrabold mt-0.5">{structureScore}/20</span>
-              </div>
-              <div className="w-px h-5 bg-toss-gray-200 dark:bg-slate-800"></div>
-              <div className="flex flex-col items-center">
-                <span>청결도</span>
-                <span className="text-amber-500 font-extrabold mt-0.5">{cleanlinessScore}/10</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Health Score Trend Graph */}
-          <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl lg:col-span-2 flex flex-col justify-between min-h-[350px]">
-            <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
-              <Activity className="w-4 h-4 text-toss-blue" /> 건강도 점수 추이 그래프
-            </span>
-
-            <div className="flex-1 min-h-[180px] w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={gaugeColor} stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor={gaugeColor} stopOpacity={0.0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ fontSize: 11, borderRadius: 12 }} />
-                  <Area type="monotone" dataKey="점수" stroke={gaugeColor} strokeWidth={2.5} fillOpacity={1} fill="url(#colorScore)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-            
-            <p className="text-[10px] text-toss-gray-400 font-semibold mt-2">
-              ※ 매주 파일 수정 로그 및 누락 문서 동기화 스캔 이력을 분석하여 반영한 건강도 추이 시뮬레이션입니다.
-            </p>
-          </div>
-        </div>
-
-        {/* 3 & 4. Grid for Project Status & Schedule diagnosis */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-          
-          {/* 3. Project Status Panel */}
-          <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
-            <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
-              <Clock className="w-4 h-4 text-toss-blue" /> 3. 프로젝트 상태 및 단계 진단
-            </span>
-
-            <div className="flex flex-col gap-3.5 my-2">
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-bold text-toss-gray-500">진단 상태</span>
-                <span className={`px-2.5 py-0.5 rounded-full font-extrabold ${statusGrade.color}`}>
-                  {statusGrade.label}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-bold text-toss-gray-500">현재 활성 단계</span>
-                <span className="font-extrabold text-toss-gray-800 dark:text-slate-200">
-                  {currentPhaseName}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-bold text-toss-gray-500">시간 경과 예상 진행률</span>
-                <span className="font-extrabold text-toss-gray-800 dark:text-slate-200">
-                  {hasSchedule ? `${expectedProgress}%` : '일정 정보 없음'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-bold text-toss-gray-500">실제 진척 진행률</span>
-                <span className="font-extrabold text-toss-blue">
-                  {actualProgress}%
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-xs border-t border-toss-gray-100 dark:border-slate-800/80 pt-3">
-                <span className="font-bold text-toss-gray-550">진행도 격차 (GAP)</span>
-                <span className={`font-extrabold flex items-center gap-1 ${scheduleGap < 0 ? 'text-toss-red' : 'text-toss-green'}`}>
-                  {scheduleGap < 0 ? <TrendingDown className="w-4 h-4" /> : <TrendingUp className="w-4 h-4" />}
-                  {scheduleGap > 0 ? `+${scheduleGap}%` : `${scheduleGap}%`}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* 4. Schedule Diagnosis */}
-          <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
-            <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
-              <Calendar className="w-4 h-4 text-toss-blue" /> 4. 일정 기간 및 마일스톤 진단
-            </span>
-
-            {hasSchedule ? (
-              <div className="flex flex-col gap-3.5 my-2">
-                <div className="flex justify-between text-xs">
-                  <span className="font-bold text-toss-gray-500">전체 프로젝트 기간</span>
-                  <span className="font-extrabold text-toss-gray-800 dark:text-slate-200">{durationDays}일 간</span>
+        {activeTab === 'diagnosis' && (
+          /* ========================================================
+             Tab 1: 프로젝트 운영 진단서 (Diagnosis Report)
+             ======================================================== */
+          <div className="flex flex-col gap-6 w-full">
+            {/* Header Document Cover */}
+            <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-8 rounded-3xl flex flex-col gap-5">
+              <div className="flex justify-between items-start border-b border-toss-gray-150 dark:border-slate-800/80 pb-5">
+                <div className="flex flex-col gap-1 text-left">
+                  <span className="text-xs font-extrabold text-toss-blue tracking-widest uppercase">Project Atlas System Diagnosis</span>
+                  <h2 className="text-2xl font-black text-toss-gray-900 dark:text-slate-100 tracking-tight mt-1">
+                    {activeProject.name} 운영 진단 결과
+                  </h2>
+                  <span className="text-xs text-toss-gray-450 dark:text-slate-500 font-semibold mt-1">
+                    경로: {activeProject.path}
+                  </span>
                 </div>
-                <div className="flex justify-between text-xs">
-                  <span className="font-bold text-toss-gray-500">현재 경과일</span>
-                  <span className="font-extrabold text-toss-gray-800 dark:text-slate-200">{elapsedDays}일 차</span>
+                <div className="text-right flex flex-col items-end">
+                  <span className="text-xs text-toss-gray-450 dark:text-slate-500 font-semibold flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5" /> {reportDate}
+                  </span>
+                  <span className="text-xs text-toss-gray-400 mt-1">Audit OS: Project Atlas OS</span>
+                </div>
+              </div>
+
+              {/* 1. Executive Summary Panel */}
+              <div className="flex flex-col md:flex-row items-start md:items-center gap-5 bg-toss-gray-50 dark:bg-slate-850 p-6 rounded-2xl border border-toss-gray-200/10">
+                <div className={`px-4.5 py-3.5 rounded-2xl flex flex-col items-center justify-center font-black text-center min-w-[100px] border shadow-sm ${statusGrade.color}`}>
+                  <span className="text-xs font-bold uppercase tracking-wider">상태 등급</span>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className={`w-2 h-2 rounded-full ${statusGrade.dot} animate-pulse`}></span>
+                    <span className="text-xl">{statusGrade.label}</span>
+                  </div>
+                </div>
+                <div className="flex-1 text-left flex flex-col gap-1.5">
+                  <h4 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200">
+                    {statusGrade.label === '정상' ? '🟢 프로젝트가 안정적으로 관리되고 있습니다.' : `${statusGrade.label === '주의' ? '🟡' : '🔴'} 프로젝트에 즉각적인 관심이 요구됩니다.`}
+                  </h4>
+                  <p className="text-xs text-toss-gray-505 dark:text-slate-400 font-semibold leading-relaxed">
+                    {statusGrade.desc} {recommendedActions.length > 0 && `우선적인 보완을 위해 아래 ${recommendedActions.length}가지 추천 조치 사항(Recommended Actions) 이행을 강력히 권장합니다.`}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 2 & 3. Grid for Score and Schedule */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+              
+              {/* 2. Health Score Card & Circular Gauge */}
+              <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between items-center text-center min-h-[350px]">
+                <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider self-start flex items-center gap-1">
+                  <ShieldCheck className="w-4 h-4 text-toss-blue" /> 2. 프로젝트 건강도
+                </span>
+
+                {/* Radial gauge */}
+                <div className="relative w-36 h-36 flex items-center justify-center my-4">
+                  <svg className="w-full h-full -rotate-90">
+                    <circle
+                      cx="72"
+                      cy="72"
+                      r="60"
+                      className="stroke-toss-gray-100 dark:stroke-slate-800 fill-transparent"
+                      strokeWidth="8"
+                    />
+                    <circle
+                      cx="72"
+                      cy="72"
+                      r="60"
+                      style={{
+                        stroke: gaugeColor,
+                        strokeWidth: '8',
+                        fill: 'transparent',
+                        transition: 'stroke-dashoffset 0.5s ease',
+                        strokeDasharray: `${circumference}`,
+                        strokeDashoffset: `${strokeDashoffset}`
+                      }}
+                    />
+                  </svg>
+                  <div className="absolute flex flex-col items-center">
+                    <span className="text-4xl font-black text-toss-gray-800 dark:text-slate-100 tracking-tighter">{healthScore}점</span>
+                    <span className="text-[10px] text-toss-gray-400 font-bold mt-0.5">만점 100점</span>
+                  </div>
+                </div>
+
+                {/* Score Breakdowns */}
+                <div className="w-full flex justify-between text-[10px] font-bold text-toss-gray-455 border-t border-toss-gray-100 dark:border-slate-800 pt-3 mt-2">
+                  <div className="flex flex-col items-center">
+                    <span>프로세스</span>
+                    <span className="text-toss-blue font-extrabold mt-0.5">{processScore}/40</span>
+                  </div>
+                  <div className="w-px h-5 bg-toss-gray-200 dark:bg-slate-800"></div>
+                  <div className="flex flex-col items-center">
+                    <span>산출물</span>
+                    <span className="text-toss-green font-extrabold mt-0.5">{docScore}/30</span>
+                  </div>
+                  <div className="w-px h-5 bg-toss-gray-200 dark:bg-slate-800"></div>
+                  <div className="flex flex-col items-center">
+                    <span>폴더구조</span>
+                    <span className="text-purple-500 font-extrabold mt-0.5">{structureScore}/20</span>
+                  </div>
+                  <div className="w-px h-5 bg-toss-gray-200 dark:bg-slate-800"></div>
+                  <div className="flex flex-col items-center">
+                    <span>청결도</span>
+                    <span className="text-amber-500 font-extrabold mt-0.5">{cleanlinessScore}/10</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Health Score Trend Graph */}
+              <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl lg:col-span-2 flex flex-col justify-between min-h-[350px]">
+                <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
+                  <Activity className="w-4 h-4 text-toss-blue" /> 건강도 점수 추이 그래프
+                </span>
+
+                <div className="flex-1 min-h-[180px] w-full mt-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={gaugeColor} stopOpacity={0.25}/>
+                          <stop offset="95%" stopColor={gaugeColor} stopOpacity={0.0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="name" tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                      <Tooltip contentStyle={{ fontSize: 11, borderRadius: 12 }} />
+                      <Area type="monotone" dataKey="점수" stroke={gaugeColor} strokeWidth={2.5} fillOpacity={1} fill="url(#colorScore)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
                 
-                {/* Horizontal Progress bar for duration elapsed */}
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex justify-between text-[10px] text-toss-gray-450 font-bold">
-                    <span>기간 소모도 ({expectedProgress}%)</span>
-                    <span>실제 진척 ({actualProgress}%)</span>
+                <p className="text-[10px] text-toss-gray-400 font-semibold mt-2">
+                  ※ 매주 파일 수정 로그 및 누락 문서 동기화 스캔 이력을 분석하여 반영한 건강도 추이 시뮬레이션입니다.
+                </p>
+              </div>
+            </div>
+
+            {/* 3 & 4. Grid for Project Status & Schedule diagnosis */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+              
+              {/* 3. Project Status Panel */}
+              <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
+                <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
+                  <Clock className="w-4 h-4 text-toss-blue" /> 3. 프로젝트 상태 및 단계 진단
+                </span>
+
+                <div className="flex flex-col gap-3.5 my-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-toss-gray-500">진단 상태</span>
+                    <span className={`px-2.5 py-0.5 rounded-full font-extrabold ${statusGrade.color}`}>
+                      {statusGrade.label}
+                    </span>
                   </div>
-                  <div className="w-full h-3 bg-toss-gray-100 dark:bg-slate-800 rounded-full overflow-hidden relative">
-                    <div 
-                      className="absolute top-0 bottom-0 left-0 bg-toss-gray-300 dark:bg-slate-700 opacity-60" 
-                      style={{ width: `${expectedProgress}%` }}
-                    ></div>
-                    <div 
-                      className="absolute top-0 bottom-0 left-0 bg-toss-blue rounded-full transition-all" 
-                      style={{ width: `${actualProgress}%`, backgroundColor: scheduleGap < -20 ? '#F04452' : scheduleGap < -10 ? '#FFAD0D' : '#3182F6' }}
-                    ></div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-toss-gray-500">현재 활성 단계</span>
+                    <span className="font-extrabold text-toss-gray-800 dark:text-slate-200">
+                      {currentPhaseName}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-toss-gray-500">시간 경과 예상 진행률</span>
+                    <span className="font-extrabold text-toss-gray-800 dark:text-slate-200">
+                      {hasSchedule ? `${expectedProgress}%` : '일정 정보 없음'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-toss-gray-500">실제 진척 진행률</span>
+                    <span className="font-extrabold text-toss-blue">
+                      {actualProgress}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs border-t border-toss-gray-100 dark:border-slate-800/80 pt-3">
+                    <span className="font-bold text-toss-gray-550">진행도 격차 (GAP)</span>
+                    <span className={`font-extrabold flex items-center gap-1 ${scheduleGap < 0 ? 'text-toss-red' : 'text-toss-green'}`}>
+                      {scheduleGap < 0 ? <TrendingDown className="w-4 h-4" /> : <TrendingUp className="w-4 h-4" />}
+                      {scheduleGap > 0 ? `+${scheduleGap}%` : `${scheduleGap}%`}
+                    </span>
                   </div>
                 </div>
+              </div>
 
-                <div className="border-t border-toss-gray-100 dark:border-slate-800/80 pt-3 flex items-center gap-2">
-                  {scheduleGap < -20 ? (
-                    <span className="text-xs font-bold text-toss-red flex items-center gap-1">
-                      <AlertTriangle className="w-4 h-4" /> ⚠ 일정 지연 가능성 극도로 높음 (인력 긴급 수급 권고)
-                    </span>
-                  ) : scheduleGap < -10 ? (
-                    <span className="text-xs font-bold text-amber-500 flex items-center gap-1">
-                      <AlertTriangle className="w-4 h-4" /> ⚠ 일정 지연 가능성 존재 (마일스톤 관리 필요)
-                    </span>
+              {/* 4. Schedule Diagnosis */}
+              <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
+                <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
+                  <Calendar className="w-4 h-4 text-toss-blue" /> 4. 일정 기간 및 마일스톤 진단
+                </span>
+
+                {hasSchedule ? (
+                  <div className="flex flex-col gap-3.5 my-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="font-bold text-toss-gray-500">전체 프로젝트 기간</span>
+                      <span className="font-extrabold text-toss-gray-800 dark:text-slate-200">{durationDays}일 간</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="font-bold text-toss-gray-500">현재 경과일</span>
+                      <span className="font-extrabold text-toss-gray-800 dark:text-slate-200">{elapsedDays}일 차</span>
+                    </div>
+                    
+                    {/* Horizontal Progress bar for duration elapsed */}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex justify-between text-[10px] text-toss-gray-450 font-bold">
+                        <span>기간 소모도 ({expectedProgress}%)</span>
+                        <span>실제 진척 ({actualProgress}%)</span>
+                      </div>
+                      <div className="w-full h-3 bg-toss-gray-100 dark:bg-slate-800 rounded-full overflow-hidden relative">
+                        <div 
+                          className="absolute top-0 bottom-0 left-0 bg-toss-gray-300 dark:bg-slate-700 opacity-60" 
+                          style={{ width: `${expectedProgress}%` }}
+                        ></div>
+                        <div 
+                          className="absolute top-0 bottom-0 left-0 bg-toss-blue rounded-full transition-all" 
+                          style={{ width: `${actualProgress}%`, backgroundColor: scheduleGap < -20 ? '#F04452' : scheduleGap < -10 ? '#FFAD0D' : '#3182F6' }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-toss-gray-100 dark:border-slate-800/80 pt-3 flex items-center gap-2">
+                      {scheduleGap < -20 ? (
+                        <span className="text-xs font-bold text-toss-red flex items-center gap-1">
+                          <AlertTriangle className="w-4 h-4" /> ⚠ 일정 지연 가능성 극도로 높음 (인력 긴급 수급 권고)
+                        </span>
+                      ) : scheduleGap < -10 ? (
+                        <span className="text-xs font-bold text-amber-500 flex items-center gap-1">
+                          <AlertTriangle className="w-4 h-4" /> ⚠ 일정 지연 가능성 존재 (마일스톤 관리 필요)
+                        </span>
+                      ) : (
+                        <span className="text-xs font-bold text-toss-green flex items-center gap-1">
+                          <CheckCircle className="w-4 h-4" /> ✅ 예정대로 일정 범위 내에서 원활하게 진행 중
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-toss-gray-50 dark:bg-slate-850 rounded-2xl border border-dashed border-toss-gray-200 dark:border-slate-800">
+                    <AlertCircle className="w-8 h-8 text-toss-gray-400 mb-2" />
+                    <span className="text-xs font-bold text-toss-gray-450">프로젝트 전체 시작/종료일 정보가 없습니다.</span>
+                    <p className="text-[10px] text-toss-gray-400 mt-1">상세 일정 정보 입력 시 스케줄 지연도가 진단됩니다.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 5. Risks & Error Analysis Panel (Cards list) */}
+            <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col gap-4 text-left">
+              <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
+                <Flame className="w-4 h-4 text-toss-red" /> 5. 위험 및 에러 정밀 분석
+              </span>
+
+              <div className="flex flex-col gap-3">
+                {anomalies.length === 0 ? (
+                  <div className="flex items-center justify-center gap-2 py-6 bg-toss-green/5 rounded-2xl border border-dashed border-toss-green/20 text-xs font-bold text-toss-green">
+                    <CheckCircle className="w-4.5 h-4.5" />
+                    <span>감지된 프로젝트 리스크 또는 파일 시스템 이상 징후가 없습니다. 안정적입니다!</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    
+                    {/* Critical section */}
+                    <div className="p-4 rounded-2xl bg-toss-red/5 border border-toss-red/15 flex flex-col gap-2 min-h-[140px]">
+                      <span className="text-xs font-extrabold text-toss-red flex items-center gap-1 uppercase tracking-wider">
+                        <AlertCircle className="w-4 h-4" /> Critical
+                      </span>
+                      <div className="flex flex-col gap-2 overflow-y-auto max-h-[120px] pr-1">
+                        {anomalies.filter(a => a.type === 'critical').length === 0 ? (
+                          <span className="text-[11px] text-toss-gray-400 font-semibold pl-0.5">크리티컬 리스크 없음</span>
+                        ) : (
+                          anomalies.filter(a => a.type === 'critical').map(anomaly => (
+                            <div key={anomaly.id} className="flex flex-col text-[11px] font-semibold text-toss-gray-800 dark:text-slate-200 border-l-2 border-toss-red pl-2 py-0.5">
+                              <span>{anomaly.message}</span>
+                              <span className="text-[9px] text-toss-red mt-0.5">영향도: {anomaly.impact}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Warning section */}
+                    <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/15 flex flex-col gap-2 min-h-[140px]">
+                      <span className="text-xs font-extrabold text-amber-600 flex items-center gap-1 uppercase tracking-wider">
+                        <AlertTriangle className="w-4 h-4" /> Warning
+                      </span>
+                      <div className="flex flex-col gap-2 overflow-y-auto max-h-[120px] pr-1">
+                        {anomalies.filter(a => a.type === 'warning').length === 0 ? (
+                          <span className="text-[11px] text-toss-gray-400 font-semibold pl-0.5">경고성 리스크 없음</span>
+                        ) : (
+                          anomalies.filter(a => a.type === 'warning').map(anomaly => (
+                            <div key={anomaly.id} className="flex flex-col text-[11px] font-semibold text-toss-gray-800 dark:text-slate-200 border-l-2 border-amber-500 pl-2 py-0.5">
+                              <span>{anomaly.message}</span>
+                              <span className="text-[9px] text-amber-500 mt-0.5">영향도: {anomaly.impact}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Info section */}
+                    <div className="p-4 rounded-2xl bg-toss-gray-50 dark:bg-slate-850 border border-toss-gray-200/40 flex flex-col gap-2 min-h-[140px]">
+                      <span className="text-xs font-extrabold text-toss-gray-450 flex items-center gap-1 uppercase tracking-wider">
+                        <Info className="w-4 h-4" /> Info
+                      </span>
+                      <div className="flex flex-col gap-2 overflow-y-auto max-h-[120px] pr-1">
+                        {anomalies.filter(a => a.type === 'info').length === 0 ? (
+                          <span className="text-[11px] text-toss-gray-400 font-semibold pl-0.5">특이 사항 없음</span>
+                        ) : (
+                          anomalies.filter(a => a.type === 'info').map(anomaly => (
+                            <div key={anomaly.id} className="flex flex-col text-[11px] font-semibold text-toss-gray-800 dark:text-slate-200 border-l-2 border-toss-gray-400 pl-2 py-0.5">
+                              <span>{anomaly.message}</span>
+                              <span className="text-[9px] text-toss-gray-400 mt-0.5">영향도: {anomaly.impact}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 6 & 7. Grid for Processes & Required documents */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+              
+              {/* 6. Process Status Timeline */}
+              <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
+                <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
+                  <Clock className="w-4 h-4 text-toss-blue" /> 6. 프로세스 진행 현황
+                </span>
+
+                <div className="flex flex-col gap-3.5 my-2">
+                  {processes.map((proc, index) => {
+                    const isActive = proc.status === '진행중';
+                    const isCompleted = proc.status === '완료';
+                    return (
+                      <div key={proc.id} className="flex flex-col gap-1.5 p-3 rounded-2xl bg-toss-gray-50 dark:bg-slate-850/40 border border-toss-gray-100 dark:border-slate-800/40">
+                        <div className="flex justify-between items-center text-xs font-bold">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-toss-gray-455 bg-toss-gray-200 dark:bg-slate-800 px-1.5 py-0.5 rounded-md">
+                              0{index + 1}
+                            </span>
+                            <span className="text-toss-gray-800 dark:text-slate-200">{proc.name}</span>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                            isCompleted 
+                              ? 'text-toss-green bg-toss-green/10' 
+                              : isActive 
+                                ? 'text-toss-blue bg-toss-blue/10' 
+                                : 'text-toss-gray-450 bg-toss-gray-100 dark:bg-slate-800'
+                          }`}>
+                            {proc.status}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3 mt-1">
+                          <div className="flex-1 h-2 bg-toss-gray-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-toss-blue rounded-full transition-all" 
+                              style={{ 
+                                width: `${proc.progress * 100}%`,
+                                backgroundColor: isCompleted ? '#00B06C' : isActive ? '#3182F6' : '#94a3b8'
+                              }}
+                            ></div>
+                          </div>
+                          <span className="text-[10px] font-bold text-toss-gray-500 w-8 text-right">
+                            {Math.round(proc.progress * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 7. Required Document Checklist */}
+              <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
+                    <FileText className="w-4 h-4 text-toss-blue" /> 7. 필수 산출물 증적 현황
+                  </span>
+                  <span className="text-[10px] font-extrabold text-toss-blue">
+                    {securedDocsCount} / {documents.length} 확보 ({Math.round(docSecureRate)}%)
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-2.5 my-2">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-2 bg-toss-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-toss-green rounded-full transition-all" style={{ width: `${docSecureRate}%` }}></div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 max-h-[200px] overflow-y-auto pr-1">
+                    {documents.map(doc => {
+                      const present = doc.size > 0;
+                      return (
+                        <div key={doc.id} className="flex items-center gap-2 p-2 rounded-xl bg-toss-gray-50 dark:bg-slate-850/40 border border-toss-gray-100 dark:border-slate-800/40 text-xs font-semibold">
+                          {present ? (
+                            <CheckCircle className="w-4 h-4 text-toss-green shrink-0" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-toss-red shrink-0" />
+                          )}
+                          <span className={`truncate ${present ? 'text-toss-gray-800 dark:text-slate-200' : 'text-toss-gray-400 line-through'}`}>
+                            {doc.name}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 8 & 9. Grid for Project Activity & Recommended actions */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+              
+              {/* 8. Project Activity summary */}
+              <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
+                    <Activity className="w-4 h-4 text-toss-blue" /> 8. 프로젝트 파일 시스템 활동성
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    activityMetrics.activityLevel === '높음' 
+                      ? 'text-toss-green bg-toss-green/10 border border-toss-green/20' 
+                      : activityMetrics.activityLevel === '보통' 
+                        ? 'text-toss-blue bg-toss-blue/10 border border-toss-blue/20' 
+                        : 'text-toss-red bg-toss-red/10 border border-toss-red/20'
+                  }`}>
+                    활동 등급: {activityMetrics.activityLevel}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-3 my-2 text-xs">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-toss-gray-50 dark:bg-slate-850 p-3.5 rounded-xl border border-toss-gray-100 dark:border-slate-800/40 text-center">
+                      <span className="text-[10px] text-toss-gray-400 font-bold block">최근 7일 간 수정 파일</span>
+                      <span className="text-2xl font-black text-toss-gray-800 dark:text-slate-100 mt-1 block">{activityMetrics.changes7Days}개</span>
+                    </div>
+                    <div className="bg-toss-gray-50 dark:bg-slate-850 p-3.5 rounded-xl border border-toss-gray-100 dark:border-slate-800/40 text-center">
+                      <span className="text-[10px] text-toss-gray-400 font-bold block">최근 30일 간 수정 파일</span>
+                      <span className="text-2xl font-black text-toss-gray-850 dark:text-slate-150 mt-1 block">{activityMetrics.changes30Days}개</span>
+                    </div>
+                  </div>
+
+                  {activityMetrics.recentFiles.length > 0 ? (
+                    <div className="flex flex-col gap-1.5 border-t border-toss-gray-100 dark:border-slate-800/80 pt-3">
+                      <span className="text-[10px] font-bold text-toss-gray-450 uppercase mb-1">최근 파일 수정 이력</span>
+                      {activityMetrics.recentFiles.map((f, i) => (
+                        <div key={i} className="flex justify-between items-center text-[10px] text-toss-gray-650 dark:text-slate-355 bg-toss-gray-50 dark:bg-slate-850/40 p-2 rounded-xl">
+                          <span className="truncate max-w-[200px] font-bold text-toss-gray-750 dark:text-slate-200" title={f.path}>
+                            {f.name}
+                          </span>
+                          <span className="text-[9px] text-toss-gray-400">
+                            {new Date(f.modified * 1000).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit' })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
-                    <span className="text-xs font-bold text-toss-green flex items-center gap-1">
-                      <CheckCircle className="w-4 h-4" /> ✅ 예정대로 일정 범위 내에서 원활하게 진행 중
-                    </span>
+                    <span className="text-[10px] text-toss-gray-400 text-center py-4">감지된 최근 수정 파일이 없습니다.</span>
                   )}
                 </div>
               </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-toss-gray-50 dark:bg-slate-850 rounded-2xl border border-dashed border-toss-gray-200 dark:border-slate-800">
-                <AlertCircle className="w-8 h-8 text-toss-gray-400 mb-2" />
-                <span className="text-xs font-bold text-toss-gray-450">프로젝트 전체 시작/종료일 정보가 없습니다.</span>
-                <p className="text-[10px] text-toss-gray-400 mt-1">상세 일정 정보 입력 시 스케줄 지연도가 진단됩니다.</p>
-              </div>
-            )}
-          </div>
-        </div>
 
-        {/* 5. Risks & Error Analysis Panel (Cards list) */}
-        <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col gap-4 text-left">
-          <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
-            <Flame className="w-4 h-4 text-toss-red" /> 5. 위험 및 에러 정밀 분석
-          </span>
+              {/* 9. Recommended Actions */}
+              <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle className="w-4 h-4 text-toss-blue" /> 9. 프로젝트 개선 추천 액션
+                  </span>
+                  <span className="text-[10px] text-toss-gray-400 font-extrabold">
+                    예상 스코어 Boost: {healthScore} → <b className="text-toss-blue">{expectedScore}점</b>
+                  </span>
+                </div>
 
-          <div className="flex flex-col gap-3">
-            {anomalies.length === 0 ? (
-              <div className="flex items-center justify-center gap-2 py-6 bg-toss-green/5 rounded-2xl border border-dashed border-toss-green/20 text-xs font-bold text-toss-green">
-                <CheckCircle className="w-4.5 h-4.5" />
-                <span>감지된 프로젝트 리스크 또는 파일 시스템 이상 징후가 없습니다. 안정적입니다!</span>
+                <div className="flex flex-col gap-3 my-2 text-xs">
+                  {recommendedActions.length === 0 ? (
+                    <div className="flex items-center justify-center gap-2 py-8 bg-toss-green/5 rounded-2xl border border-dashed border-toss-green/20 text-xs font-bold text-toss-green text-center">
+                      <CheckCircle className="w-4.5 h-4.5" />
+                      <span>추천 액션이 없습니다.<br />모든 관리 규칙이 우수하게 지켜지고 있습니다!</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2.5">
+                      {recommendedActions.map((act, index) => (
+                        <div key={index} className="flex justify-between items-start p-3 bg-toss-blue-light/20 dark:bg-toss-blue/10 rounded-2xl border border-toss-blue-light/40 dark:border-toss-blue/20">
+                          <div className="flex items-start gap-2">
+                            <CornerDownRight className="w-3.5 h-3.5 text-toss-blue mt-0.5 shrink-0" />
+                            <span className="font-bold text-toss-gray-800 dark:text-slate-200">
+                              {act.text}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-extrabold text-toss-blue bg-toss-blue-light/50 dark:bg-toss-blue/20 px-2 py-0.5 rounded-md shrink-0">
+                            +{act.expectedBoost}점
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            </div>
+
+            {/* 10. Detailed check results (Directory diagnostics details) */}
+            <details className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl text-left select-none cursor-pointer print:hidden">
+              <summary className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center justify-between outline-none">
+                <div className="flex items-center gap-1">
+                  <FolderOpen className="w-4 h-4 text-toss-blue" /> 10. 상세 디렉토리 검사 결과 (빈 폴더 / 중복 파일 등)
+                </div>
+                <span className="text-[10px] font-bold text-toss-gray-400">클릭하여 펼치기</span>
+              </summary>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 cursor-default">
                 
-                {/* Critical section */}
-                <div className="p-4 rounded-2xl bg-toss-red/5 border border-toss-red/15 flex flex-col gap-2 min-h-[140px]">
-                  <span className="text-xs font-extrabold text-toss-red flex items-center gap-1 uppercase tracking-wider">
-                    <AlertCircle className="w-4 h-4" /> Critical
+                {/* Empty folders detail */}
+                <div className="p-4 rounded-2xl bg-toss-gray-50 dark:bg-slate-850/50 border border-toss-gray-100 dark:border-slate-800/40">
+                  <span className="text-xs font-extrabold text-toss-gray-700 dark:text-slate-350 block border-b border-toss-gray-100 dark:border-slate-800/60 pb-2">
+                    빈 폴더 리스트 ({emptyFoldersList.length}개)
                   </span>
-                  <div className="flex flex-col gap-2 overflow-y-auto max-h-[120px] pr-1">
-                    {anomalies.filter(a => a.type === 'critical').length === 0 ? (
-                      <span className="text-[11px] text-toss-gray-400 font-semibold pl-0.5">크리티컬 리스크 없음</span>
+                  <div className="flex flex-col gap-2 mt-3 max-h-48 overflow-y-auto pr-1">
+                    {emptyFoldersList.length === 0 ? (
+                      <span className="text-[10px] text-toss-gray-400 font-semibold py-2">감지된 빈 폴더가 없습니다.</span>
                     ) : (
-                      anomalies.filter(a => a.type === 'critical').map(anomaly => (
-                        <div key={anomaly.id} className="flex flex-col text-[11px] font-semibold text-toss-gray-800 dark:text-slate-200 border-l-2 border-toss-red pl-2 py-0.5">
-                          <span>{anomaly.message}</span>
-                          <span className="text-[9px] text-toss-red mt-0.5">영향도: {anomaly.impact}</span>
+                      emptyFoldersList.map((f, i) => (
+                        <div key={i} className="flex flex-col text-[10px] font-semibold text-toss-gray-800 dark:text-slate-200">
+                          <span className="truncate">{f.name}</span>
+                          <span className="text-[8px] text-toss-gray-400 truncate mt-0.5">{f.path}</span>
                         </div>
                       ))
                     )}
                   </div>
                 </div>
 
-                {/* Warning section */}
-                <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/15 flex flex-col gap-2 min-h-[140px]">
-                  <span className="text-xs font-extrabold text-amber-600 flex items-center gap-1 uppercase tracking-wider">
-                    <AlertTriangle className="w-4 h-4" /> Warning
+                {/* Duplicate files detail */}
+                <div className="p-4 rounded-2xl bg-toss-gray-50 dark:bg-slate-850/50 border border-toss-gray-100 dark:border-slate-800/40">
+                  <span className="text-xs font-extrabold text-toss-gray-700 dark:text-slate-355 block border-b border-toss-gray-100 dark:border-slate-800/60 pb-2">
+                    중복 파일명 리스트 ({duplicateFilesList.length}개)
                   </span>
-                  <div className="flex flex-col gap-2 overflow-y-auto max-h-[120px] pr-1">
-                    {anomalies.filter(a => a.type === 'warning').length === 0 ? (
-                      <span className="text-[11px] text-toss-gray-400 font-semibold pl-0.5">경고성 리스크 없음</span>
+                  <div className="flex flex-col gap-2 mt-3 max-h-48 overflow-y-auto pr-1">
+                    {duplicateFilesList.length === 0 ? (
+                      <span className="text-[10px] text-toss-gray-400 font-semibold py-2">감지된 중복 파일가 없습니다.</span>
                     ) : (
-                      anomalies.filter(a => a.type === 'warning').map(anomaly => (
-                        <div key={anomaly.id} className="flex flex-col text-[11px] font-semibold text-toss-gray-800 dark:text-slate-200 border-l-2 border-amber-500 pl-2 py-0.5">
-                          <span>{anomaly.message}</span>
-                          <span className="text-[9px] text-amber-500 mt-0.5">영향도: {anomaly.impact}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {/* Info section */}
-                <div className="p-4 rounded-2xl bg-toss-gray-50 dark:bg-slate-850 border border-toss-gray-200/40 flex flex-col gap-2 min-h-[140px]">
-                  <span className="text-xs font-extrabold text-toss-gray-450 flex items-center gap-1 uppercase tracking-wider">
-                    <Info className="w-4 h-4" /> Info
-                  </span>
-                  <div className="flex flex-col gap-2 overflow-y-auto max-h-[120px] pr-1">
-                    {anomalies.filter(a => a.type === 'info').length === 0 ? (
-                      <span className="text-[11px] text-toss-gray-400 font-semibold pl-0.5">특이 사항 없음</span>
-                    ) : (
-                      anomalies.filter(a => a.type === 'info').map(anomaly => (
-                        <div key={anomaly.id} className="flex flex-col text-[11px] font-semibold text-toss-gray-800 dark:text-slate-200 border-l-2 border-toss-gray-400 pl-2 py-0.5">
-                          <span>{anomaly.message}</span>
-                          <span className="text-[9px] text-toss-gray-400 mt-0.5">영향도: {anomaly.impact}</span>
+                      duplicateFilesList.map((f, i) => (
+                        <div key={i} className="flex flex-col text-[10px] font-semibold text-toss-gray-800 dark:text-slate-200">
+                          <span className="truncate">{f}</span>
+                          <span className="text-[8px] text-toss-red truncate mt-0.5">※ 동명이 서로 다른 경로에 존재</span>
                         </div>
                       ))
                     )}
@@ -778,243 +1414,348 @@ export const ReportGeneration: React.FC = () => {
                 </div>
 
               </div>
-            )}
+            </details>
           </div>
-        </div>
+        )}
 
-        {/* 6 & 7. Grid for Processes & Required documents */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-          
-          {/* 6. Process Status Timeline */}
-          <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
-            <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
-              <Clock className="w-4 h-4 text-toss-blue" /> 6. 프로세스 진행 현황
-            </span>
+        {activeTab === 'work' && (
+          /* ========================================================
+             Tab 2: 작업 성과 보고서 (Work Report)
+             ======================================================== */
+          <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-8 rounded-3xl flex flex-col gap-6 w-full text-left">
+            {/* Header Document Cover */}
+            <div className="flex justify-between items-start border-b border-toss-gray-150 dark:border-slate-800/80 pb-5">
+              <div className="flex flex-col gap-1 text-left">
+                <span className="text-xs font-extrabold text-toss-blue tracking-widest uppercase">Project Work Performance Report</span>
+                <h2 className="text-2xl font-black text-toss-gray-900 dark:text-slate-100 tracking-tight mt-1">
+                  작업 성과 보고서 ({workReportType === 'worker' ? '작업자용' : '관리자용'})
+                </h2>
+                <span className="text-xs text-toss-gray-450 dark:text-slate-500 font-semibold mt-1">
+                  프로젝트명: {activeProject.name} ({activeProject.code || '코드 없음'})
+                </span>
+              </div>
+              <div className="text-right flex flex-col items-end">
+                <span className="text-xs text-toss-gray-450 dark:text-slate-500 font-semibold flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" /> 보고서 출력일: {reportDate}
+                </span>
+                <span className="text-xs text-toss-gray-400 mt-1">
+                  보고 기간: {reportingPeriodStart || '미지정'} ~ {reportingPeriodEnd || '미지정'}
+                </span>
+              </div>
+            </div>
 
-            <div className="flex flex-col gap-3.5 my-2">
-              {processes.map((proc, index) => {
-                const isActive = proc.status === '진행중';
-                const isCompleted = proc.status === '완료';
-                return (
-                  <div key={proc.id} className="flex flex-col gap-1.5 p-3 rounded-2xl bg-toss-gray-50 dark:bg-slate-850/40 border border-toss-gray-100 dark:border-slate-800/40">
-                    <div className="flex justify-between items-center text-xs font-bold">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-toss-gray-450 bg-toss-gray-200 dark:bg-slate-800 px-1.5 py-0.5 rounded-md">
-                          0{index + 1}
-                        </span>
-                        <span className="text-toss-gray-800 dark:text-slate-200">{proc.name}</span>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                        isCompleted 
-                          ? 'text-toss-green bg-toss-green/10' 
-                          : isActive 
-                            ? 'text-toss-blue bg-toss-blue/10' 
-                            : 'text-toss-gray-450 bg-toss-gray-100 dark:bg-slate-800'
-                      }`}>
-                        {proc.status}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-3 mt-1">
-                      <div className="flex-1 h-2 bg-toss-gray-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-toss-blue rounded-full transition-all" 
-                          style={{ 
-                            width: `${proc.progress * 100}%`,
-                            backgroundColor: isCompleted ? '#00B06C' : isActive ? '#3182F6' : '#94a3b8'
-                          }}
-                        ></div>
-                      </div>
-                      <span className="text-[10px] font-bold text-toss-gray-500 w-8 text-right">
-                        {Math.round(proc.progress * 100)}%
-                      </span>
-                    </div>
+            {/* Reporter Meta Information */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-toss-gray-50 dark:bg-slate-850 p-5 rounded-2xl border border-toss-gray-200/10">
+              <div className="flex flex-col gap-2 text-xs">
+                <span className="font-extrabold text-toss-gray-800 dark:text-slate-200 flex items-center gap-1">
+                  <User className="w-4 h-4 text-toss-blue" /> 보고자 인적 사항
+                </span>
+                {workReportType === 'worker' && selectedUser ? (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 pl-5 text-[11px] font-semibold text-toss-gray-650 dark:text-slate-400">
+                    <span>성명: <b>{selectedUser.name}</b></span>
+                    <span>직책: {selectedUser.position || '미기입'}</span>
+                    <span>부서: {selectedUser.department || '미기입'}</span>
+                    <span>연락처: {selectedUser.phone || '미기입'}</span>
+                    <span className="col-span-2">이메일: {selectedUser.email || '미기입'}</span>
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                ) : workReportType === 'manager' && currentUser ? (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 pl-5 text-[11px] font-semibold text-toss-gray-650 dark:text-slate-400">
+                    <span>총괄 관리자: <b>{currentUser.name}</b></span>
+                    <span>권한: {currentUser.role === 'admin' ? '최고 관리자' : '프로젝트 매니저'}</span>
+                    <span>연락처: {currentUser.phone || '미기입'}</span>
+                    <span>이메일: {currentUser.email || '미기입'}</span>
+                  </div>
+                ) : (
+                  <span className="text-toss-gray-400 pl-5">선택된 보고 정보가 없습니다.</span>
+                )}
+              </div>
 
-          {/* 7. Required Document Checklist */}
-          <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
-                <FileText className="w-4 h-4 text-toss-blue" /> 7. 필수 산출물 증적 현황
-              </span>
-              <span className="text-[10px] font-extrabold text-toss-blue">
-                {securedDocsCount} / {documents.length} 확보 ({Math.round(docSecureRate)}%)
-              </span>
+              <div className="flex flex-col gap-2 text-xs">
+                <span className="font-extrabold text-toss-gray-800 dark:text-slate-200 flex items-center gap-1">
+                  <Activity className="w-4 h-4 text-toss-blue" /> 프로젝트 진척 요약
+                </span>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 pl-5 text-[11px] font-semibold text-toss-gray-650 dark:text-slate-400">
+                  <span>총 프로세스: {processes.length}단계</span>
+                  <span>평균 진행률: {actualProgress}%</span>
+                  <span>총 필수 문서: {documents.length}개</span>
+                  <span>문서 확보율: {Math.round(docSecureRate)}%</span>
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-col gap-2.5 my-2">
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-2 bg-toss-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-toss-green rounded-full transition-all" style={{ width: `${docSecureRate}%` }}></div>
+            {/* Task Performance Details */}
+            <div className="flex flex-col gap-3">
+              <h3 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                1. 담당 작업 진척 및 마일스톤 성과
+              </h3>
+              
+              {workReportType === 'worker' ? (
+                <div className="flex flex-col gap-2">
+                  {/* Filtered tasks assigned to selected user */}
+                  {Object.values(tasks || {}).flatMap((arr: any) => arr).filter((t: any) => t.assignees?.includes(selectedUserId) || t.assignee === selectedUser?.username).length === 0 ? (
+                    <div className="text-center py-6 text-[11px] text-toss-gray-400 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-dashed border-slate-100 dark:border-slate-800">
+                      이 프로젝트에서 해당 작업자에게 직접 할당된 명시적 태스크가 없습니다.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {Object.values(tasks || {}).flatMap((arr: any) => arr).filter((t: any) => t.assignees?.includes(selectedUserId) || t.assignee === selectedUser?.username).map((t: any) => (
+                        <div key={t.id} className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800/60 bg-white dark:bg-slate-950/20 text-xs font-semibold flex justify-between items-center shadow-soft-sm">
+                          <div className="flex flex-col gap-1 min-w-0 pr-2">
+                            <span className="text-toss-gray-800 dark:text-slate-250 truncate font-extrabold">{t.title}</span>
+                            <span className="text-[9px] text-toss-gray-400 font-mono">기한: {t.start_date || '미정'} ~ {t.end_date || '미정'}</span>
+                          </div>
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                            t.status === '완료' 
+                              ? 'text-toss-green bg-toss-green/10' 
+                              : t.status === '진행중' 
+                                ? 'text-toss-blue bg-toss-blue/10' 
+                                : 'text-toss-gray-450 bg-toss-gray-50 dark:bg-slate-800'
+                          }`}>
+                            {t.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {/* Grouped overall tasks */}
+                  {processes.map(p => {
+                    const procTasks = tasks?.[p.id] || [];
+                    return (
+                      <div key={p.id} className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800/40 bg-white dark:bg-slate-950/10 flex flex-col gap-2">
+                        <div className="flex justify-between items-center text-xs font-bold border-b border-slate-50 dark:border-slate-900 pb-1.5">
+                          <span className="text-toss-blue">{p.name}</span>
+                          <span className="text-[10px] text-toss-gray-400">진행률: {Math.round(p.progress * 100)}%</span>
+                        </div>
+                        {procTasks.length === 0 ? (
+                          <span className="text-[10px] text-toss-gray-400 py-1 italic">작업 내역 없음</span>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            {procTasks.map(t => (
+                              <div key={t.id} className="p-2 rounded-xl bg-slate-50/40 dark:bg-slate-900/40 border border-slate-50 dark:border-slate-850/60 flex items-center justify-between text-[10px] font-semibold">
+                                <span className="truncate pr-1.5 text-toss-gray-750 dark:text-slate-300">{t.title}</span>
+                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold shrink-0 ${
+                                  t.status === '완료' ? 'text-toss-green bg-toss-green/10' : t.status === '진행중' ? 'text-toss-blue bg-toss-blue/10' : 'text-toss-gray-400 bg-slate-100 dark:bg-slate-800'
+                                }`}>{t.status}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Editable Content display */}
+            <div className="flex flex-col gap-5 pt-3">
+              <div className="flex flex-col gap-2">
+                <h4 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                  2. 금주 업무 완료 상세 기술
+                </h4>
+                <div className="p-4 rounded-2xl bg-toss-gray-50 dark:bg-slate-850 border border-toss-gray-200/10 text-xs text-toss-gray-700 dark:text-slate-300 font-mono leading-relaxed whitespace-pre-wrap">
+                  {completedWorkText || '기술된 내역이 없습니다.'}
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 max-h-[200px] overflow-y-auto pr-1">
-                {documents.map(doc => {
-                  const present = doc.size > 0;
+              <div className="flex flex-col gap-2">
+                <h4 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                  3. 차주 업무 예정 계획
+                </h4>
+                <div className="p-4 rounded-2xl bg-toss-gray-50 dark:bg-slate-850 border border-toss-gray-200/10 text-xs text-toss-gray-700 dark:text-slate-300 font-mono leading-relaxed whitespace-pre-wrap">
+                  {plannedWorkText || '기술된 내역이 없습니다.'}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <h4 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                  4. 특이 사항 및 건의 사항
+                </h4>
+                <div className="p-4 rounded-2xl bg-toss-gray-50 dark:bg-slate-850 border border-toss-gray-200/10 text-xs text-toss-gray-700 dark:text-slate-300 font-mono leading-relaxed whitespace-pre-wrap">
+                  {issuesText || '특이 사항이 없습니다.'}
+                </div>
+              </div>
+            </div>
+
+            {/* Signature Area */}
+            <div className="flex justify-end gap-16 mt-10 pt-10 border-t border-toss-gray-150 dark:border-slate-800">
+              <div className="text-center text-xs flex flex-col gap-10 font-bold text-toss-gray-500">
+                <span>작성자 (보고자)</span>
+                <span className="text-toss-gray-800 dark:text-slate-200">
+                  {workReportType === 'worker' ? selectedUser?.name : currentUser?.name} (서명 / 인)
+                </span>
+              </div>
+              <div className="text-center text-xs flex flex-col gap-10 font-bold text-toss-gray-500">
+                <span>부서 총괄 책임자</span>
+                <span className="text-toss-gray-800 dark:text-slate-200">
+                   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (서명 / 인)
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'handover' && (
+          /* ========================================================
+             Tab 3: 업무 인수인계서 (Handover Report)
+             ======================================================== */
+          <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-8 rounded-3xl flex flex-col gap-6 w-full text-left">
+            {/* Header Document Cover */}
+            <div className="flex justify-between items-start border-b border-toss-gray-150 dark:border-slate-800/80 pb-5">
+              <div className="flex flex-col gap-1 text-left">
+                <span className="text-xs font-extrabold text-toss-blue tracking-widest uppercase">Project Task Handover Document</span>
+                <h2 className="text-2xl font-black text-toss-gray-900 dark:text-slate-100 tracking-tight mt-1">
+                  업무 인수인계서
+                </h2>
+                <span className="text-xs text-toss-gray-450 dark:text-slate-500 font-semibold mt-1">
+                  대상 프로젝트: {activeProject.name} ({activeProject.code || '코드 없음'})
+                </span>
+              </div>
+              <div className="text-right flex flex-col items-end">
+                <span className="text-xs text-toss-gray-450 dark:text-slate-500 font-semibold flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" /> 인수인계 기준일: {handoverDate}
+                </span>
+                <span className="text-xs text-toss-gray-400 mt-1">System Document No. PA-HO-{activeProject.code || '001'}</span>
+              </div>
+            </div>
+
+            {/* Handover Party Meta Information */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-toss-gray-50 dark:bg-slate-850 p-5 rounded-2xl border border-toss-gray-200/10">
+              <div className="flex flex-col gap-2 text-xs border-r border-toss-gray-200/40 dark:border-slate-800/60 pr-4">
+                <span className="font-extrabold text-toss-red flex items-center gap-1">
+                  <UserCheck className="w-4 h-4" /> 1. 인계자 (업무 이관자)
+                </span>
+                {handoverFromUser ? (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 pl-5 text-[11px] font-semibold text-toss-gray-650 dark:text-slate-400">
+                    <span>성명: <b>{handoverFromUser.name}</b></span>
+                    <span>직책: {handoverFromUser.position || '미기입'}</span>
+                    <span>부서: {handoverFromUser.department || '미기입'}</span>
+                    <span>연락처: {handoverFromUser.phone || '미기입'}</span>
+                    <span className="col-span-2">이메일: {handoverFromUser.email || '미기입'}</span>
+                  </div>
+                ) : (
+                  <span className="text-toss-gray-400 pl-5">인계자를 선택하세요.</span>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2 text-xs pl-0 md:pl-4">
+                <span className="font-extrabold text-toss-blue flex items-center gap-1">
+                  <UserCheck className="w-4 h-4" /> 2. 인수자 (업무 대행/수신자)
+                </span>
+                {handoverToUser ? (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 pl-5 text-[11px] font-semibold text-toss-gray-650 dark:text-slate-400">
+                    <span>성명: <b>{handoverToUser.name}</b></span>
+                    <span>직책: {handoverToUser.position || '미기입'}</span>
+                    <span>부서: {handoverToUser.department || '미기입'}</span>
+                    <span>연락처: {handoverToUser.phone || '미기입'}</span>
+                    <span className="col-span-2">이메일: {handoverToUser.email || '미기입'}</span>
+                  </div>
+                ) : (
+                  <span className="text-toss-gray-450 pl-5">인수자를 선택하세요.</span>
+                )}
+              </div>
+            </div>
+
+            {/* Handover Overview */}
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                3. 업무 인수인계 목적 및 개요
+              </h3>
+              <div className="p-4 rounded-2xl bg-toss-gray-50 dark:bg-slate-850 border border-toss-gray-200/10 text-xs text-toss-gray-700 dark:text-slate-350 font-mono leading-relaxed whitespace-pre-wrap">
+                {handoverOverview || '개요가 작성되지 않았습니다.'}
+              </div>
+            </div>
+
+            {/* Handover Item 1: Processes */}
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                4. 업무 진행 현황 및 프로세스 이수 체크
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                {processes.map(p => {
+                  const isChecked = checkedProcessIds.includes(p.id);
                   return (
-                    <div key={doc.id} className="flex items-center gap-2 p-2 rounded-xl bg-toss-gray-50 dark:bg-slate-850/40 border border-toss-gray-100 dark:border-slate-800/40 text-xs font-semibold">
-                      {present ? (
-                        <CheckCircle className="w-4 h-4 text-toss-green shrink-0" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 text-toss-red shrink-0" />
-                      )}
-                      <span className={`truncate ${present ? 'text-toss-gray-800 dark:text-slate-200' : 'text-toss-gray-400 line-through'}`}>
-                        {doc.name}
-                      </span>
+                    <div key={p.id} className={`p-3 rounded-xl border text-xs font-semibold flex justify-between items-center transition-all ${
+                      isChecked 
+                        ? 'border-toss-blue/20 bg-toss-blue-light/10 text-toss-blue' 
+                        : 'border-slate-100/60 bg-slate-50/20 text-slate-400 dark:border-slate-800/40 dark:bg-transparent line-through'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <Check className={`w-3.5 h-3.5 shrink-0 ${isChecked ? 'text-toss-blue' : 'text-slate-300 dark:text-slate-700'}`} />
+                        <span>{p.name}</span>
+                      </div>
+                      <span className="text-[10px] font-extrabold">{Math.round(p.progress * 100)}% 진행</span>
                     </div>
                   );
                 })}
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* 8 & 9. Grid for Project Activity & Recommended actions */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-          
-          {/* 8. Project Activity summary */}
-          <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
-                <Activity className="w-4 h-4 text-toss-blue" /> 8. 프로젝트 파일 시스템 활동성
-              </span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                activityMetrics.activityLevel === '높음' 
-                  ? 'text-toss-green bg-toss-green/10 border border-toss-green/20' 
-                  : activityMetrics.activityLevel === '보통' 
-                    ? 'text-toss-blue bg-toss-blue/10 border border-toss-blue/20' 
-                    : 'text-toss-red bg-toss-red/10 border border-toss-red/20'
-              }`}>
-                활동 등급: {activityMetrics.activityLevel}
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-3 my-2 text-xs">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-toss-gray-50 dark:bg-slate-850 p-3.5 rounded-xl border border-toss-gray-100 dark:border-slate-800/40 text-center">
-                  <span className="text-[10px] text-toss-gray-400 font-bold block">최근 7일 간 수정 파일</span>
-                  <span className="text-2xl font-black text-toss-gray-800 dark:text-slate-100 mt-1 block">{activityMetrics.changes7Days}개</span>
-                </div>
-                <div className="bg-toss-gray-50 dark:bg-slate-850 p-3.5 rounded-xl border border-toss-gray-100 dark:border-slate-800/40 text-center">
-                  <span className="text-[10px] text-toss-gray-400 font-bold block">최근 30일 간 수정 파일</span>
-                  <span className="text-2xl font-black text-toss-gray-850 dark:text-slate-150 mt-1 block">{activityMetrics.changes30Days}개</span>
-                </div>
-              </div>
-
-              {activityMetrics.recentFiles.length > 0 ? (
-                <div className="flex flex-col gap-1.5 border-t border-toss-gray-100 dark:border-slate-800/80 pt-3">
-                  <span className="text-[10px] font-bold text-toss-gray-450 uppercase mb-1">최근 파일 수정 이력</span>
-                  {activityMetrics.recentFiles.map((f, i) => (
-                    <div key={i} className="flex justify-between items-center text-[10px] text-toss-gray-650 dark:text-slate-350 bg-toss-gray-50 dark:bg-slate-850/40 p-2 rounded-xl">
-                      <span className="truncate max-w-[200px] font-bold text-toss-gray-750 dark:text-slate-200" title={f.path}>
-                        {f.name}
-                      </span>
-                      <span className="text-[9px] text-toss-gray-400">
-                        {new Date(f.modified * 1000).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit' })}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-[10px] text-toss-gray-400 text-center py-4">감지된 최근 수정 파일이 없습니다.</span>
-              )}
-            </div>
-          </div>
-
-          {/* 9. Recommended Actions */}
-          <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl flex flex-col justify-between text-left gap-4">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center gap-1">
-                <CheckCircle className="w-4 h-4 text-toss-blue" /> 9. 프로젝트 개선 추천 액션
-              </span>
-              <span className="text-[10px] text-toss-gray-400 font-extrabold">
-                예상 스코어 Boost: {healthScore} → <b className="text-toss-blue">{expectedScore}점</b>
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-3 my-2 text-xs">
-              {recommendedActions.length === 0 ? (
-                <div className="flex items-center justify-center gap-2 py-8 bg-toss-green/5 rounded-2xl border border-dashed border-toss-green/20 text-xs font-bold text-toss-green text-center">
-                  <CheckCircle className="w-4.5 h-4.5" />
-                  <span>추천 액션이 없습니다.<br />모든 관리 규칙이 우수하게 지켜지고 있습니다!</span>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2.5">
-                  {recommendedActions.map((act, index) => (
-                    <div key={index} className="flex justify-between items-start p-3 bg-toss-blue-light/20 dark:bg-toss-blue/10 rounded-2xl border border-toss-blue-light/40 dark:border-toss-blue/20">
-                      <div className="flex items-start gap-2">
-                        <CornerDownRight className="w-3.5 h-3.5 text-toss-blue mt-0.5 shrink-0" />
-                        <span className="font-bold text-toss-gray-800 dark:text-slate-200">
-                          {act.text}
-                        </span>
+            {/* Handover Item 2: Deliverables */}
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                5. 주요 인수 인계 증적 산출물 명세
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                {documents.map(d => {
+                  const isChecked = checkedDocIds.includes(d.id);
+                  return (
+                    <div key={d.id} className={`p-3 rounded-xl border text-xs font-semibold flex justify-between items-center transition-all ${
+                      isChecked 
+                        ? 'border-toss-green/20 bg-toss-green-light/10 text-toss-green' 
+                        : 'border-slate-100/60 bg-slate-50/20 text-slate-400 dark:border-slate-800/40 dark:bg-transparent'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <FileText className={`w-3.5 h-3.5 shrink-0 ${isChecked ? 'text-toss-green' : 'text-slate-300 dark:text-slate-700'}`} />
+                        <span className="truncate max-w-[200px]">{d.name}</span>
                       </div>
-                      <span className="text-[10px] font-extrabold text-toss-blue bg-toss-blue-light/50 dark:bg-toss-blue/20 px-2 py-0.5 rounded-md shrink-0">
-                        +{act.expectedBoost}점
-                      </span>
+                      <span className="text-[9px] font-bold">{d.size > 0 ? `확보 (${(d.size/1024).toFixed(1)} KB)` : '미확보'}</span>
                     </div>
-                  ))}
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Handover Issues */}
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                6. 미결 사항 및 특이 주의사항
+              </h3>
+              <div className="p-4 rounded-2xl bg-toss-gray-50 dark:bg-slate-850 border border-toss-gray-200/10 text-xs text-toss-gray-700 dark:text-slate-350 font-mono leading-relaxed whitespace-pre-wrap">
+                {handoverPendingIssues || '미결 사항이 없습니다.'}
+              </div>
+            </div>
+
+            <p className="text-[10px] text-toss-gray-400 leading-normal font-semibold mt-4 text-center">
+              위의 프로젝트 진행 업무 내역 및 필수 증적 문서 목록에 대하여 인계인수인은 오류 없음을 확인하고,<br />
+              기준일자부로 업무 권한 및 관리 책임을 이관 및 수락합니다.
+            </p>
+
+            {/* Signature Area */}
+            <div className="flex justify-between items-center mt-10 pt-10 border-t border-toss-gray-150 dark:border-slate-800">
+              <div className="text-left text-xs font-bold text-toss-gray-400">
+                인계인수 주관일: {handoverDate}
+              </div>
+              <div className="flex gap-16">
+                <div className="text-center text-xs flex flex-col gap-10 font-bold text-toss-gray-500">
+                  <span>인계자 (이관자)</span>
+                  <span className="text-toss-gray-800 dark:text-slate-200">
+                    {handoverFromUser ? handoverFromUser.name : '        '} (서명 / 인)
+                  </span>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* 10. Detailed check results (Directory diagnostics details) */}
-        <details className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-250 dark:border-slate-800 p-6 rounded-3xl text-left select-none cursor-pointer print:hidden">
-          <summary className="text-xs font-bold text-toss-gray-450 uppercase tracking-wider flex items-center justify-between outline-none">
-            <div className="flex items-center gap-1">
-              <FolderOpen className="w-4 h-4 text-toss-blue" /> 10. 상세 디렉토리 검사 결과 (빈 폴더 / 중복 파일 등)
-            </div>
-            <span className="text-[10px] font-bold text-toss-gray-400">클릭하여 펼치기</span>
-          </summary>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 cursor-default">
-            
-            {/* Empty folders detail */}
-            <div className="p-4 rounded-2xl bg-toss-gray-50 dark:bg-slate-850/50 border border-toss-gray-100 dark:border-slate-800/40">
-              <span className="text-xs font-extrabold text-toss-gray-700 dark:text-slate-350 block border-b border-toss-gray-100 dark:border-slate-800/60 pb-2">
-                빈 폴더 리스트 ({emptyFoldersList.length}개)
-              </span>
-              <div className="flex flex-col gap-2 mt-3 max-h-48 overflow-y-auto pr-1">
-                {emptyFoldersList.length === 0 ? (
-                  <span className="text-[10px] text-toss-gray-400 font-semibold py-2">감지된 빈 폴더가 없습니다.</span>
-                ) : (
-                  emptyFoldersList.map((f, i) => (
-                    <div key={i} className="flex flex-col text-[10px] font-semibold text-toss-gray-800 dark:text-slate-200">
-                      <span className="truncate">{f.name}</span>
-                      <span className="text-[8px] text-toss-gray-400 truncate mt-0.5">{f.path}</span>
-                    </div>
-                  ))
-                )}
+                <div className="text-center text-xs flex flex-col gap-10 font-bold text-toss-gray-500">
+                  <span>인수자 (수신자)</span>
+                  <span className="text-toss-gray-800 dark:text-slate-200">
+                    {handoverToUser ? handoverToUser.name : '        '} (서명 / 인)
+                  </span>
+                </div>
               </div>
             </div>
-
-            {/* Duplicate files detail */}
-            <div className="p-4 rounded-2xl bg-toss-gray-50 dark:bg-slate-850/50 border border-toss-gray-100 dark:border-slate-800/40">
-              <span className="text-xs font-extrabold text-toss-gray-700 dark:text-slate-350 block border-b border-toss-gray-100 dark:border-slate-800/60 pb-2">
-                중복 파일명 리스트 ({duplicateFilesList.length}개)
-              </span>
-              <div className="flex flex-col gap-2 mt-3 max-h-48 overflow-y-auto pr-1">
-                {duplicateFilesList.length === 0 ? (
-                  <span className="text-[10px] text-toss-gray-400 font-semibold py-2">감지된 중복 파일이 없습니다.</span>
-                ) : (
-                  duplicateFilesList.map((f, i) => (
-                    <div key={i} className="flex flex-col text-[10px] font-semibold text-toss-gray-800 dark:text-slate-200">
-                      <span className="truncate">{f}</span>
-                      <span className="text-[8px] text-toss-red truncate mt-0.5">※ 동명이 서로 다른 경로에 존재</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
           </div>
-        </details>
+        )}
 
         {/* Report Footer */}
         <div className="mt-4 border-t border-toss-gray-150 print:border-gray pt-6 flex justify-between items-center text-xs text-toss-gray-400 select-none">

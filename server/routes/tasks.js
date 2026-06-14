@@ -113,7 +113,7 @@ router.get('/:taskId/worklogs', verifyToken, async (req, res) => {
 
   try {
     const worklogs = await dbAll(
-      'SELECT * FROM worklogs WHERE task_id = ? ORDER BY created_at DESC',
+      'SELECT w.*, u.profile_image AS author_profile_image FROM worklogs w LEFT JOIN users u ON w.user_id = u.id WHERE w.task_id = ? ORDER BY w.created_at DESC',
       [taskId]
     );
     return res.json({ worklogs });
@@ -164,7 +164,10 @@ router.post('/:taskId/worklogs', verifyToken, async (req, res) => {
       ]
     );
 
-    const worklog = await dbGet('SELECT * FROM worklogs WHERE id = ?', [id]);
+    const worklog = await dbGet(
+      'SELECT w.*, u.profile_image AS author_profile_image FROM worklogs w LEFT JOIN users u ON w.user_id = u.id WHERE w.id = ?',
+      [id]
+    );
     return res.status(201).json({ worklog });
   } catch (error) {
     console.error('Create worklog failed:', error);

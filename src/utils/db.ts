@@ -466,7 +466,26 @@ export const updateProjectHealth = async (id: string, healthScore: number): Prom
 
 export const updateProject = async (
   id: string,
-  updates: { name?: string; code?: string; status?: string; start_date?: string; end_date?: string; description?: string }
+  updates: {
+    name?: string;
+    code?: string;
+    status?: string;
+    start_date?: string;
+    end_date?: string;
+    description?: string;
+    contract_amount?: string;
+    importance?: string;
+    priority?: string;
+    client_name?: string;
+    client_region?: string;
+    client_department?: string;
+    client_contact_name?: string;
+    client_contact_phone?: string;
+    client_contact_email?: string;
+    business_purpose?: string;
+    major_scope?: string;
+    special_notes?: string;
+  }
 ): Promise<void> => {
   if (getServerMode()) {
     await apiRequest(`/projects/${id}`, {
@@ -486,6 +505,18 @@ export const updateProject = async (
       if (updates.start_date !== undefined) projects[idx].start_date = updates.start_date;
       if (updates.end_date !== undefined) projects[idx].end_date = updates.end_date;
       if (updates.description !== undefined) projects[idx].description = updates.description;
+      if (updates.contract_amount !== undefined) projects[idx].contract_amount = updates.contract_amount;
+      if (updates.importance !== undefined) projects[idx].importance = updates.importance;
+      if (updates.priority !== undefined) projects[idx].priority = updates.priority;
+      if (updates.client_name !== undefined) projects[idx].client_name = updates.client_name;
+      if (updates.client_region !== undefined) projects[idx].client_region = updates.client_region;
+      if (updates.client_department !== undefined) projects[idx].client_department = updates.client_department;
+      if (updates.client_contact_name !== undefined) projects[idx].client_contact_name = updates.client_contact_name;
+      if (updates.client_contact_phone !== undefined) projects[idx].client_contact_phone = updates.client_contact_phone;
+      if (updates.client_contact_email !== undefined) projects[idx].client_contact_email = updates.client_contact_email;
+      if (updates.business_purpose !== undefined) projects[idx].business_purpose = updates.business_purpose;
+      if (updates.major_scope !== undefined) projects[idx].major_scope = updates.major_scope;
+      if (updates.special_notes !== undefined) projects[idx].special_notes = updates.special_notes;
       projects[idx].updated_at = new Date().toISOString().replace('T', ' ').slice(0, 19);
       localStorage.setItem('pa_projects', JSON.stringify(projects));
     }

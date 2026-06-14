@@ -2,17 +2,19 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
 import * as api from '../utils/api';
+import { openInExplorer } from '../utils/tauriBridge';
 import {
   Plus, Trash2, ArrowLeft, ArrowRight, Edit, ClipboardList,
   Clock, X, Check, MessageSquare, ListTodo, CalendarDays,
   Users, ChevronRight, Loader2, UserPlus, Search,
-  CheckSquare, History, Timer,
+  CheckSquare, History, Timer, Folder, FileText, ChevronDown,
 } from 'lucide-react';
 import type { Task, SubTask, WorkLog, User } from '../types';
 import { RangeDatePicker } from './RangeDatePicker';
 import { CustomTimePicker } from './CustomTimePicker';
 import { CommentPanel } from './CommentPanel';
 import { CustomSelect } from './CustomSelect';
+import { Avatar } from './Avatar';
 
 // ─── 유틸 ─────────────────────────────────────────────────────
 function getRemainingDays(endDate?: string) {
@@ -26,9 +28,33 @@ function getRemainingDays(endDate?: string) {
   return { label: `D-${diff}`, color: 'text-slate-400 bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60' };
 }
 
-function getInitials(name: string) { return name?.slice(0, 2) || '?'; }
-const AVATAR_COLORS = ['bg-blue-500','bg-violet-500','bg-emerald-500','bg-amber-500','bg-pink-500','bg-indigo-500','bg-teal-500','bg-rose-500'];
-function avatarBg(name: string) { return AVATAR_COLORS[(name?.charCodeAt(0) || 0) % AVATAR_COLORS.length]; }
+// Unused avatar helpers removed to satisfy compiler
+
+function getLogTimestamp(dateStr: string): number {
+  if (!dateStr) return 0;
+  
+  // ISO string with T and Z (like 2026-06-13T04:52:16.000Z)
+  if (dateStr.includes('T')) {
+    const parsed = new Date(dateStr).getTime();
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  
+  // format: YYYY-MM-DD HH:mm:ss or YYYY-MM-DD HH:mm
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(dateStr)) {
+    // Replace space with T and append Z to force parsing as UTC
+    const parsed = new Date(dateStr.replace(' ', 'T') + 'Z').getTime();
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  
+  // format: YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const parsed = new Date(dateStr + 'T00:00:00Z').getTime();
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  
+  const parsed = new Date(dateStr).getTime();
+  return isNaN(parsed) ? 0 : parsed;
+}
 
 // ─── 담당자 선택 팝업 ─────────────────────────────────────────
 interface AssigneeSelectorProps {
@@ -93,9 +119,11 @@ const AssigneeSelector: React.FC<AssigneeSelectorProps> = ({ selectedIds, onChan
               }}
               className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors cursor-pointer ${sel ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}
             >
-              <div className={`w-7 h-7 rounded-full ${avatarBg(u.name)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
-                {getInitials(u.name)}
-              </div>
+              <Avatar
+                name={u.name}
+                profileImage={u.profile_image}
+                className="w-7 h-7 text-[10px] shrink-0"
+              />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold text-slate-800 dark:text-slate-100">{u.name}</p>
                 <p className="text-[10px] text-slate-400">{[u.department, u.position].filter(Boolean).join(' · ')}</p>
@@ -294,12 +322,79 @@ const ChecklistPanel: React.FC<ChecklistPanelProps> = ({ taskId, serverMode }) =
   );
 };
 
+// ─── 폴더 트리 선택기 노드 ───────────────────────────────────
+interface SelectionTreeNodeProps {
+  node: any; // FolderNode
+  onSelect: (path: string, isDir: boolean) => void;
+  selectedPath: string | null;
+}
+const SelectionTreeNode: React.FC<SelectionTreeNodeProps> = ({ node, onSelect, selectedPath }) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const isSelected = selectedPath === node.path;
+
+  return (
+    <div className="flex flex-col gap-1 ml-4 pl-3 border-l border-slate-200/60 dark:border-slate-800 relative py-1 text-left">
+      <div 
+        onClick={() => onSelect(node.path, node.is_dir)}
+        className={`flex items-center gap-2 text-xs py-1.5 px-3 rounded-xl cursor-pointer transition-all ${
+          isSelected
+            ? 'bg-toss-blue-light/50 dark:bg-toss-blue/15 text-toss-blue font-extrabold border border-toss-blue-light/50'
+            : 'hover:bg-slate-50 dark:hover:bg-slate-800/30 text-slate-700 dark:text-slate-350 border border-transparent'
+        }`}
+      >
+        {node.is_dir ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsExpanded(!isExpanded);
+            }}
+            className="p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 shrink-0"
+          >
+            {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </button>
+        ) : (
+          <span className="w-4.5 shrink-0" />
+        )}
+
+        {node.is_dir ? (
+          <Folder className="w-3.5 h-3.5 text-toss-blue shrink-0" />
+        ) : (
+          <FileText className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+        )}
+
+        <span className="flex-1 truncate select-none font-semibold">
+          {node.name}
+        </span>
+      </div>
+
+      {node.is_dir && isExpanded && node.children && (
+        <div className="flex flex-col gap-1 mt-1">
+          {node.children.map((child: any, idx: number) => (
+            <SelectionTreeNode
+              key={idx}
+              node={child}
+              onSelect={onSelect}
+              selectedPath={selectedPath}
+            />
+          ))}
+          {node.children.length === 0 && (
+            <p className="text-[10px] text-slate-400 italic ml-6 py-1 select-none">빈 폴더</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── 업무 이력 패널 ───────────────────────────────────────────
 interface WorkLogPanelProps {
   taskId: string;
   serverMode: boolean;
+  users: User[];
 }
-const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode }) => {
+const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode, users }) => {
+  const { rootNode } = useProjectStore();
   const [logs, setLogs] = useState<WorkLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -309,9 +404,17 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode }) => {
   const [logEndDate, setLogEndDate] = useState(new Date().toISOString().slice(0, 10));
   const [submitting, setSubmitting] = useState(false);
 
+  // 태깅 경로 관리 상태
+  const [taggedPath, setTaggedPath] = useState<string | null>(null);
+  const [taggedIsDir, setTaggedIsDir] = useState(false);
+  const [showTreeSelector, setShowTreeSelector] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
-    try { setLogs(await api.getWorkLogs(serverMode, taskId)); }
+    try {
+      const fetched = await api.getWorkLogs(serverMode, taskId);
+      setLogs(fetched.filter(l => !l.content.startsWith('[상태 변경]') && !l.content.startsWith('[작업 추가]')));
+    }
     finally { setLoading(false); }
   }, [taskId, serverMode]);
 
@@ -325,15 +428,23 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode }) => {
       const displayDate = logEndDate && logEndDate !== logStartDate
         ? `${logStartDate} ~ ${logEndDate}`
         : logStartDate;
+
+      // 파일/폴더 태그 메타데이터를 문자열 하단에 직렬화
+      const finalContent = taggedPath
+        ? `${content.trim()}\n[TAGGED_PATH_${taggedIsDir ? 'DIR' : 'FILE'}]:${taggedPath}`
+        : content.trim();
+
       const log = await api.createWorkLog(serverMode, {
         task_id: taskId,
-        content: content.trim(),
+        content: finalContent,
         hours: hours ? parseFloat(hours) : null,
         log_date: displayDate,
       });
       setLogs(prev => [log, ...prev]);
       setContent('');
       setHours('');
+      setTaggedPath(null);
+      setTaggedIsDir(false);
       setLogStartDate(new Date().toISOString().slice(0, 10));
       setLogEndDate(new Date().toISOString().slice(0, 10));
       setShowForm(false);
@@ -347,9 +458,7 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode }) => {
 
   const totalHours = logs.reduce((sum, l) => sum + (l.hours || 0), 0);
 
-  function getInitials(name: string) { return name?.slice(0, 2) || '?'; }
-  const AVATAR_COLORS_LOG = ['bg-blue-500','bg-violet-500','bg-emerald-500','bg-amber-500','bg-pink-500','bg-indigo-500','bg-teal-500','bg-rose-500'];
-  function avatarBgLog(name: string) { return AVATAR_COLORS_LOG[(name?.charCodeAt(0) || 0) % AVATAR_COLORS_LOG.length]; }
+  // Unused avatar helpers removed to satisfy compiler
 
   return (
     <div className="flex flex-col gap-4">
@@ -439,6 +548,41 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode }) => {
             />
           </div>
 
+          {/* 파일/폴더 태그 선택 */}
+          <div className="flex flex-col gap-1.5 text-left">
+            <label className="text-[11px] font-bold text-slate-400 dark:text-slate-500">연동 파일/폴더 태그 (선택)</label>
+            <div className="flex items-center gap-2">
+              {taggedPath ? (
+                <div className="flex-1 flex items-center justify-between px-3.5 py-2 bg-toss-blue-light/30 dark:bg-toss-blue/10 border border-toss-blue-light/50 rounded-xl">
+                  <div className="flex items-center gap-2 text-xs font-bold text-toss-blue truncate">
+                    {taggedIsDir ? <Folder className="w-3.5 h-3.5 shrink-0" /> : <FileText className="w-3.5 h-3.5 shrink-0" />}
+                    <span className="truncate">{taggedPath.split('\\').pop() || taggedPath}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTaggedPath(null);
+                      setTaggedIsDir(false);
+                    }}
+                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 transition-colors cursor-pointer"
+                    title="태그 해제"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowTreeSelector(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-white dark:bg-slate-855 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer select-none"
+                >
+                  <Folder className="w-3.5 h-3.5" />
+                  파일/폴더 선택
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="flex gap-2 justify-end">
             <button
               type="button"
@@ -459,6 +603,75 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode }) => {
         </form>
       )}
 
+      {/* 파일 및 폴더 연동 선택기 모달 */}
+      {showTreeSelector && (
+        <div 
+          className="fixed inset-0 bg-slate-955/40 dark:bg-slate-955/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setShowTreeSelector(false)}
+        >
+          <div 
+            className="bg-white/95 dark:bg-slate-900/95 border border-gray-100 dark:border-slate-800 rounded-[28px] p-6 shadow-toss-lg max-w-md w-full h-[450px] text-left animate-scale-in flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="flex items-center justify-between shrink-0">
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-toss-blue">Select Path to Tag</span>
+                <h3 className="text-base font-extrabold text-toss-gray-900 dark:text-slate-100 mt-0.5">파일 및 폴더 연동</h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowTreeSelector(false)}
+                className="p-2 rounded-xl hover:bg-toss-gray-100 dark:hover:bg-slate-800 text-toss-gray-400 cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* 트리 영역 */}
+            <div className="flex-1 overflow-y-auto pr-1 border border-slate-150 dark:border-slate-800/80 rounded-2xl p-4 bg-slate-50/30 dark:bg-slate-900/40">
+              {rootNode ? (
+                <SelectionTreeNode
+                  node={rootNode}
+                  selectedPath={taggedPath}
+                  onSelect={(path, isDir) => {
+                    setTaggedPath(path);
+                    setTaggedIsDir(isDir);
+                  }}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                  <Folder className="w-10 h-10 text-slate-350 animate-pulse mb-2" />
+                  <p className="text-xs font-bold">프로젝트 디렉토리 정보가 없습니다.</p>
+                </div>
+              )}
+            </div>
+
+            {/* 확인/취소 */}
+            <div className="flex justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setTaggedPath(null);
+                  setTaggedIsDir(false);
+                  setShowTreeSelector(false);
+                }}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                선택 안함
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowTreeSelector(false)}
+                className="px-4 py-2 rounded-xl bg-toss-blue text-white text-xs font-extrabold hover:bg-blue-600 cursor-pointer"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 이력 목록 */}
       {loading ? (
         <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-300" /></div>
@@ -469,54 +682,94 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode }) => {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {logs.map(log => (
-            <div
-              key={log.id}
-              className="flex gap-3 group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-4 shadow-sm hover:shadow-md transition-shadow"
-            >
-              {/* 아바타 */}
-              <div className={`w-8 h-8 rounded-full ${avatarBgLog(log.author_name || '?')} flex items-center justify-center text-white text-[11px] font-bold shrink-0`}>
-                {getInitials(log.author_name || '?')}
-              </div>
+          {logs.map(log => {
+            // 태깅된 경로 메타데이터 파싱
+            let displayContent = log.content;
+            let logTaggedPath = '';
+            let logTaggedIsDir = false;
+            
+            const dirMatch = log.content.match(/\n\[TAGGED_PATH_DIR\]:(.+)$/);
+            const fileMatch = log.content.match(/\n\[TAGGED_PATH_FILE\]:(.+)$/);
+            
+            if (dirMatch) {
+              logTaggedPath = dirMatch[1];
+              logTaggedIsDir = true;
+              displayContent = log.content.replace(/\n\[TAGGED_PATH_DIR\]:(.+)$/, '');
+            } else if (fileMatch) {
+              logTaggedPath = fileMatch[1];
+              logTaggedIsDir = false;
+              displayContent = log.content.replace(/\n\[TAGGED_PATH_FILE\]:(.+)$/, '');
+            }
 
-              {/* 내용 */}
-              <div className="flex-1 min-w-0">
-                {/* 작성자 + 메타 */}
-                <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                  <span className="text-[13px] font-extrabold text-slate-800 dark:text-slate-100">
-                    {log.author_name || '알 수 없음'}
-                  </span>
-                  {[log.author_department, log.author_position].filter(Boolean).map((t, i) => (
-                    <span key={i} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] font-semibold rounded-md border border-slate-200/60 dark:border-slate-700/60">
-                      {t}
+            return (
+              <div
+                key={log.id}
+                className="flex gap-3 group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-4 shadow-sm hover:shadow-md transition-shadow text-left"
+              >
+                {/* 아바타 */}
+                <Avatar
+                  name={log.author_name || '?'}
+                  profileImage={log.author_profile_image || users.find(u => u.name === log.author_name || u.id === log.user_id)?.profile_image}
+                  className="w-8 h-8 text-[11px] font-bold shrink-0"
+                />
+
+                {/* 내용 */}
+                <div className="flex-1 min-w-0">
+                  {/* 작성자 + 메타 */}
+                  <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                    <span className="text-[13px] font-extrabold text-slate-800 dark:text-slate-100">
+                      {log.author_name || '알 수 없음'}
                     </span>
-                  ))}
-                  <span className="ml-auto flex items-center gap-1 text-[11px] text-slate-400 font-medium">
-                    <CalendarDays className="w-3 h-3" />
-                    {log.log_date}
-                  </span>
-                  {log.hours && (
-                    <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[11px] font-bold rounded-full border border-amber-200 dark:border-amber-800/40">
-                      <Timer className="w-3 h-3" />{log.hours}h
+                    {[log.author_department, log.author_position].filter(Boolean).map((t, i) => (
+                      <span key={i} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] font-semibold rounded-md border border-slate-200/60 dark:border-slate-700/60">
+                        {t}
+                      </span>
+                    ))}
+                    <span className="ml-auto flex items-center gap-1 text-[11px] text-slate-400 font-medium">
+                      <CalendarDays className="w-3 h-3" />
+                      {log.log_date}
                     </span>
+                    {log.hours && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[11px] font-bold rounded-full border border-amber-200 dark:border-amber-800/40">
+                        <Timer className="w-3 h-3" />{log.hours}h
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 수행 내용 */}
+                  <p className="text-[13px] text-slate-650 dark:text-slate-400 leading-relaxed whitespace-pre-wrap">
+                    {displayContent}
+                  </p>
+
+                  {/* 태깅 배지 */}
+                  {logTaggedPath && (
+                    <button
+                      type="button"
+                      onClick={() => openInExplorer(logTaggedPath)}
+                      className="mt-2.5 flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-750 border border-slate-150 dark:border-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-350 rounded-xl transition-all cursor-pointer max-w-full truncate inline-flex"
+                      title="탐색기에서 해당 경로 열기"
+                    >
+                      {logTaggedIsDir ? (
+                        <Folder className="w-3.5 h-3.5 text-toss-blue shrink-0" />
+                      ) : (
+                        <FileText className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      )}
+                      <span className="truncate">{logTaggedPath.split('\\').pop() || logTaggedPath}</span>
+                      <span className="text-[10px] text-slate-400 font-normal font-mono truncate ml-1">({logTaggedPath})</span>
+                    </button>
                   )}
                 </div>
 
-                {/* 수행 내용 */}
-                <p className="text-[13px] text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-wrap">
-                  {log.content}
-                </p>
+                {/* 삭제 */}
+                <button
+                  onClick={() => handleDelete(log.id)}
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all cursor-pointer shrink-0 self-start"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
-
-              {/* 삭제 */}
-              <button
-                onClick={() => handleDelete(log.id)}
-                className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all cursor-pointer shrink-0 self-start"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -544,6 +797,24 @@ const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, projectId, serv
   const [showAssigneeSelector, setShowAssigneeSelector] = useState(false);
   const [assigneeIds, setAssigneeIds] = useState<string[]>(task.assignees || (task.assignee ? [task.assignee] : []));
   const [assigneeNames, setAssigneeNames] = useState<string[]>(task.assignee_names || (task.assignee ? [task.assignee] : []));
+  const [lastStatusLog, setLastStatusLog] = useState<any | null>(null);
+
+  useEffect(() => {
+    const loadLastStatusLog = async () => {
+      try {
+        const fetched = await api.getWorkLogs(serverMode, task.id);
+        const statusLogs = fetched.filter(l => l.content.startsWith('[상태 변경]'));
+        if (statusLogs.length > 0) {
+          setLastStatusLog(statusLogs[0]);
+        } else {
+          setLastStatusLog(null);
+        }
+      } catch (err) {
+        console.error('Failed to load last status log:', err);
+      }
+    };
+    loadLastStatusLog();
+  }, [task.id, task.status, serverMode]);
 
   const priorityColor = task.priority === '긴급' ? 'text-rose-500 bg-rose-50 border-rose-200'
     : task.priority === '높음' ? 'text-amber-500 bg-amber-50 border-amber-200'
@@ -639,34 +910,37 @@ const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, projectId, serv
               )}
             </div>
             {editing ? (
-              <div className="flex flex-col gap-2 w-full mt-2">
+              <div className="flex flex-col gap-3 w-full mt-2">
                 <input
                   value={editTitle}
                   onChange={e => setEditTitle(e.target.value)}
-                  className="text-lg font-extrabold text-slate-800 dark:text-slate-100 bg-transparent border-b-2 border-toss-blue outline-none w-full"
+                  className="text-lg font-extrabold text-slate-800 dark:text-slate-100 bg-transparent border-b-2 border-toss-blue outline-none w-full mb-2"
                   autoFocus
                 />
-                <div className="w-full max-w-xs mt-1 flex gap-2">
-                  <div className="flex-1">
-                    <RangeDatePicker
-                      startDate={editStartDate}
-                      endDate={editEndDate}
-                      onChange={handleEditDateChange}
-                      placeholder="작업 일정 선택"
-                    />
-                  </div>
-                  <div className="w-28">
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">작업 기간</label>
+                  <RangeDatePicker
+                    startDate={editStartDate}
+                    endDate={editEndDate}
+                    onChange={handleEditDateChange}
+                    placeholder="작업 일정 선택"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">시작 시간</label>
                     <CustomTimePicker
                       value={editStartTime}
                       onChange={handleEditStartTimeChange}
-                      className="text-xs font-bold py-1 bg-slate-50 dark:bg-slate-800"
                     />
                   </div>
-                  <div className="w-28">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-toss-gray-450 dark:text-slate-400">종료 시간</label>
                     <CustomTimePicker
                       value={editEndTime}
                       onChange={handleEditEndTimeChange}
-                      className="text-xs font-bold py-1 bg-slate-50 dark:bg-slate-800"
                     />
                   </div>
                 </div>
@@ -724,11 +998,17 @@ const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, projectId, serv
             {assigneeNames.length === 0 ? (
               <span className="text-xs text-slate-400 italic">미할당</span>
             ) : (
-              assigneeNames.map((name, i) => (
-                <div key={i} className={`w-6 h-6 rounded-full ${avatarBg(name)} flex items-center justify-center text-white text-[10px] font-bold`} title={name}>
-                  {getInitials(name)}
-                </div>
-              ))
+              assigneeNames.map((name, i) => {
+                const userObj = users.find(u => u.name === name);
+                return (
+                  <Avatar
+                    key={i}
+                    name={name}
+                    profileImage={userObj?.profile_image}
+                    className="w-6 h-6 text-[10px] font-bold"
+                  />
+                );
+              })
             )}
             <div className="relative">
               <button
@@ -751,8 +1031,8 @@ const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, projectId, serv
         </div>
 
         {/* 설명 */}
-        {(editing || task.description) && (
-          <div className="px-6 py-3 border-b border-slate-50 dark:border-slate-800/60 shrink-0">
+        {(editing || task.description || lastStatusLog) && (
+          <div className="px-6 py-4 border-b border-slate-50 dark:border-slate-800/60 shrink-0">
             {editing ? (
               <textarea
                 value={editDesc}
@@ -762,7 +1042,18 @@ const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, projectId, serv
                 className="w-full text-sm px-3 py-2 border border-toss-blue rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-toss-blue/30 resize-none"
               />
             ) : (
-              <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{task.description}</p>
+              <div className="flex flex-col gap-3">
+                {task.description && (
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{task.description}</p>
+                )}
+                {lastStatusLog && (
+                  <div className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-150/60 dark:border-slate-800/80 rounded-2xl text-[11px] text-slate-650 dark:text-slate-400 font-semibold shadow-sm">
+                    <History className="w-3.5 h-3.5 text-toss-blue shrink-0" />
+                    <span className="truncate">{lastStatusLog.content}</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium font-mono ml-auto shrink-0">{lastStatusLog.log_date}</span>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -794,7 +1085,7 @@ const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, projectId, serv
             </div>
           ) : tab === 'worklog' ? (
             <div className="px-6 py-5">
-              <WorkLogPanel taskId={task.id} serverMode={serverMode} />
+              <WorkLogPanel taskId={task.id} serverMode={serverMode} users={users} />
             </div>
           ) : (
             <div className="h-full">
@@ -820,8 +1111,9 @@ interface KanbanCardProps {
   onEdit: () => void;
   onDelete: () => void;
   onClick: () => void;
+  users: User[];
 }
-const KanbanCard: React.FC<KanbanCardProps> = ({ task, subTaskMeta, commentCounts, onMove, onEdit, onDelete, onClick }) => {
+const KanbanCard: React.FC<KanbanCardProps> = ({ task, subTaskMeta, commentCounts, onMove, onEdit, onDelete, onClick, users }) => {
   const priorityColor = task.priority === '긴급' ? 'text-rose-500 bg-rose-50 border-rose-200 dark:bg-rose-900/20'
     : task.priority === '높음' ? 'text-amber-500 bg-amber-50 border-amber-200 dark:bg-amber-900/20'
     : 'text-slate-400 bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700';
@@ -882,11 +1174,17 @@ const KanbanCard: React.FC<KanbanCardProps> = ({ task, subTaskMeta, commentCount
             <span className="text-[10px] text-slate-400">미할당</span>
           ) : (
             <>
-              {assigneeNames.slice(0, 3).map((n, i) => (
-                <div key={i} className={`w-5 h-5 rounded-full ${avatarBg(n)} flex items-center justify-center text-white text-[9px] font-bold border border-white dark:border-slate-900 -ml-1 first:ml-0`} title={n}>
-                  {getInitials(n)}
-                </div>
-              ))}
+              {assigneeNames.slice(0, 3).map((n, i) => {
+                const userObj = users.find(u => u.name === n);
+                return (
+                  <Avatar
+                    key={i}
+                    name={n}
+                    profileImage={userObj?.profile_image}
+                    className="w-5 h-5 text-[9px] font-bold border border-white dark:border-slate-900 -ml-1 first:ml-0"
+                  />
+                );
+              })}
               {assigneeNames.length > 3 && (
                 <span className="text-[10px] text-slate-400 ml-1">+{assigneeNames.length - 3}</span>
               )}
@@ -928,6 +1226,164 @@ export const TaskManagement: React.FC = () => {
   const [subTaskMeta, setSubTaskMeta] = useState<Record<string, { total: number; done: number }>>({});
   // 댓글 수 (카드 배지용)
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+
+  // 전체 작업 로그 모달 상태
+  const [showProjectLogs, setShowProjectLogs] = useState(false);
+  const [projectLogs, setProjectLogs] = useState<any[]>([]);
+  const [loadingProjectLogs, setLoadingProjectLogs] = useState(false);
+  const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [logTab, setLogTab] = useState<'all' | 'status' | 'work' | 'comment'>('all');
+
+  // 안읽은 로그 알림 표시를 위한 마지막 확인 시간 타임스탬프
+  const [lastReadLogsTime, setLastReadLogsTime] = useState<number>(() => {
+    if (!activeProject) return 0;
+    const saved = localStorage.getItem(`pa_last_read_logs_time_${activeProject.id}`);
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  // activeProject가 바뀔 때 lastReadLogsTime 동기화
+  useEffect(() => {
+    if (activeProject) {
+      const saved = localStorage.getItem(`pa_last_read_logs_time_${activeProject.id}`);
+      setLastReadLogsTime(saved ? parseInt(saved, 10) : 0);
+    }
+  }, [activeProject]);
+
+  const loadProjectLogs = useCallback(async () => {
+    if (!activeProject) return;
+    setLoadingProjectLogs(true);
+    try {
+      const allTasks = processes.flatMap(proc => tasks[proc.id] || []);
+      
+      // Load all work logs
+      const allWorkLogs = await Promise.all(
+        allTasks.map(async (t) => {
+          try {
+            const taskLogs = await api.getWorkLogs(serverMode, t.id);
+            const proc = processes.find(p => p.id === t.process_id);
+            return taskLogs.map(l => {
+              const isStatus = l.content.startsWith('[상태 변경]');
+              return {
+                id: l.id,
+                type: isStatus ? 'status' : 'work', // 'work' includes user work logs and task additions ([작업 추가])
+                author_name: l.author_name || '알 수 없음',
+                author_profile_image: l.author_profile_image,
+                content: l.content,
+                log_date: l.log_date || l.created_at,
+                created_at: l.created_at || l.log_date,
+                processName: proc ? proc.name : '',
+                taskTitle: t.title,
+                rawItem: l
+              };
+            });
+          } catch {
+            return [];
+          }
+        })
+      );
+
+      // Load all comments for this project
+      let allComments: any[] = [];
+      try {
+        const fetchedComments = await api.getComments(serverMode, { project_id: activeProject.id });
+        allComments = fetchedComments.map(c => {
+          const taskId = c.assignment_id?.startsWith('task_') ? c.assignment_id.replace('task_', '') : null;
+          const task = allTasks.find(t => t.id === taskId);
+          const proc = task ? processes.find(p => p.id === task.process_id) : null;
+          return {
+            id: c.id,
+            type: 'comment',
+            author_name: c.author_name || '알 수 없음',
+            author_profile_image: c.author_profile_image,
+            content: `[댓글 등록] ${c.content}`,
+            log_date: c.created_at,
+            created_at: c.created_at,
+            processName: proc ? proc.name : '',
+            taskTitle: task ? task.title : '',
+            rawItem: c
+          };
+        });
+      } catch (err) {
+        console.error('Failed to load project comments:', err);
+      }
+
+      const combined = [...allWorkLogs.flat(), ...allComments];
+      
+      // Sort combined logs by timestamp
+      const sorted = combined.sort((a, b) => {
+        const dateA = a.created_at || a.log_date || '';
+        const dateB = b.created_at || b.log_date || '';
+        return dateB.localeCompare(dateA);
+      });
+      
+      setProjectLogs(sorted);
+    } catch (err) {
+      console.error('Failed to load project logs:', err);
+    } finally {
+      setLoadingProjectLogs(false);
+    }
+  }, [activeProject, processes, tasks, serverMode]);
+
+  // 실시간 로그 갱신을 위해 15초 주기로 자동 fetch
+  useEffect(() => {
+    if (!activeProject) return;
+    loadProjectLogs();
+    const timer = setInterval(() => {
+      loadProjectLogs();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [activeProject, loadProjectLogs]);
+
+  // 작업 상태(tasks) 변경 시 즉시 로그 갱신
+  useEffect(() => {
+    if (activeProject) {
+      loadProjectLogs();
+    }
+  }, [tasks, activeProject, loadProjectLogs]);
+
+  // unreadCount 계산: lastReadLogsTime보다 늦게 등록된 로그의 수
+  const unreadCount = useMemo(() => {
+    if (showProjectLogs) return 0;
+    return projectLogs.filter(log => {
+      const dateStr = log.created_at || log.log_date;
+      if (!dateStr) return false;
+      const logTime = getLogTimestamp(dateStr);
+      return logTime > lastReadLogsTime;
+    }).length;
+  }, [projectLogs, lastReadLogsTime, showProjectLogs]);
+
+  // 로그 모달을 열 때 확인시간 갱신 및 탭 리셋
+  const handleOpenLogs = () => {
+    setShowProjectLogs(true);
+    setLogTab('all');
+    const now = Date.now();
+    setLastReadLogsTime(now);
+    if (activeProject) {
+      localStorage.setItem(`pa_last_read_logs_time_${activeProject.id}`, String(now));
+    }
+  };
+
+  const filteredProjectLogs = useMemo(() => {
+    const query = logSearchQuery.trim().toLowerCase();
+    
+    let tabFiltered = projectLogs;
+    if (logTab === 'status') {
+      tabFiltered = projectLogs.filter(log => log.type === 'status');
+    } else if (logTab === 'work') {
+      tabFiltered = projectLogs.filter(log => log.type === 'work');
+    } else if (logTab === 'comment') {
+      tabFiltered = projectLogs.filter(log => log.type === 'comment');
+    }
+
+    if (!query) return tabFiltered;
+    return tabFiltered.filter(log => {
+      const contentMatch = log.content.toLowerCase().includes(query);
+      const authorMatch = (log.author_name || '').toLowerCase().includes(query);
+      const taskMatch = (log.taskTitle || '').toLowerCase().includes(query);
+      const procMatch = (log.processName || '').toLowerCase().includes(query);
+      return contentMatch || authorMatch || taskMatch || procMatch;
+    });
+  }, [projectLogs, logSearchQuery, logTab]);
 
   // Task form
   const [title, setTitle] = useState('');
@@ -1103,6 +1559,7 @@ export const TaskManagement: React.FC = () => {
                 onEdit={() => handleEditClick(task)}
                 onDelete={() => handleRemoveTask(task.id, task.process_id)}
                 onClick={() => setSelectedTask(task)}
+                users={users}
               />
             ))
           )}
@@ -1132,16 +1589,31 @@ export const TaskManagement: React.FC = () => {
 
       {/* 프로세스 탭 */}
       {processes.length > 0 && (
-        <div className="cds--kanban-tabs-container">
-          {processes.map((proc, index) => (
-            <button
-              key={proc.id}
-              onClick={() => setActiveProcessIdx(index)}
-              className={`cds--kanban-tab-btn ${activeProcessIdx === index ? 'cds--kanban-tab-btn-active' : 'cds--kanban-tab-btn-inactive'}`}
-            >
-              {proc.name}
-            </button>
-          ))}
+        <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-800 pb-2 mb-4 shrink-0 gap-4">
+          <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none">
+            {processes.map((proc, index) => (
+              <button
+                key={proc.id}
+                onClick={() => setActiveProcessIdx(index)}
+                className={`cds--kanban-tab-btn ${activeProcessIdx === index ? 'cds--kanban-tab-btn-active' : 'cds--kanban-tab-btn-inactive'}`}
+              >
+                {proc.name}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={handleOpenLogs}
+            className="relative flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 dark:bg-slate-855 dark:hover:bg-slate-800 text-toss-blue border border-slate-200 dark:border-slate-700/65 rounded-xl text-xs font-bold transition-all cursor-pointer select-none shrink-0"
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>작업 로그 보기</span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 rounded-full bg-rose-500 text-white text-[10px] font-extrabold flex items-center justify-center px-1 border-2 border-white dark:border-slate-900 animate-pulse">
+                {unreadCount}
+              </span>
+            )}
+          </button>
         </div>
       )}
 
@@ -1250,6 +1722,196 @@ export const TaskManagement: React.FC = () => {
                 <button type="submit" className="cds--btn cds--btn-primary cds--modal-btn-submit">{editingTask ? '저장하기' : '등록하기'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 전체 작업 로그 모달 */}
+      {showProjectLogs && (
+        <div 
+          className="fixed inset-0 bg-slate-955/40 dark:bg-slate-955/70 backdrop-blur-sm z-[999] flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setShowProjectLogs(false)}
+        >
+          <div 
+            className="bg-white/95 dark:bg-slate-900/95 border border-gray-100 dark:border-slate-800 rounded-[28px] p-6 shadow-toss-lg max-w-2xl w-full h-[600px] text-left animate-scale-in flex flex-col gap-4"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="flex items-center justify-between shrink-0">
+              <div className="flex flex-col text-left">
+                <span className="text-xs font-bold text-toss-blue">Project History Log</span>
+                <h3 className="text-base font-extrabold text-toss-gray-900 dark:text-slate-100 mt-0.5 font-sans">전체 작업 로그</h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowProjectLogs(false)}
+                className="p-2 rounded-xl hover:bg-toss-gray-100 dark:hover:bg-slate-800 text-toss-gray-400 cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* 탭 */}
+            <div className="flex border-b border-slate-100 dark:border-slate-800 shrink-0">
+              {[
+                { key: 'all', label: '전체' },
+                { key: 'status', label: '상태변경' },
+                { key: 'work', label: '작업' },
+                { key: 'comment', label: '댓글' }
+              ].map(t => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setLogTab(t.key as any)}
+                  className={`px-4 py-2.5 mr-2 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                    logTab === t.key 
+                      ? 'border-toss-blue text-toss-blue font-extrabold' 
+                      : 'border-transparent text-slate-450 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* 검색 바 */}
+            <div className="relative flex items-center shrink-0">
+              <input
+                type="text"
+                placeholder="담당자, 작업명, 로그 내용 검색..."
+                value={logSearchQuery}
+                onChange={(e) => setLogSearchQuery(e.target.value)}
+                className="w-full text-xs pl-4 pr-10 py-3 bg-slate-50 dark:bg-slate-855 border border-toss-gray-200/50 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-toss-blue/60 transition-all font-semibold text-toss-gray-800 dark:text-slate-200"
+              />
+              {logSearchQuery && (
+                <button 
+                  type="button"
+                  onClick={() => setLogSearchQuery('')}
+                  className="absolute right-3 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* 로그 목록 영역 */}
+            <div className="flex-1 overflow-y-auto pr-1 border border-slate-150 dark:border-slate-800/80 rounded-2xl p-4 bg-slate-50/10 dark:bg-slate-900/20 flex flex-col gap-3 min-h-0">
+              {loadingProjectLogs ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-toss-blue" />
+                </div>
+              ) : filteredProjectLogs.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 py-10 select-none">
+                  <History className="w-10 h-10 text-slate-300 dark:text-slate-750 mb-2 animate-pulse" />
+                  <p className="text-xs font-bold">기록된 작업 로그가 없습니다.</p>
+                </div>
+              ) : (
+                <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-800/80">
+                  {filteredProjectLogs.map(log => {
+                    // 태깅된 경로 메타데이터 파싱
+                    let displayContent = log.content;
+                    let logTaggedPath = '';
+                    let logTaggedIsDir = false;
+                    
+                    const dirMatch = log.content.match(/\n\[TAGGED_PATH_DIR\]:(.+)$/);
+                    const fileMatch = log.content.match(/\n\[TAGGED_PATH_FILE\]:(.+)$/);
+                    
+                    if (dirMatch) {
+                      logTaggedPath = dirMatch[1];
+                      logTaggedIsDir = true;
+                      displayContent = log.content.replace(/\n\[TAGGED_PATH_DIR\]:(.+)$/, '');
+                    } else if (fileMatch) {
+                      logTaggedPath = fileMatch[1];
+                      logTaggedIsDir = false;
+                      displayContent = log.content.replace(/\n\[TAGGED_PATH_FILE\]:(.+)$/, '');
+                    }
+
+                    const isStatusChange = log.content.startsWith('[상태 변경]');
+                    const isAddTask = log.content.startsWith('[작업 추가]');
+                    const isComment = log.type === 'comment';
+                    
+                    let cleanContent = displayContent;
+                    if (isStatusChange) {
+                      cleanContent = displayContent.replace(/^\[상태 변경\]\s*/, '');
+                    } else if (isAddTask) {
+                      cleanContent = displayContent.replace(/^\[작업 추가\]\s*/, '');
+                    } else if (isComment) {
+                      cleanContent = displayContent.replace(/^\[댓글 등록\]\s*/, '');
+                    }
+
+                    return (
+                      <div key={log.id} className="py-3.5 first:pt-0 last:pb-0 flex gap-3 text-left">
+                        {/* 아바타 */}
+                        <Avatar
+                          name={log.author_name || '?'}
+                          profileImage={log.author_profile_image || users.find(u => u.name === log.author_name)?.profile_image}
+                          className="w-8 h-8 text-[11px] font-bold shrink-0 mt-0.5"
+                        />
+                        <div className="flex-1 min-w-0">
+                          {/* 메타 정보 */}
+                          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                            <span className="text-[13px] font-extrabold text-slate-800 dark:text-slate-100">
+                              {log.author_name || '알 수 없음'}
+                            </span>
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium font-mono">
+                              {log.log_date}
+                            </span>
+                            {log.processName && (
+                              <span className="text-[9px] font-extrabold text-toss-blue bg-toss-blue-light/30 px-1.5 py-0.5 rounded-md border border-toss-blue-light/20 shrink-0">
+                                {log.processName}
+                              </span>
+                            )}
+                            {log.taskTitle && (
+                              <span className="text-[9px] font-extrabold text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-md border border-slate-200/50 dark:border-slate-700/50 max-w-[120px] truncate shrink-0">
+                                {log.taskTitle}
+                              </span>
+                            )}
+                          </div>
+                          {/* 로그 내용 */}
+                          <div className="text-[13px] text-slate-650 dark:text-slate-450 leading-relaxed whitespace-pre-wrap flex items-start gap-1.5 flex-col sm:flex-row sm:items-center">
+                            {isStatusChange ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-toss-blue text-[10px] font-extrabold border border-blue-100 dark:border-blue-900/40 shrink-0">
+                                상태 변경
+                              </span>
+                            ) : isAddTask ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 text-[10px] font-extrabold border border-amber-100 dark:border-amber-900/40 shrink-0">
+                                작업 추가
+                              </span>
+                            ) : isComment ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-455 text-[10px] font-extrabold border border-rose-100 dark:border-rose-900/40 shrink-0">
+                                댓글 등록
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-[10px] font-extrabold border border-emerald-100 dark:border-emerald-900/40 shrink-0">
+                                업무 등록
+                              </span>
+                            )}
+                            <span className="font-semibold text-slate-700 dark:text-slate-350">{cleanContent}</span>
+                          </div>
+                          {/* 태깅 배지 */}
+                          {logTaggedPath && (
+                            <button
+                              type="button"
+                              onClick={() => openInExplorer(logTaggedPath)}
+                              className="mt-2 flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-750 border border-slate-150 dark:border-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-350 rounded-xl transition-all cursor-pointer inline-flex max-w-full truncate"
+                              title="탐색기에서 해당 경로 열기"
+                            >
+                              {logTaggedIsDir ? (
+                                <Folder className="w-3 h-3 text-toss-blue shrink-0" />
+                              ) : (
+                                <FileText className="w-3 h-3 text-emerald-500 shrink-0" />
+                              )}
+                              <span className="truncate">{logTaggedPath.split('\\').pop() || logTaggedPath}</span>
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal font-mono truncate ml-1">({logTaggedPath})</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
