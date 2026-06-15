@@ -5,6 +5,25 @@ import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
+const parseTaskRow = (task) => {
+  const parseJsonArray = (value) => {
+    if (Array.isArray(value)) return value;
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  return {
+    ...task,
+    assignees: parseJsonArray(task.assignees),
+    assignee_names: parseJsonArray(task.assignee_names)
+  };
+};
+
 // 1. GET /tasks?process_id=xxx - 특정 공정의 세부 작업 목록 조회
 router.get('/', verifyToken, async (req, res) => {
   const { process_id } = req.query;
@@ -18,7 +37,7 @@ router.get('/', verifyToken, async (req, res) => {
       'SELECT * FROM tasks WHERE process_id = ? ORDER BY created_at ASC',
       [process_id]
     );
-    return res.json({ tasks });
+    return res.json({ tasks: tasks.map(parseTaskRow) });
   } catch (error) {
     console.error('Fetch tasks failed:', error);
     return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
@@ -36,10 +55,24 @@ router.post('/save', verifyToken, async (req, res) => {
   try {
     for (const task of tasks) {
       await dbRun(
-        `INSERT OR REPLACE INTO tasks (
+        `INSERT INTO tasks (
           id, process_id, title, description, assignee, status, priority,
-          created_at, updated_at, start_date, end_date, start_time, end_time
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          created_at, updated_at, start_date, end_date, start_time, end_time, assignees, assignee_names
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+          process_id = excluded.process_id,
+          title = excluded.title,
+          description = excluded.description,
+          assignee = excluded.assignee,
+          status = excluded.status,
+          priority = excluded.priority,
+          updated_at = excluded.updated_at,
+          start_date = excluded.start_date,
+          end_date = excluded.end_date,
+          start_time = excluded.start_time,
+          end_time = excluded.end_time,
+          assignees = excluded.assignees,
+          assignee_names = excluded.assignee_names`,
         [
           task.id,
           task.process_id,
@@ -53,7 +86,9 @@ router.post('/save', verifyToken, async (req, res) => {
           task.start_date || '',
           task.end_date || '',
           task.start_time || '',
-          task.end_time || ''
+          task.end_time || '',
+          JSON.stringify(task.assignees || []),
+          JSON.stringify(task.assignee_names || [])
         ]
       );
     }

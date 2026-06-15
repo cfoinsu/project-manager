@@ -113,12 +113,88 @@ export const getDeviceHash = async (): Promise<string> => {
   return await sha256(mockUuid);
 };
 
+const repairApiServerUrl = (value: string | null): string | null => {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.port && parsed.port !== '5000') {
+      parsed.port = '5000';
+      return parsed.toString().replace(/\/$/, '');
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
 export const getApiBaseUrl = (): string => {
   const savedUrl = localStorage.getItem('pa_server_url');
-  if (savedUrl && savedUrl.includes('localhost')) {
-    localStorage.removeItem('pa_server_url');
+  const repaired = repairApiServerUrl(savedUrl);
+  if (repaired) {
+    localStorage.setItem('pa_server_url', repaired);
+    return repaired;
   }
-  return localStorage.getItem('pa_server_url') || import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  return savedUrl || import.meta.env.VITE_API_URL || 'http://localhost:5000';
+};
+
+export const normalizeServerUrl = (value: string): string => {
+  let url = value.trim();
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    throw new Error('서버 주소는 http:// 또는 https:// 로 시작해야 합니다.');
+  }
+  if (url.endsWith('/')) url = url.slice(0, -1);
+  return url;
+};
+
+export const getServerUrlCandidates = (): string[] => {
+  const savedUrl = localStorage.getItem('pa_server_url');
+  const repairedSavedUrl = repairApiServerUrl(savedUrl);
+
+  const candidates = [
+    savedUrl,
+    repairedSavedUrl,
+    import.meta.env.VITE_API_URL,
+    'http://localhost:5000'
+  ].filter(Boolean) as string[];
+
+  return Array.from(new Set(candidates));
+};
+
+export const fetchGlobalSettings = async (baseUrl = getApiBaseUrl()): Promise<{ serverUrl: string }> => {
+  const response = await fetch(`${baseUrl}/settings`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+  }
+  return await response.json();
+};
+
+export const syncGlobalServerUrl = async (): Promise<string | null> => {
+  for (const candidate of getServerUrlCandidates()) {
+    try {
+      const settings = await fetchGlobalSettings(candidate);
+      const serverUrl = settings.serverUrl ? normalizeServerUrl(settings.serverUrl) : '';
+      if (serverUrl) {
+        localStorage.setItem('pa_server_url', serverUrl);
+        return serverUrl;
+      }
+      return null;
+    } catch (error) {
+      console.warn(`Failed to sync global settings from ${candidate}:`, error);
+    }
+  }
+  return null;
+};
+
+export const updateGlobalServerUrl = async (serverUrl: string): Promise<string> => {
+  const normalized = normalizeServerUrl(serverUrl);
+  const data = await apiRequest('/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ serverUrl: normalized })
+  });
+  const savedUrl = data.serverUrl || normalized;
+  localStorage.setItem('pa_server_url', savedUrl);
+  return savedUrl;
 };
 
 // Helper to get headers with JWT auth token
@@ -137,29 +213,41 @@ const getHeaders = (isJson = true) => {
 // Safe API Fetcher with Fallback check
 // If the backend Express server is offline or errors, we fall back to LocalStorage simulation.
 export const apiRequest = async (path: string, options: RequestInit = {}) => {
-  try {
-    const response = await fetch(`${getApiBaseUrl()}${path}`, {
-      ...options,
-      headers: {
-        ...getHeaders(),
-        ...(options.headers as Record<string, string> || {})
+  let lastOfflineError: any = null;
+
+  for (const baseUrl of getServerUrlCandidates()) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        ...options,
+        headers: {
+          ...getHeaders(),
+          ...(options.headers as Record<string, string> || {})
+        }
+      });
+
+      if (response.status === 404 || response.status === 405) {
+        lastOfflineError = new Error(`Invalid API server at ${baseUrl}`);
+        continue;
       }
-    });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-    }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
 
-    return await response.json();
-  } catch (error: any) {
-    // If the server is unreachable (Failed to fetch), throw specific error so store can handle fallback
-    if (error.message.includes('Failed to fetch') || error.message.includes('Load failed')) {
-      console.warn(`Express backend server offline at ${getApiBaseUrl()}. Running in Local Fallback mode.`);
-      throw new Error('SERVER_OFFLINE');
+      localStorage.setItem('pa_server_url', baseUrl);
+      return await response.json();
+    } catch (error: any) {
+      if (error.message?.includes('Failed to fetch') || error.message?.includes('Load failed')) {
+        lastOfflineError = error;
+        continue;
+      }
+      throw error;
     }
-    throw error;
   }
+
+  console.warn('Express backend server offline for all candidates.', lastOfflineError);
+  throw new Error('SERVER_OFFLINE');
 };
 
 // =============================================================
@@ -938,7 +1026,7 @@ export const updateWorkload = async (
 
 export const getComments = async (
   serverMode: boolean,
-  params: { project_id?: string; assignment_id?: string; workload_id?: string }
+  params: { project_id?: string; assignment_id?: string; workload_id?: string; task_id?: string; context_type?: string; context_id?: string }
 ): Promise<any[]> => {
   if (serverMode) {
     const query = new URLSearchParams(params as Record<string, string>).toString();
@@ -949,6 +1037,8 @@ export const getComments = async (
   let filtered = stored;
   if (params.workload_id) {
     filtered = stored.filter((c: any) => c.workload_id === params.workload_id);
+  } else if (params.task_id) {
+    filtered = stored.filter((c: any) => c.task_id === params.task_id);
   } else if (params.assignment_id) {
     filtered = stored.filter((c: any) => c.assignment_id === params.assignment_id);
   } else if (params.project_id) {
@@ -1123,10 +1213,8 @@ export const createReply = async (
 
 export const getSubTasks = async (serverMode: boolean, taskId: string): Promise<any[]> => {
   if (serverMode) {
-    try {
-      const data = await apiRequest(`/tasks/${taskId}/subtasks`);
-      return data.subtasks || [];
-    } catch { return []; }
+    const data = await apiRequest(`/tasks/${taskId}/subtasks`);
+    return data.subtasks || [];
   }
   const stored = JSON.parse(localStorage.getItem('pa_fallback_subtasks') || '[]');
   return stored.filter((s: any) => s.task_id === taskId);
@@ -1134,13 +1222,11 @@ export const getSubTasks = async (serverMode: boolean, taskId: string): Promise<
 
 export const createSubTask = async (serverMode: boolean, payload: { task_id: string; title: string }): Promise<any> => {
   if (serverMode) {
-    try {
-      const data = await apiRequest(`/tasks/${payload.task_id}/subtasks`, {
-        method: 'POST',
-        body: JSON.stringify({ title: payload.title })
-      });
-      return data.subtask;
-    } catch { /* fallthrough */ }
+    const data = await apiRequest(`/tasks/${payload.task_id}/subtasks`, {
+      method: 'POST',
+      body: JSON.stringify({ title: payload.title })
+    });
+    return data.subtask;
   }
   const stored = JSON.parse(localStorage.getItem('pa_fallback_subtasks') || '[]');
   const newSub = {
@@ -1157,10 +1243,8 @@ export const createSubTask = async (serverMode: boolean, payload: { task_id: str
 
 export const updateSubTask = async (serverMode: boolean, id: string, updates: { title?: string; done?: boolean }): Promise<any> => {
   if (serverMode) {
-    try {
-      const data = await apiRequest(`/subtasks/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
-      return data.subtask;
-    } catch { /* fallthrough */ }
+    const data = await apiRequest(`/subtasks/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
+    return data.subtask;
   }
   const stored = JSON.parse(localStorage.getItem('pa_fallback_subtasks') || '[]');
   const idx = stored.findIndex((s: any) => s.id === id);
@@ -1174,7 +1258,8 @@ export const updateSubTask = async (serverMode: boolean, id: string, updates: { 
 
 export const deleteSubTask = async (serverMode: boolean, id: string): Promise<void> => {
   if (serverMode) {
-    try { await apiRequest(`/subtasks/${id}`, { method: 'DELETE' }); } catch { /* fallthrough */ }
+    await apiRequest(`/subtasks/${id}`, { method: 'DELETE' });
+    return;
   }
   const stored = JSON.parse(localStorage.getItem('pa_fallback_subtasks') || '[]');
   localStorage.setItem('pa_fallback_subtasks', JSON.stringify(stored.filter((s: any) => s.id !== id)));
@@ -1187,10 +1272,8 @@ export const deleteSubTask = async (serverMode: boolean, id: string): Promise<vo
 
 export const getWorkLogs = async (serverMode: boolean, taskId: string): Promise<any[]> => {
   if (serverMode) {
-    try {
-      const data = await apiRequest(`/tasks/${taskId}/worklogs`);
-      return data.worklogs || [];
-    } catch { return []; }
+    const data = await apiRequest(`/tasks/${taskId}/worklogs`);
+    return data.worklogs || [];
   }
   const stored = JSON.parse(localStorage.getItem('pa_fallback_worklogs') || '[]');
   return stored.filter((w: any) => w.task_id === taskId).sort((a: any, b: any) =>
@@ -1203,13 +1286,11 @@ export const createWorkLog = async (
   payload: { task_id: string; content: string; hours?: number | null; log_date: string }
 ): Promise<any> => {
   if (serverMode) {
-    try {
-      const data = await apiRequest(`/tasks/${payload.task_id}/worklogs`, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-      return data.worklog;
-    } catch { /* fallthrough */ }
+    const data = await apiRequest(`/tasks/${payload.task_id}/worklogs`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    return data.worklog;
   }
   const { user } = (await import('../store/authStore')).useAuthStore.getState();
   const stored = JSON.parse(localStorage.getItem('pa_fallback_worklogs') || '[]');
@@ -1229,7 +1310,8 @@ export const createWorkLog = async (
 
 export const deleteWorkLog = async (serverMode: boolean, id: string): Promise<void> => {
   if (serverMode) {
-    try { await apiRequest(`/worklogs/${id}`, { method: 'DELETE' }); } catch { /* fallthrough */ }
+    await apiRequest(`/worklogs/${id}`, { method: 'DELETE' });
+    return;
   }
   const stored = JSON.parse(localStorage.getItem('pa_fallback_worklogs') || '[]');
   localStorage.setItem('pa_fallback_worklogs', JSON.stringify(stored.filter((w: any) => w.id !== id)));

@@ -216,6 +216,7 @@ export const DashboardView: React.FC = () => {
     e.preventDefault();
     if (!name || !path || !regionCode) return;
     
+    try {
     const code = generatedCode;
     const project = await addProject(
       name, 
@@ -250,6 +251,9 @@ export const DashboardView: React.FC = () => {
     // Select the new project and view overview
     selectProject(project);
     setView('projects_overview');
+    } catch (error: any) {
+      alert(error.message || '프로젝트 생성에 실패했습니다.');
+    }
   };
 
   const handleSelectRecent = (project: Project) => {

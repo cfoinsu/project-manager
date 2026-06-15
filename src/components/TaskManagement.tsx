@@ -158,11 +158,14 @@ const ChecklistPanel: React.FC<ChecklistPanelProps> = ({ taskId, serverMode }) =
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try { setItems(await api.getSubTasks(serverMode, taskId)); }
+    catch (err: any) { setError(err.message || '체크리스트를 불러오지 못했습니다.'); }
     finally { setLoading(false); }
   }, [taskId, serverMode]);
 
@@ -171,29 +174,47 @@ const ChecklistPanel: React.FC<ChecklistPanelProps> = ({ taskId, serverMode }) =
   const handleAdd = async () => {
     if (!input.trim()) return;
     setAdding(true);
+    setError(null);
     try {
       const s = await api.createSubTask(serverMode, { task_id: taskId, title: input.trim() });
       setItems(prev => [...prev, s]);
       setInput('');
       inputRef.current?.focus();
+    } catch (err: any) {
+      setError(err.message || '체크리스트를 추가하지 못했습니다.');
     } finally { setAdding(false); }
   };
 
   const handleToggle = async (item: SubTask) => {
-    const updated = await api.updateSubTask(serverMode, item.id, { done: !item.done });
-    if (updated) setItems(prev => prev.map(s => s.id === item.id ? { ...s, done: !s.done } : s));
+    setError(null);
+    try {
+      const updated = await api.updateSubTask(serverMode, item.id, { done: !item.done });
+      if (updated) setItems(prev => prev.map(s => s.id === item.id ? { ...s, done: !s.done } : s));
+    } catch (err: any) {
+      setError(err.message || '체크 상태를 저장하지 못했습니다.');
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await api.deleteSubTask(serverMode, id);
-    setItems(prev => prev.filter(s => s.id !== id));
+    setError(null);
+    try {
+      await api.deleteSubTask(serverMode, id);
+      setItems(prev => prev.filter(s => s.id !== id));
+    } catch (err: any) {
+      setError(err.message || '체크리스트를 삭제하지 못했습니다.');
+    }
   };
 
   const handleEditSave = async (item: SubTask) => {
     if (!editText.trim()) return;
-    const updated = await api.updateSubTask(serverMode, item.id, { title: editText.trim() });
-    if (updated) setItems(prev => prev.map(s => s.id === item.id ? { ...s, title: editText.trim() } : s));
-    setEditingId(null);
+    setError(null);
+    try {
+      const updated = await api.updateSubTask(serverMode, item.id, { title: editText.trim() });
+      if (updated) setItems(prev => prev.map(s => s.id === item.id ? { ...s, title: editText.trim() } : s));
+      setEditingId(null);
+    } catch (err: any) {
+      setError(err.message || '체크리스트를 수정하지 못했습니다.');
+    }
   };
 
   const done = items.filter(s => s.done).length;
@@ -201,6 +222,11 @@ const ChecklistPanel: React.FC<ChecklistPanelProps> = ({ taskId, serverMode }) =
 
   return (
     <div className="flex flex-col gap-4">
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+          {error}
+        </div>
+      )}
       {/* 진행률 헤더 */}
       {items.length > 0 && (
         <div>
@@ -254,7 +280,7 @@ const ChecklistPanel: React.FC<ChecklistPanelProps> = ({ taskId, serverMode }) =
                     : 'border-slate-300 dark:border-slate-600 hover:border-toss-blue dark:hover:border-toss-blue/70'
                 }`}
               >
-                {item.done && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+                {Boolean(item.done) ? <Check className="w-3 h-3 text-white" strokeWidth={3} /> : null}
               </button>
 
               {/* 제목 / 인라인 편집 */}
@@ -403,6 +429,7 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode, users }
   const [logStartDate, setLogStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [logEndDate, setLogEndDate] = useState(new Date().toISOString().slice(0, 10));
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // 태깅 경로 관리 상태
   const [taggedPath, setTaggedPath] = useState<string | null>(null);
@@ -424,6 +451,7 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode, users }
     e.preventDefault();
     if (!content.trim()) return;
     setSubmitting(true);
+    setError(null);
     try {
       const displayDate = logEndDate && logEndDate !== logStartDate
         ? `${logStartDate} ~ ${logEndDate}`
@@ -448,6 +476,8 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode, users }
       setLogStartDate(new Date().toISOString().slice(0, 10));
       setLogEndDate(new Date().toISOString().slice(0, 10));
       setShowForm(false);
+    } catch (err: any) {
+      setError(err.message || '업무 이력을 저장하지 못했습니다.');
     } finally { setSubmitting(false); }
   };
 
@@ -457,11 +487,17 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode, users }
   };
 
   const totalHours = logs.reduce((sum, l) => sum + (l.hours || 0), 0);
+  const errorMessage = error;
 
   // Unused avatar helpers removed to satisfy compiler
 
   return (
     <div className="flex flex-col gap-4">
+      {errorMessage && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+          {errorMessage}
+        </div>
+      )}
       {/* 헤더 통계 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -1092,7 +1128,6 @@ const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, projectId, serv
               <CommentPanel
                 projectId={projectId}
                 taskId={task.id}
-                selectedAssignment={{ id: `task_${task.id}`, user_id: '', project_id: projectId, role: task.title, allocation_percent: 0, start_date: '', end_date: '', user_name: task.title } as any}
               />
             </div>
           )}
@@ -1214,7 +1249,7 @@ const KanbanCard: React.FC<KanbanCardProps> = ({ task, subTaskMeta, commentCount
 
 // ─── 메인 TaskManagement ───────────────────────────────────────
 export const TaskManagement: React.FC = () => {
-  const { activeProject, processes, tasks, addTask, updateTask, removeTask } = useProjectStore();
+  const { activeProject, processes, tasks, addTask, updateTask, removeTask, refreshActiveProjectData } = useProjectStore();
   const { serverMode } = useAuthStore();
   const [activeProcessIdx, setActiveProcessIdx] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
@@ -1287,8 +1322,8 @@ export const TaskManagement: React.FC = () => {
       try {
         const fetchedComments = await api.getComments(serverMode, { project_id: activeProject.id });
         allComments = fetchedComments.map(c => {
-          const taskId = c.assignment_id?.startsWith('task_') ? c.assignment_id.replace('task_', '') : null;
-          const task = allTasks.find(t => t.id === taskId);
+          const commentTaskId = c.task_id || (c.assignment_id?.startsWith('task_') ? c.assignment_id.replace('task_', '') : null);
+          const task = allTasks.find(t => t.id === commentTaskId);
           const proc = task ? processes.find(p => p.id === task.process_id) : null;
           return {
             id: c.id,
@@ -1340,6 +1375,14 @@ export const TaskManagement: React.FC = () => {
       loadProjectLogs();
     }
   }, [tasks, activeProject, loadProjectLogs]);
+
+  useEffect(() => {
+    if (!activeProject || !serverMode) return;
+    const timer = setInterval(() => {
+      refreshActiveProjectData();
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [activeProject, serverMode, refreshActiveProjectData]);
 
   // unreadCount 계산: lastReadLogsTime보다 늦게 등록된 로그의 수
   const unreadCount = useMemo(() => {
@@ -1436,7 +1479,7 @@ export const TaskManagement: React.FC = () => {
         try {
           const all = await api.getComments(serverMode, {
             project_id: activeProject.id,
-            assignment_id: `task_${task.id}`
+            task_id: task.id
           });
           counts[task.id] = all.length;
         } catch { counts[task.id] = 0; }
@@ -1491,17 +1534,21 @@ export const TaskManagement: React.FC = () => {
       }
     }
 
-    if (editingTask) {
-      await updateTask({
-        ...editingTask, title, description, priority,
-        assignees: assigneeIds, assignee_names: assigneeNames, assignee: assigneeNames[0] || '',
-        start_date: startDate, end_date: endDate,
-        start_time: startTime, end_time: endTime
-      });
-    } else {
-      await addTask(activeProcess.id, title, description, priority, startDate, endDate, startTime, endTime);
+    try {
+      if (editingTask) {
+        await updateTask({
+          ...editingTask, title, description, priority,
+          assignees: assigneeIds, assignee_names: assigneeNames, assignee: assigneeNames[0] || '',
+          start_date: startDate, end_date: endDate,
+          start_time: startTime, end_time: endTime
+        });
+      } else {
+        await addTask(activeProcess.id, title, description, priority, startDate, endDate, startTime, endTime);
+      }
+      resetForm(); setModalOpen(false);
+    } catch (error: any) {
+      alert(error.message || '작업 저장에 실패했습니다.');
     }
-    resetForm(); setModalOpen(false);
   };
 
   const handleEditClick = (task: Task) => {

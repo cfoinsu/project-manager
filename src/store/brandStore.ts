@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { getApiBaseUrl } from '../utils/api';
 
 // ─── 타입 ──────────────────────────────────────────────────────
 export interface BrandConfig {
@@ -45,14 +46,6 @@ const getServerMode = (): boolean => {
     return !!token && !token.startsWith('mock-jwt-token-for-');
   } catch {
     return false;
-  }
-};
-
-const getApiBaseUrl = (): string => {
-  try {
-    return localStorage.getItem('pa_server_url') || import.meta.env.VITE_API_URL || 'http://localhost:5000';
-  } catch {
-    return 'http://localhost:5000';
   }
 };
 

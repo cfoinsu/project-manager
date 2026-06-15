@@ -37,9 +37,19 @@ router.post('/save', verifyToken, async (req, res) => {
     // 단순 루프로 여러 개 저장 (보통 5~10개 내외이므로 루프도 충분히 빠름)
     for (const proc of processes) {
       await dbRun(
-        `INSERT OR REPLACE INTO processes (
+        `INSERT INTO processes (
           id, project_id, name, description, sort_order, progress, status, start_date, end_date, difficulty
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+          project_id = excluded.project_id,
+          name = excluded.name,
+          description = excluded.description,
+          sort_order = excluded.sort_order,
+          progress = excluded.progress,
+          status = excluded.status,
+          start_date = excluded.start_date,
+          end_date = excluded.end_date,
+          difficulty = excluded.difficulty`,
         [
           proc.id,
           proc.project_id,

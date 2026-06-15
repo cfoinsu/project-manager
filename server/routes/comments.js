@@ -9,7 +9,7 @@ const router = express.Router();
 // POST /comments
 // ─────────────────────────────────────────────
 router.post('/', verifyToken, async (req, res) => {
-  const { project_id, assignment_id, workload_id, content, parent_id } = req.body;
+  const { project_id, assignment_id, workload_id, task_id, context_type, context_id, content, parent_id } = req.body;
   const user_id = req.user.id;
 
   if (!project_id || !content?.trim()) {
@@ -20,10 +20,27 @@ router.post('/', verifyToken, async (req, res) => {
     const id = `cmt-${uuidv4()}`;
     const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
+    const safeAssignmentId = task_id ? null : (assignment_id || null);
+
     await dbRun(
-      `INSERT INTO comments (id, user_id, project_id, assignment_id, workload_id, content, parent_id, reactions, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, user_id, project_id, assignment_id || null, workload_id || null, content.trim(), parent_id || null, '{}', nowStr]
+      `INSERT INTO comments (
+        id, user_id, project_id, assignment_id, workload_id, task_id, context_type, context_id,
+        content, parent_id, reactions, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        user_id,
+        project_id,
+        safeAssignmentId,
+        workload_id || null,
+        task_id || null,
+        context_type || (task_id ? 'task' : safeAssignmentId ? 'assignment' : workload_id ? 'workload' : 'project'),
+        context_id || task_id || safeAssignmentId || workload_id || project_id,
+        content.trim(),
+        parent_id || null,
+        '{}',
+        nowStr
+      ]
     );
 
     const created = await dbGet(
@@ -47,7 +64,7 @@ router.post('/', verifyToken, async (req, res) => {
 // GET /comments
 // ─────────────────────────────────────────────
 router.get('/', verifyToken, async (req, res) => {
-  const { project_id, assignment_id, workload_id } = req.query;
+  const { project_id, assignment_id, workload_id, task_id, context_type, context_id } = req.query;
 
   try {
     let sql = `
@@ -68,6 +85,9 @@ router.get('/', verifyToken, async (req, res) => {
     if (project_id) { sql += ' AND c.project_id = ?'; params.push(project_id); }
     if (assignment_id) { sql += ' AND c.assignment_id = ?'; params.push(assignment_id); }
     if (workload_id) { sql += ' AND c.workload_id = ?'; params.push(workload_id); }
+    if (task_id) { sql += ' AND c.task_id = ?'; params.push(task_id); }
+    if (context_type) { sql += ' AND c.context_type = ?'; params.push(context_type); }
+    if (context_id) { sql += ' AND c.context_id = ?'; params.push(context_id); }
 
     sql += ' ORDER BY c.created_at DESC';
 

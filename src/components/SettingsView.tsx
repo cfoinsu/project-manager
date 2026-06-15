@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { 
   Database, 
@@ -24,6 +24,7 @@ import {
 import { isTauri } from '../utils/tauriBridge';
 import { useProjectStore } from '../store/projectStore';
 import { useBrandStore } from '../store/brandStore';
+import { getApiBaseUrl, normalizeServerUrl, syncGlobalServerUrl, updateGlobalServerUrl } from '../utils/api';
 import { getKoreaRegions, PROJECT_TYPE_CODES } from '../types';
 import type { RegionGroup } from '../types';
 
@@ -31,12 +32,12 @@ export const SettingsView: React.FC = () => {
   const isTauriMode = isTauri();
   const { projects } = useProjectStore();
   const brand = useBrandStore();
-  const { user } = useAuthStore();
+  const { user, serverMode } = useAuthStore();
   const isAdmin = user?.role === 'admin';
 
   // ─── 서버 URL 상태
   const [serverUrl, setServerUrl] = useState(
-    localStorage.getItem('pa_server_url') || 'http://localhost:5000'
+    getApiBaseUrl()
   );
 
   // ─── 지역 설정 상태 및 핸들러
@@ -204,17 +205,23 @@ export const SettingsView: React.FC = () => {
   const [brandSaved, setBrandSaved] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSaveServerUrl = () => {
-    let url = serverUrl.trim();
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      alert('서버 주소는 http:// 또는 https:// 로 시작해야 합니다.');
-      return;
+  useEffect(() => {
+    syncGlobalServerUrl().then((url) => {
+      if (url) setServerUrl(url);
+    });
+  }, []);
+
+  const handleSaveServerUrl = async () => {
+    try {
+      const url = normalizeServerUrl(serverUrl);
+      const savedUrl = serverMode ? await updateGlobalServerUrl(url) : url;
+      localStorage.setItem('pa_server_url', savedUrl);
+      setServerUrl(savedUrl);
+      setSaveSuccess(true);
+      setTimeout(() => { setSaveSuccess(false); window.location.reload(); }, 1200);
+    } catch (error: any) {
+      alert(error.message || '서버 주소 저장에 실패했습니다.');
     }
-    if (url.endsWith('/')) url = url.slice(0, -1);
-    localStorage.setItem('pa_server_url', url);
-    setServerUrl(url);
-    setSaveSuccess(true);
-    setTimeout(() => { setSaveSuccess(false); window.location.reload(); }, 1200);
   };
 
   // 브랜딩 저장

@@ -35,7 +35,7 @@ import { ProjectScheduleCalendarView } from './components/ProjectScheduleCalenda
 import { DocumentLibraryView } from './components/DocumentLibraryView';
 
 import { CustomSelect } from './components/CustomSelect';
-import { migrateComments } from './utils/api';
+import { migrateComments, syncGlobalServerUrl } from './utils/api';
 import { Avatar } from './components/Avatar';
 
 import {
@@ -70,7 +70,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    useBrandStore.getState().loadFromServer();
+    if (!isLoggedIn) return;
+    syncGlobalServerUrl().finally(() => {
+      useBrandStore.getState().loadFromServer();
+    });
   }, [isLoggedIn]);
 
   const { 

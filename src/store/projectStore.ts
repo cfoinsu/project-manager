@@ -25,6 +25,7 @@ interface ProjectState {
   loadTemplates: () => Promise<void>;
   loadFolderTemplates: () => Promise<void>;
   selectProject: (project: Project | null) => Promise<void>;
+  refreshActiveProjectData: () => Promise<void>;
   setView: (view: string) => void;
   addProject: (name: string, path: string, code: string, templateId?: string, folderTemplateId?: string, startDate?: string, endDate?: string, description?: string) => Promise<Project>;
   removeProject: (id: string) => Promise<void>;
@@ -133,6 +134,32 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       console.error('Failed to select project:', e);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  refreshActiveProjectData: async () => {
+    const { activeProject } = get();
+    if (!activeProject) return;
+
+    try {
+      const processes = await db.getProcesses(activeProject.id);
+      const tasksMap: Record<string, Task[]> = {};
+      for (const proc of processes) {
+        tasksMap[proc.id] = await db.getTasks(proc.id);
+      }
+      const documents = await db.getDocuments(activeProject.id);
+      const projects = await db.getProjects();
+      const activeProjectUpdated = projects.find(p => p.id === activeProject.id) || activeProject;
+
+      set({
+        projects,
+        activeProject: activeProjectUpdated,
+        processes,
+        tasks: tasksMap,
+        documents
+      });
+    } catch (e) {
+      console.error('Failed to refresh active project data:', e);
     }
   },
 
@@ -373,16 +400,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const { tasks } = get();
     const processId = task.process_id;
     const processTasks = tasks[processId] || [];
+    const updatedTask = {
+      ...task,
+      updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19)
+    };
     
     const oldTask = processTasks.find(t => t.id === task.id);
     const statusChanged = oldTask && oldTask.status !== task.status;
 
     const updatedTasks = {
       ...tasks,
-      [processId]: processTasks.map(t => t.id === task.id ? { ...task, updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19) } : t)
+      [processId]: processTasks.map(t => t.id === task.id ? updatedTask : t)
     };
 
-    await db.saveTasks([task]);
+    await db.saveTasks([updatedTask]);
     set({ tasks: updatedTasks });
 
     if (statusChanged) {

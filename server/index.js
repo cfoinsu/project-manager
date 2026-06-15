@@ -16,6 +16,7 @@ import subtaskRoutes from './routes/subtasks.js';
 import worklogRoutes from './routes/worklogs.js';
 import emergencyRoutes from './routes/emergency.js';
 import brandRoutes from './routes/brand.js';
+import settingsRoutes from './routes/settings.js';
 
 dotenv.config();
 
@@ -60,6 +61,7 @@ app.use('/subtasks', subtaskRoutes);
 app.use('/worklogs', worklogRoutes);
 app.use('/emergency', emergencyRoutes);
 app.use('/brand', brandRoutes);
+app.use('/settings', settingsRoutes);
 
 // Static files: uploaded documents (direct file serving)
 app.use('/uploads', express.static(join(new URL('.', import.meta.url).pathname.slice(1), 'uploads')));

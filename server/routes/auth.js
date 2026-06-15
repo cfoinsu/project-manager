@@ -78,8 +78,26 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: '아이디 또는 비밀번호가 일치하지 않습니다.' });
     }
 
-    // Device hash check (skip if DISABLE_DEVICE_AUTH environment variable is true)
-    if (process.env.DISABLE_DEVICE_AUTH !== 'true') {
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    if (
+      process.env.DISABLE_DEVICE_AUTH !== 'true' &&
+      user.role !== 'admin' &&
+      deviceHash &&
+      user.device_hash &&
+      user.device_hash !== deviceHash
+    ) {
+      await dbRun(
+        'INSERT OR IGNORE INTO user_devices (id, user_id, device_hash, created_at, last_used_at) VALUES (?, ?, ?, ?, ?)',
+        [`udev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, user.id, deviceHash, nowStr, nowStr]
+      );
+      user.device_hash = deviceHash;
+    }
+
+    // Device hash check (skip if DISABLE_DEVICE_AUTH environment variable is true).
+    // Admin login is allowed after password verification so admins can recover
+    // locked-out staff devices from the user management screen.
+    if (process.env.DISABLE_DEVICE_AUTH !== 'true' && user.role !== 'admin') {
       if (!user.device_hash) {
         // First login - registration required
         return res.json({
@@ -100,7 +118,6 @@ router.post('/login', async (req, res) => {
       { expiresIn: '8h' }
     );
 
-    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
     await dbRun('UPDATE users SET last_login_at = ? WHERE id = ?', [nowStr, user.id]);
 
     return res.json({
@@ -251,6 +268,7 @@ router.post('/users/:id/reset-device', verifyToken, checkRole(['admin']), async 
 
     const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
     await dbRun('UPDATE users SET device_hash = NULL, updated_at = ? WHERE id = ?', [nowStr, id]);
+    await dbRun('DELETE FROM user_devices WHERE user_id = ?', [id]);
 
     return res.json({ message: '등록된 PC 장치가 성공적으로 초기화되었습니다.' });
   } catch (error) {

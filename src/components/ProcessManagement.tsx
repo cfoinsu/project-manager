@@ -287,16 +287,24 @@ export const ProcessManagement: React.FC = () => {
       }
     }
 
-    await updateProcessDetail(id, updates);
+    try {
+      await updateProcessDetail(id, updates);
+    } catch (error: any) {
+      alert(error.message || '프로세스 수정에 실패했습니다.');
+    }
   };
 
   const handleAddProcess = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) return;
-    await addProcess(name, description);
-    setName('');
-    setDescription('');
-    setModalOpen(false);
+    try {
+      await addProcess(name, description);
+      setName('');
+      setDescription('');
+      setModalOpen(false);
+    } catch (error: any) {
+      alert(error.message || '프로세스 생성에 실패했습니다.');
+    }
   };
 
   const handleMoveUp = async (idx: number) => {

@@ -52,6 +52,20 @@ function getAvatarPalette(name: string) {
 }
 
 // ─── 단일 댓글 카드 ─────────────────────────────────────────────
+const ALLOWED_REACTIONS = new Set(['👍', '❤️', '✅', '🔥']);
+
+const normalizeReactionsForView = (reactions: Comment['reactions']) => {
+  if (!reactions || typeof reactions !== 'object') return [];
+
+  return Object.entries(reactions)
+    .filter(([emoji]) => ALLOWED_REACTIONS.has(emoji))
+    .map(([emoji, uids]) => [
+      emoji,
+      Array.isArray(uids) ? uids.filter(Boolean) : []
+    ] as [string, string[]])
+    .filter(([, uids]) => uids.length > 0);
+};
+
 interface CommentCardProps {
   comment: Comment;
   isOwn: boolean;
@@ -84,6 +98,7 @@ const CommentCard: React.FC<CommentCardProps> = ({
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(comment.content);
   const [savingEdit, setSavingEdit] = useState(false);
+  const normalizedReactions = normalizeReactionsForView(comment.reactions);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -313,9 +328,9 @@ const CommentCard: React.FC<CommentCardProps> = ({
               )}
 
               {/* 이모지 반응 라인 */}
-              {comment.reactions && Object.keys(comment.reactions).length > 0 && (
+              {normalizedReactions.length > 0 && (
                 <div className={`flex items-center gap-1 mt-1.5 flex-wrap ${alignRight ? 'justify-end' : 'justify-start'}`}>
-                  {Object.entries(comment.reactions).map(([emoji, uids]) => {
+                  {normalizedReactions.map(([emoji, uids]) => {
                     const hasReacted = currentUserId ? uids.includes(currentUserId) : false;
                     return (
                       <button
@@ -450,7 +465,7 @@ export const CommentPanel: React.FC<CommentPanelProps> = ({
     try {
       let data;
       if (taskId) {
-        data = await api.getComments(serverMode, { assignment_id: `task_${taskId}` });
+        data = await api.getComments(serverMode, { project_id: projectId, task_id: taskId });
       } else {
         data = await api.getComments(serverMode, { project_id: projectId });
       }
@@ -612,7 +627,6 @@ export const CommentPanel: React.FC<CommentPanelProps> = ({
       };
       if (taskId) {
         payload.task_id = taskId;
-        payload.assignment_id = `task_${taskId}`;
         payload.context_type = 'task';
         payload.context_id = taskId;
       } else if (activeChannel.type === 'assignment') {
@@ -653,7 +667,6 @@ export const CommentPanel: React.FC<CommentPanelProps> = ({
       };
       if (taskId) {
         payload.task_id = taskId;
-        payload.assignment_id = `task_${taskId}`;
         payload.context_type = 'task';
         payload.context_id = taskId;
       } else if (activeChannel.type === 'assignment') {
@@ -688,7 +701,6 @@ export const CommentPanel: React.FC<CommentPanelProps> = ({
       };
       if (taskId) {
         payload.task_id = taskId;
-        payload.assignment_id = `task_${taskId}`;
         payload.context_type = 'task';
         payload.context_id = taskId;
       } else if (activeChannel.type === 'assignment') {

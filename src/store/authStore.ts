@@ -45,18 +45,38 @@ export const useAuthStore = create<AuthState>((set) => ({
       // 1. Try Express Login API
       let loginData;
       try {
-        const response = await fetch(`${api.getApiBaseUrl()}/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password, deviceHash })
-        });
-        
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData.message || `HTTP error! status: ${response.status}`);
+        let lastError: Error | null = null;
+        for (const baseUrl of api.getServerUrlCandidates()) {
+          try {
+            const response = await fetch(`${baseUrl}/auth/login`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username, password, deviceHash })
+            });
+
+            if (response.status === 404 || response.status === 405) {
+              throw new Error('SERVER_CANDIDATE_INVALID');
+            }
+
+            if (!response.ok) {
+              const errData = await response.json().catch(() => ({}));
+              throw new Error(errData.message || `HTTP error! status: ${response.status}`);
+            }
+
+            loginData = await response.json();
+            localStorage.setItem('pa_server_url', baseUrl);
+            break;
+          } catch (err: any) {
+            lastError = err;
+            if (!(err.message?.includes('Failed to fetch') || err.message?.includes('Load failed') || err.message === 'SERVER_OFFLINE' || err.message === 'SERVER_CANDIDATE_INVALID')) {
+              throw err;
+            }
+          }
         }
-        
-        loginData = await response.json();
+
+        if (!loginData) {
+          throw lastError || new Error('SERVER_OFFLINE');
+        }
       } catch (err: any) {
         if (err.message.includes('Failed to fetch') || err.message.includes('Load failed') || err.message === 'SERVER_OFFLINE') {
           // Fallback to local mode (Tauri SQLite or LocalStorage)

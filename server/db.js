@@ -110,6 +110,34 @@ export const initDatabase = async () => {
     // Set updated_at if null
     await dbRun('UPDATE users SET updated_at = created_at WHERE updated_at IS NULL');
 
+    // 1.0.1 Create additional user device registry.
+    // users.device_hash remains as the legacy primary device for compatibility.
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS user_devices (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        device_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_used_at TEXT,
+        UNIQUE(user_id, device_hash),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    const usersWithLegacyDevices = await dbAll('SELECT id, device_hash, created_at, last_login_at FROM users WHERE device_hash IS NOT NULL AND device_hash != ""');
+    for (const u of usersWithLegacyDevices) {
+      await dbRun(
+        'INSERT OR IGNORE INTO user_devices (id, user_id, device_hash, created_at, last_used_at) VALUES (?, ?, ?, ?, ?)',
+        [
+          `udev-${u.id}-legacy`,
+          u.id,
+          u.device_hash,
+          u.created_at || new Date().toISOString().replace('T', ' ').slice(0, 19),
+          u.last_login_at || null
+        ]
+      );
+    }
+
     // 1.1 Create departments, positions, job_roles tables
     await dbRun(`
       CREATE TABLE IF NOT EXISTS departments (
@@ -214,6 +242,19 @@ export const initDatabase = async () => {
       VALUES (1, 'Project Atlas', 'Project OS', '', '#3182F6')
     `);
 
+    // 2.2 Create App Settings Table (global client configuration)
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        server_url TEXT DEFAULT ''
+      )
+    `);
+
+    await dbRun(`
+      INSERT OR IGNORE INTO app_settings (id, server_url)
+      VALUES (1, '')
+    `);
+
     // 3. Create Assignments Table (Resource Allocation)
     await dbRun(`
       CREATE TABLE IF NOT EXISTS assignments (
@@ -270,7 +311,10 @@ export const initDatabase = async () => {
     const commentColumnsToAlter = [
       'ALTER TABLE comments ADD COLUMN parent_id TEXT',
       'ALTER TABLE comments ADD COLUMN updated_at TEXT',
-      'ALTER TABLE comments ADD COLUMN reactions TEXT'
+      'ALTER TABLE comments ADD COLUMN reactions TEXT',
+      'ALTER TABLE comments ADD COLUMN task_id TEXT',
+      'ALTER TABLE comments ADD COLUMN context_type TEXT',
+      'ALTER TABLE comments ADD COLUMN context_id TEXT'
     ];
     for (const sql of commentColumnsToAlter) {
       try {
@@ -333,6 +377,20 @@ export const initDatabase = async () => {
         FOREIGN KEY(process_id) REFERENCES processes(id) ON DELETE CASCADE
       )
     `);
+
+    const taskColumnsToAlter = [
+      'ALTER TABLE tasks ADD COLUMN start_time TEXT NOT NULL DEFAULT ""',
+      'ALTER TABLE tasks ADD COLUMN end_time TEXT NOT NULL DEFAULT ""',
+      'ALTER TABLE tasks ADD COLUMN assignees TEXT DEFAULT "[]"',
+      'ALTER TABLE tasks ADD COLUMN assignee_names TEXT DEFAULT "[]"'
+    ];
+    for (const sql of taskColumnsToAlter) {
+      try {
+        await dbRun(sql);
+      } catch (e) {
+        // Ignore errors if columns already exist
+      }
+    }
 
     // 9. Create Subtasks Table (세부 체크리스트)
     await dbRun(`
