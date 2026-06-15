@@ -7,7 +7,19 @@ const router = express.Router();
 // 1. GET /projects - 프로젝트 목록 조회
 router.get('/', verifyToken, async (req, res) => {
   try {
-    const projects = await dbAll('SELECT * FROM projects ORDER BY created_at DESC');
+    let projects;
+    if (req.user.role === 'admin') {
+      projects = await dbAll('SELECT * FROM projects ORDER BY created_at DESC');
+    } else {
+      // For managers and members, only fetch projects they are assigned to
+      projects = await dbAll(
+        `SELECT DISTINCT p.* FROM projects p
+         INNER JOIN assignments a ON p.id = a.project_id
+         WHERE a.user_id = ?
+         ORDER BY p.created_at DESC`,
+        [req.user.id]
+      );
+    }
     return res.json({ projects });
   } catch (error) {
     console.error('Fetch projects failed:', error);

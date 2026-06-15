@@ -221,16 +221,16 @@ router.get('/', (req, res) => {
         const tr = document.createElement('tr');
         
         const nameTd = document.createElement('td');
-        nameTd.innerHTML = `<strong>\${u.name}</strong><br/><span style="font-size:12px; color:#64748b;">\${u.username}</span>`;
+        nameTd.innerHTML = "<strong>" + u.name + "</strong><br/><span style='font-size:12px; color:#64748b;'>" + u.username + "</span>";
         
         const deptTd = document.createElement('td');
-        deptTd.innerHTML = `\${u.role.toUpperCase()}<br/><span style="font-size:12px; color:#64748b;">\${u.department || '부서 없음'}</span>`;
+        deptTd.innerHTML = u.role.toUpperCase() + "<br/><span style='font-size:12px; color:#64748b;'>" + (u.department || '부서 없음') + "</span>";
         
         const hashTd = document.createElement('td');
         if (u.device_hash) {
-          hashTd.innerHTML = `<span class="device-badge" title="\${u.device_hash}">\${u.device_hash.substring(0, 16)}...</span>`;
+          hashTd.innerHTML = "<span class='device-badge' title='" + u.device_hash + "'>" + u.device_hash.substring(0, 16) + "...</span>";
         } else {
-          hashTd.innerHTML = `<span class="device-empty">기기 등록 안됨 (최초 로그인 대기)</span>`;
+          hashTd.innerHTML = '<span class="device-empty">기기 등록 안됨 (최초 로그인 대기)</span>';
         }
         
         const actionTd = document.createElement('td');
@@ -274,12 +274,12 @@ router.get('/', (req, res) => {
     }
 
     async function resetDevice(userId, userName) {
-      if (!confirm(`[\${userName}] 님의 기기 등록을 초기화하시겠습니까?\n다음 로그인 시 첫 접속 기기가 새로 등록됩니다.`)) {
+      if (!confirm("[" + userName + "] 님의 기기 등록을 초기화하시겠습니까?\n다음 로그인 시 첫 접속 기기가 새로 등록됩니다.")) {
         return;
       }
 
       try {
-        const response = await fetch(\`/emergency/reset-device/\${userId}\`, {
+        const response = await fetch('/emergency/reset-device/' + userId, {
           method: 'POST',
           headers: { 'Authorization': sessionToken }
         });

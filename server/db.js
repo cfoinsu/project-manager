@@ -162,12 +162,14 @@ export const initDatabase = async () => {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         code TEXT NOT NULL UNIQUE,
+        path TEXT DEFAULT "",
         created_at TEXT NOT NULL
       )
     `);
 
     // Migration to add columns to projects if they don't exist
     const projectColumnsToAlter = [
+      'ALTER TABLE projects ADD COLUMN path TEXT DEFAULT ""',
       'ALTER TABLE projects ADD COLUMN start_date TEXT DEFAULT ""',
       'ALTER TABLE projects ADD COLUMN end_date TEXT DEFAULT ""',
       'ALTER TABLE projects ADD COLUMN status TEXT DEFAULT "진행중"',
@@ -194,6 +196,23 @@ export const initDatabase = async () => {
         // Ignore errors (e.g. column already exists)
       }
     }
+
+    // 2.1 Create Brand Config Table
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS brand_config (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        company_name TEXT DEFAULT 'Project Atlas',
+        slogan TEXT DEFAULT 'Project OS',
+        logo_data_url TEXT DEFAULT '',
+        primary_color TEXT DEFAULT '#3182F6'
+      )
+    `);
+    
+    // Seed default brand config if not exist
+    await dbRun(`
+      INSERT OR IGNORE INTO brand_config (id, company_name, slogan, logo_data_url, primary_color)
+      VALUES (1, 'Project Atlas', 'Project OS', '', '#3182F6')
+    `);
 
     // 3. Create Assignments Table (Resource Allocation)
     await dbRun(`

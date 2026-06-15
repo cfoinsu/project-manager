@@ -69,6 +69,10 @@ function App() {
     checkSession();
   }, []);
 
+  useEffect(() => {
+    useBrandStore.getState().loadFromServer();
+  }, [isLoggedIn]);
+
   const { 
     projects, 
     activeProject, 
@@ -346,7 +350,7 @@ function App() {
         </div>
 
         {/* Project Selector dropdown in Sidebar */}
-        {currentUser?.role !== 'member' && (
+        {currentUser && (
           <div className="px-5 mb-6 shrink-0 text-left">
             <label className="text-xs font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider">활성 프로젝트</label>
             <div className="relative mt-1">
@@ -486,7 +490,7 @@ function App() {
           </div>
 
           {/* Project-specific Management Section */}
-          {activeProject && currentUser?.role !== 'member' && (
+          {activeProject && (
             <div className="flex flex-col gap-1 border-t border-toss-gray-100 dark:border-slate-800/80 pt-4">
               <span className="px-3 text-xs font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1">Project OS</span>
               
@@ -514,17 +518,19 @@ function App() {
                 <span>상세 일정 캘린더</span>
               </button>
 
-              <button
-                onClick={() => setView('projects_process')}
-                className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
-                  currentView === 'projects_process'
-                    ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
-                    : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
-                }`}
-              >
-                <GitFork className="w-4.5 h-4.5" />
-                <span>프로세스 편집</span>
-              </button>
+              {currentUser?.role !== 'member' && (
+                <button
+                  onClick={() => setView('projects_process')}
+                  className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
+                    currentView === 'projects_process'
+                      ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
+                      : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
+                  }`}
+                >
+                  <GitFork className="w-4.5 h-4.5" />
+                  <span>프로세스 편집</span>
+                </button>
+              )}
 
               <button
                 onClick={() => setView('projects_tasks')}

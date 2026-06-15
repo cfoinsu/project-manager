@@ -111,13 +111,13 @@ export const useAuthStore = create<AuthState>((set) => ({
         }
       }
 
-      // Check if serverMode is true or false
-      const isServer = !loginData.token.startsWith('mock-jwt-token-for-');
-
       if (loginData.status === 'device_registration_required') {
         set({ registrationRequiredUserId: loginData.userId, loading: false });
         return { success: false, status: 'device_registration_required', userId: loginData.userId };
       }
+
+      // Check if serverMode is true or false
+      const isServer = !loginData.token || !loginData.token.startsWith('mock-jwt-token-for-');
 
       localStorage.setItem('pa_token', loginData.token);
       localStorage.setItem('pa_user', JSON.stringify(loginData.user));

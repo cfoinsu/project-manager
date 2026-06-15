@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useRef } from 'react';
+import { useAuthStore } from '../store/authStore';
 import { 
   Database, 
   Trash2, 
@@ -30,6 +31,8 @@ export const SettingsView: React.FC = () => {
   const isTauriMode = isTauri();
   const { projects } = useProjectStore();
   const brand = useBrandStore();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
 
   // ─── 서버 URL 상태
   const [serverUrl, setServerUrl] = useState(
@@ -317,26 +320,28 @@ export const SettingsView: React.FC = () => {
                 <span className="text-[11px] font-mono font-bold text-slate-400">{brand.primaryColor}</span>
               </div>
             </div>
-            <div className="flex flex-col gap-1.5 shrink-0">
-              <button
-                onClick={() => { setEditingBrand(v => !v); setDraftName(brand.companyName); setDraftSlogan(brand.slogan); setDraftColor(brand.primaryColor); setDraftLogo(brand.logoDataUrl); }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors cursor-pointer ${
-                  editingBrand
-                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-600'
-                    : 'bg-toss-blue text-white hover:bg-blue-600'
-                }`}
-              >
-                <Pencil className="w-3.5 h-3.5" />
-                {editingBrand ? '편집 닫기' : '편집'}
-              </button>
-              <button
-                onClick={handleResetBrand}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-500 hover:border-rose-300 transition-colors cursor-pointer"
-              >
-                <RotateCcw className="w-3 h-3" />
-                초기화
-              </button>
-            </div>
+            {isAdmin && (
+              <div className="flex flex-col gap-1.5 shrink-0">
+                <button
+                  onClick={() => { setEditingBrand(v => !v); setDraftName(brand.companyName); setDraftSlogan(brand.slogan); setDraftColor(brand.primaryColor); setDraftLogo(brand.logoDataUrl); }}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold transition-colors cursor-pointer ${
+                    editingBrand
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-600'
+                      : 'bg-toss-blue text-white hover:bg-blue-600'
+                  }`}
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  {editingBrand ? '편집 닫기' : '편집'}
+                </button>
+                <button
+                  onClick={handleResetBrand}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-500 hover:border-rose-300 transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  초기화
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 편집 폼 */}
@@ -623,44 +628,46 @@ export const SettingsView: React.FC = () => {
                     <span className="w-1.5 h-1.5 rounded-full bg-toss-blue"></span>
                     <span>{selectedProvinceName} 상세 지역 목록</span>
                   </span>
-                  <div className="flex items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const targetGroup = regionsList.find(g => g.name === selectedProvinceName);
-                        if (!targetGroup) return;
-                        const targetCodes = targetGroup.subRegions.map(r => r.code);
-                        const allActive = targetCodes.every(code => !disabledRegions.includes(code));
-                        setDisabledRegions(prev => {
-                          let next;
-                          if (allActive) {
-                            next = [...new Set([...prev, ...targetCodes])];
-                          } else {
-                            next = prev.filter(code => !targetCodes.includes(code));
-                          }
-                          localStorage.setItem('pa_disabled_regions', JSON.stringify(next));
-                          return next;
-                        });
-                      }}
-                      className="text-[10px] font-bold text-toss-blue hover:underline cursor-pointer"
-                    >
-                      {regionsList.find(g => g.name === selectedProvinceName)?.subRegions.every(r => !disabledRegions.includes(r.code))
-                        ? '전체 비활성화'
-                        : '전체 활성화'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAddingSubRegion(true);
-                        setNewCodeValue('');
-                        setNewNameValue('');
-                      }}
-                      className="flex items-center gap-1 text-[10px] font-extrabold text-toss-blue bg-toss-blue/10 px-2 py-1 rounded-lg hover:bg-toss-blue/20 transition-all cursor-pointer"
-                    >
-                      <Plus className="w-3 h-3" />
-                      지역 추가
-                    </button>
-                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetGroup = regionsList.find(g => g.name === selectedProvinceName);
+                          if (!targetGroup) return;
+                          const targetCodes = targetGroup.subRegions.map(r => r.code);
+                          const allActive = targetCodes.every(code => !disabledRegions.includes(code));
+                          setDisabledRegions(prev => {
+                            let next;
+                            if (allActive) {
+                              next = [...new Set([...prev, ...targetCodes])];
+                            } else {
+                              next = prev.filter(code => !targetCodes.includes(code));
+                            }
+                            localStorage.setItem('pa_disabled_regions', JSON.stringify(next));
+                            return next;
+                          });
+                        }}
+                        className="text-[10px] font-bold text-toss-blue hover:underline cursor-pointer"
+                      >
+                        {regionsList.find(g => g.name === selectedProvinceName)?.subRegions.every(r => !disabledRegions.includes(r.code))
+                          ? '전체 비활성화'
+                          : '전체 활성화'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingSubRegion(true);
+                          setNewCodeValue('');
+                          setNewNameValue('');
+                        }}
+                        className="flex items-center gap-1 text-[10px] font-extrabold text-toss-blue bg-toss-blue/10 px-2 py-1 rounded-lg hover:bg-toss-blue/20 transition-all cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        지역 추가
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -794,9 +801,10 @@ export const SettingsView: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleToggleRegion(r.code)}
-                            className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            disabled={!isAdmin}
+                            className={`relative inline-flex h-4.5 w-8 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                               isActive ? 'bg-toss-blue' : 'bg-gray-200 dark:bg-slate-700'
-                            }`}
+                            } ${!isAdmin ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
                           >
                             <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                               isActive ? 'translate-x-3.5' : 'translate-x-0'
@@ -804,33 +812,35 @@ export const SettingsView: React.FC = () => {
                           </button>
                         </div>
 
-                        <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-100/50 dark:border-slate-800/40 mt-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingSubRegionCode(r.code);
-                              setEditCodeValue(r.code);
-                              setEditNameValue(r.name);
-                            }}
-                            className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-toss-blue transition-colors cursor-pointer"
-                            title="지역 코드 및 이름 수정"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSubRegion(r.code)}
-                            disabled={usageCount > 0}
-                            className={`p-1 rounded-lg transition-colors ${
-                              usageCount > 0
-                                ? 'text-slate-200 dark:text-slate-800 cursor-not-allowed'
-                                : 'hover:bg-rose-50 dark:hover:bg-rose-950/20 text-slate-400 hover:text-rose-500 cursor-pointer'
-                            }`}
-                            title={usageCount > 0 ? "프로젝트에서 사용 중인 코드는 삭제할 수 없습니다" : "지역 코드 삭제"}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {isAdmin && (
+                          <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-100/50 dark:border-slate-800/40 mt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingSubRegionCode(r.code);
+                                setEditCodeValue(r.code);
+                                setEditNameValue(r.name);
+                              }}
+                              className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-toss-blue transition-colors cursor-pointer"
+                              title="지역 코드 및 이름 수정"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSubRegion(r.code)}
+                              disabled={usageCount > 0}
+                              className={`p-1 rounded-lg transition-colors ${
+                                usageCount > 0
+                                  ? 'text-slate-200 dark:text-slate-800 cursor-not-allowed'
+                                  : 'hover:bg-rose-50 dark:hover:bg-rose-950/20 text-slate-400 hover:text-rose-500 cursor-pointer'
+                              }`}
+                              title={usageCount > 0 ? "프로젝트에서 사용 중인 코드는 삭제할 수 없습니다" : "지역 코드 삭제"}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -884,17 +894,20 @@ export const SettingsView: React.FC = () => {
                 onChange={(e) => setServerUrl(e.target.value)}
                 placeholder="예: http://192.168.0.50:5000"
                 className="toss-input flex-1 font-mono"
+                disabled={!isAdmin}
               />
-              <button
-                onClick={handleSaveServerUrl}
-                className="toss-btn toss-btn-primary px-4 py-2 text-xs h-[42px] shrink-0"
-              >
-                {saveSuccess ? (
-                  <><Check className="w-3.5 h-3.5" /> 저장됨</>
-                ) : (
-                  '저장 및 반영'
-                )}
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={handleSaveServerUrl}
+                  className="toss-btn toss-btn-primary px-4 py-2 text-xs h-[42px] shrink-0"
+                >
+                  {saveSuccess ? (
+                    <><Check className="w-3.5 h-3.5" /> 저장됨</>
+                  ) : (
+                    '저장 및 반영'
+                  )}
+                </button>
+              )}
             </div>
             <p className="text-[11px] text-toss-gray-450 dark:text-slate-500 leading-normal font-semibold">
               ※ 사내망 내 중앙 서버 컴퓨터의 IP와 포트(기본 5000)를 입력하십시오. (기본값: http://localhost:5000)
@@ -936,13 +949,15 @@ export const SettingsView: React.FC = () => {
               <span className="text-xs font-bold text-toss-gray-800 dark:text-slate-200">애플리케이션 데이터 전체 포맷</span>
               <span className="text-xs text-toss-gray-450 dark:text-slate-500 mt-0.5">※ 데이터베이스를 최초 런칭 상태로 강제 복구 및 마이그레이션을 재수행합니다.</span>
             </div>
-            <button
-              onClick={handleResetData}
-              className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-toss-red text-xs font-extrabold rounded-xl border border-toss-red/20 flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              DB 전체 초기화
-            </button>
+            {isAdmin && (
+              <button
+                onClick={handleResetData}
+                className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-toss-red text-xs font-extrabold rounded-xl border border-toss-red/20 flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                DB 전체 초기화
+              </button>
+            )}
           </div>
         </div>
       </div>
