@@ -4,7 +4,7 @@
 )]
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 #[derive(serde::Serialize)]
@@ -31,6 +31,7 @@ fn scan_node(path: &Path, depth: usize) -> FolderNode {
     let metadata = fs::metadata(path);
     let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
     let modified = metadata.as_ref()
+        .ok()
         .and_then(|m| m.modified().ok())
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs())

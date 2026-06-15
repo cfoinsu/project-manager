@@ -109,6 +109,27 @@ pub struct User {
     pub last_login_at: Option<String>,
 }
 
+fn user_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
+    Ok(User {
+        id: row.get(0)?,
+        username: row.get(1)?,
+        name: row.get(2)?,
+        email: row.get(3)?,
+        role: row.get(4)?,
+        status: row.get(5)?,
+        device_hash: row.get(6)?,
+        force_password_change: row.get(7)?,
+        department: row.get(8)?,
+        position: row.get(9)?,
+        job_role: row.get(10)?,
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
+        last_login_at: row.get(13)?,
+        phone: row.get(14)?,
+        profile_image: row.get(15)?,
+    })
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Assignment {
     pub id: String,
@@ -1304,24 +1325,7 @@ pub fn db_update_profile(
     let mut stmt = conn.prepare("SELECT id, username, name, email, role, status, device_hash, force_password_change, department, position, job_role, created_at, updated_at, last_login_at, phone, profile_image FROM users WHERE id = ?").map_err(|e| e.to_string())?;
     let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
     if let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        Ok(User {
-            id: row.get(0)?,
-            username: row.get(1)?,
-            name: row.get(2)?,
-            email: row.get(3)?,
-            role: row.get(4)?,
-            status: row.get(5)?,
-            device_hash: row.get(6)?,
-            force_password_change: row.get(7)?,
-            department: row.get(8)?,
-            position: row.get(9)?,
-            job_role: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-            last_login_at: row.get(13)?,
-            phone: row.get(14)?,
-            profile_image: row.get(15)?,
-        })
+        user_from_row(row).map_err(|e| e.to_string())
     } else {
         Err("사용자를 찾을 수 없습니다.".to_string())
     }
@@ -1336,24 +1340,7 @@ pub fn db_get_admin_contact(app_handle: tauri::AppHandle) -> Result<Option<User>
     let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
     
     if let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        Ok(Some(User {
-            id: row.get(0)?,
-            username: row.get(1)?,
-            name: row.get(2)?,
-            email: row.get(3)?,
-            role: row.get(4)?,
-            status: row.get(5)?,
-            device_hash: row.get(6)?,
-            force_password_change: row.get(7)?,
-            department: row.get(8)?,
-            position: row.get(9)?,
-            job_role: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-            last_login_at: row.get(13)?,
-            phone: row.get(14)?,
-            profile_image: row.get(15)?,
-        }))
+        Ok(Some(user_from_row(row).map_err(|e| e.to_string())?))
     } else {
         Ok(None)
     }
@@ -1638,6 +1625,7 @@ pub fn db_create_assignment(
         end_date,
         user_name: Some(user_name),
         user_email: Some(user_email),
+        user_profile_image: None,
         project_name: Some(project_name),
         project_code: Some(project_code),
     })
