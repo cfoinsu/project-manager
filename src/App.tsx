@@ -37,6 +37,7 @@ import { DocumentLibraryView } from './components/DocumentLibraryView';
 import { CustomSelect } from './components/CustomSelect';
 import { migrateComments, syncGlobalServerUrl } from './utils/api';
 import { Avatar } from './components/Avatar';
+import { FullscreenLoadingOverlay } from './components/ModalOverlay';
 
 import {
   Search,
@@ -93,6 +94,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [darkMode, setDarkMode] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [openingPath, setOpeningPath] = useState<string | null>(null);
   
   // Local tab state for the Folder Structure view ('tree' | 'stats' | 'mindmap' | 'treemap')
   const [structureTab, setStructureTab] = useState<'tree' | 'stats' | 'mindmap' | 'treemap'>('tree');
@@ -137,11 +139,14 @@ function App() {
   }
 
   const handleOpenFolder = async (path: string) => {
+    setOpeningPath(path);
     try {
       await openInExplorer(path);
       showToast(`탐색기에서 폴더를 열었습니다: ${path}`);
     } catch (err) {
       showToast(`폴더 열기 실패: ${err}`);
+    } finally {
+      setOpeningPath(null);
     }
   };
 
@@ -661,11 +666,16 @@ function App() {
         
         {/* Loading overlay */}
         {loading && (
-          <div className="absolute inset-0 bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center select-none">
-            <div className="w-14 h-14 border-4 border-toss-blue border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p className="text-sm font-bold text-white">동기화 진행 및 데이터 처리 중...</p>
-            <span className="text-xs text-slate-300 dark:text-slate-550 mt-2">파일이 많을 경우 시간이 다소 소요될 수 있습니다.</span>
-          </div>
+          <FullscreenLoadingOverlay
+            message="동기화 진행 및 데이터 처리 중..."
+            subMessage="파일이 많을 경우 시간이 다소 소요될 수 있습니다."
+          />
+        )}
+        {openingPath && (
+          <FullscreenLoadingOverlay
+            message="탐색기에서 폴더를 여는 중입니다."
+            subMessage={openingPath}
+          />
         )}
 
         {/* Unified Header (Visible only when an active project is selected & we are inside a project subview) */}

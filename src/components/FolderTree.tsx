@@ -3,6 +3,7 @@ import type { FolderNode } from '../types';
 import { Folder, FileText, FileSpreadsheet, Image, FileCode, ChevronRight, ChevronDown, MoreVertical, ExternalLink, Copy, FolderOpen } from 'lucide-react';
 import { openFile, openInExplorer, writeFileBytes, moveFileOrDir } from '../utils/tauriBridge';
 import { useProjectStore } from '../store/projectStore';
+import { FullscreenLoadingOverlay } from './ModalOverlay';
 
 interface FolderTreeProps {
   node: FolderNode;
@@ -21,6 +22,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
 }) => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+  const [openingLabel, setOpeningLabel] = useState<string | null>(null);
 
   const expandAll = () => {
     const next: Record<string, boolean> = {};
@@ -122,6 +124,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   };
 
   const handleNodeDoubleClick = async (n: FolderNode) => {
+    setOpeningLabel(n.is_dir ? `폴더를 여는 중입니다: ${n.name}` : `파일을 실행하는 중입니다: ${n.name}`);
     try {
       if (n.is_dir) {
         await openInExplorer(n.path);
@@ -132,6 +135,8 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
       }
     } catch (err) {
       onShowToast(`오류 발생: ${err}`);
+    } finally {
+      setOpeningLabel(null);
     }
   };
 
@@ -154,6 +159,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
 
     try {
       if (action === 'open') {
+        setOpeningLabel(contextMenu.isDir ? `폴더를 여는 중입니다: ${name}` : `파일을 실행하는 중입니다: ${name}`);
         if (contextMenu.isDir) {
           await openInExplorer(path);
           onShowToast(`폴더를 열었습니다: ${name}`);
@@ -168,11 +174,14 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
         await navigator.clipboard.writeText(name);
         onShowToast(`이름이 복사되었습니다: ${name}`);
       } else if (action === 'show_explorer') {
+        setOpeningLabel(`탐색기에서 여는 중입니다: ${name}`);
         await openInExplorer(path);
         onShowToast(`탐색기에서 열었습니다: ${name}`);
       }
     } catch (err) {
       onShowToast(`오류 발생: ${err}`);
+    } finally {
+      setOpeningLabel(null);
     }
     setContextMenu(null);
   };
@@ -453,6 +462,12 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
             <span>탐색기에서 보기</span>
           </button>
         </div>
+      )}
+      {openingLabel && (
+        <FullscreenLoadingOverlay
+          message={openingLabel}
+          subMessage="외부 프로그램이 열릴 때까지 잠시 기다려 주세요."
+        />
       )}
     </div>
   );

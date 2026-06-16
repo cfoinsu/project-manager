@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { FolderNode, TemplateRule, RuleCheckReport } from '../types';
 import { AlertCircle, PlusCircle } from 'lucide-react';
 import { openInExplorer } from '../utils/tauriBridge';
+import { FullscreenLoadingOverlay } from './ModalOverlay';
 
 interface AnalysisPanelProps {
   rootNode: FolderNode;
@@ -23,6 +24,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   onShowToast
 }) => {
   const [templateText] = useState(DEFAULT_TEMPLATE);
+  const [openingLabel, setOpeningLabel] = useState<string | null>(null);
 
   // Format bytes helper
   const formatBytes = (bytes: number) => {
@@ -145,16 +147,25 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   }, [healthScore]);
 
   const handleOpenFolder = async (path: string, name: string) => {
+    setOpeningLabel(`폴더를 여는 중입니다: ${name}`);
     try {
       await openInExplorer(path);
       onShowToast(`폴더를 열었습니다: ${name}`);
     } catch (err) {
       onShowToast(`폴더 열기 실패: ${err}`);
+    } finally {
+      setOpeningLabel(null);
     }
   };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 select-none animate-slide-up">
+      {openingLabel && (
+        <FullscreenLoadingOverlay
+          message={openingLabel}
+          subMessage="외부 프로그램이 열릴 때까지 잠시 기다려 주세요."
+        />
+      )}
       
       {/* 1. Folder Health Card */}
       <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-200/50 dark:border-slate-800 p-6 flex flex-col items-center justify-between text-center min-h-[380px]">

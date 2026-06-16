@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin, X, ChevronRight } from 'lucide-react';
 import { getKoreaRegions } from '../types';
+import { ModalOverlay } from './ModalOverlay';
 
 interface RegionPickerModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelect: (code: string) => void;
+  zIndex?: number;
 }
 
 export const RegionPickerModal: React.FC<RegionPickerModalProps> = ({
   isOpen,
   onClose,
   onSelect,
+  zIndex = 100,
 }) => {
   const KOREA_REGIONS = getKoreaRegions();
   const [pickerSelectedProvince, setPickerSelectedProvince] = useState<string>('서울특별시');
@@ -34,10 +37,7 @@ export const RegionPickerModal: React.FC<RegionPickerModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
-      onClick={onClose}
-    >
+    <ModalOverlay onClose={onClose} zIndex={zIndex}>
       <div
         className="bg-white/95 dark:bg-slate-900/95 border border-slate-100 dark:border-slate-800/80 rounded-[28px] p-7 shadow-toss-lg max-w-2xl w-full text-left animate-scale-in flex flex-col gap-5 backdrop-filter backdrop-blur-md"
         onClick={(e) => e.stopPropagation()}
@@ -136,6 +136,6 @@ export const RegionPickerModal: React.FC<RegionPickerModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 };

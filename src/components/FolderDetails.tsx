@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { FolderNode } from '../types';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { FolderOpen, Copy, ExternalLink, Info } from 'lucide-react';
 import { openFile, openInExplorer } from '../utils/tauriBridge';
+import { FullscreenLoadingOverlay } from './ModalOverlay';
 
 interface FolderDetailsProps {
   node: FolderNode;
@@ -10,6 +11,8 @@ interface FolderDetailsProps {
 }
 
 export const FolderDetails: React.FC<FolderDetailsProps> = ({ node, onShowToast }) => {
+  const [openingLabel, setOpeningLabel] = useState<string | null>(null);
+
   // Format bytes helper
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
@@ -20,6 +23,7 @@ export const FolderDetails: React.FC<FolderDetailsProps> = ({ node, onShowToast 
   };
 
   const handleOpenFolder = async () => {
+    setOpeningLabel(node.is_dir ? `폴더를 여는 중입니다: ${node.name}` : `파일을 실행하는 중입니다: ${node.name}`);
     try {
       if (node.is_dir) {
         await openInExplorer(node.path);
@@ -30,6 +34,8 @@ export const FolderDetails: React.FC<FolderDetailsProps> = ({ node, onShowToast 
       }
     } catch (err) {
       onShowToast(`열기 실패: ${err}`);
+    } finally {
+      setOpeningLabel(null);
     }
   };
 
@@ -52,11 +58,14 @@ export const FolderDetails: React.FC<FolderDetailsProps> = ({ node, onShowToast 
   };
 
   const handleShowExplorer = async () => {
+    setOpeningLabel(`탐색기에서 여는 중입니다: ${node.name}`);
     try {
       await openInExplorer(node.path);
       onShowToast(`탐색기에서 열었습니다: ${node.name}`);
     } catch (err) {
       onShowToast(`탐색기 열기 실패: ${err}`);
+    } finally {
+      setOpeningLabel(null);
     }
   };
 
@@ -246,6 +255,12 @@ export const FolderDetails: React.FC<FolderDetailsProps> = ({ node, onShowToast 
           <span>탐색기에서 보기</span>
         </button>
       </div>
+      {openingLabel && (
+        <FullscreenLoadingOverlay
+          message={openingLabel}
+          subMessage="외부 프로그램이 열릴 때까지 잠시 기다려 주세요."
+        />
+      )}
     </div>
   );
 };

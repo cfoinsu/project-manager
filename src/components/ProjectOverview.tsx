@@ -18,6 +18,7 @@ import { RangeDatePicker } from './RangeDatePicker';
 import { getRegionCodes } from '../types';
 import { RegionPickerModal } from './RegionPickerModal';
 import { Avatar } from './Avatar';
+import { ModalOverlay } from './ModalOverlay';
 
 export const ProjectOverview: React.FC = () => {
   const REGION_CODES = getRegionCodes();
@@ -719,10 +720,7 @@ export const ProjectOverview: React.FC = () => {
 
       {/* 프로젝트 개요 정보 수정 모달 */}
       {isEditModalOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-955/40 dark:bg-slate-955/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-fade-in"
-          onClick={() => setIsEditModalOpen(false)}
-        >
+        <ModalOverlay onClose={() => setIsEditModalOpen(false)} zIndex={9000}>
           <div 
             className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[28px] p-6 shadow-toss-lg max-w-2xl w-full max-h-[85vh] overflow-y-auto text-left animate-scale-in flex flex-col gap-5 scrollbar-thin"
             onClick={e => e.stopPropagation()}
@@ -919,12 +917,13 @@ export const ProjectOverview: React.FC = () => {
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
 
       <RegionPickerModal
         isOpen={isRegionPickerOpen}
         onClose={() => setIsRegionPickerOpen(false)}
+        zIndex={10000}
         onSelect={(code) => {
           const selectedRegionName = REGION_CODES.find(r => r.code === code)?.name || code;
           setEditClientRegion(selectedRegionName);
