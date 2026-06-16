@@ -33,6 +33,8 @@ import { UserManagementView } from './components/UserManagementView';
 import { AssignmentManagementView } from './components/AssignmentManagementView';
 import { ProjectScheduleCalendarView } from './components/ProjectScheduleCalendarView';
 import { DocumentLibraryView } from './components/DocumentLibraryView';
+import { MeetingsView } from './components/MeetingsView';
+import { MyWorkView } from './components/MyWorkView';
 
 import { CustomSelect } from './components/CustomSelect';
 import { migrateComments, syncGlobalServerUrl } from './utils/api';
@@ -59,7 +61,9 @@ import {
   UserCheck,
   Library,
   LogOut,
-  UserCog
+  UserCog,
+  Bell,
+  CalendarClock
 } from 'lucide-react';
 
 function App() {
@@ -68,6 +72,26 @@ function App() {
 
   useEffect(() => {
     checkSession();
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const bindNavigationEvent = async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        unlisten = await listen<string>('navigate', (event) => {
+          if (event.payload) {
+            useProjectStore.getState().setView(event.payload);
+          }
+        });
+      } catch {
+        // Browser mode has no Tauri event bus.
+      }
+    };
+    bindNavigationEvent();
+    return () => {
+      unlisten?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -163,6 +187,8 @@ function App() {
     switch (currentView as any) {
       case 'dashboard':
         return <DashboardView />;
+      case 'my_work':
+        return <MyWorkView />;
       case 'users':
         return <UserManagementView />;
       case 'assignments':
@@ -183,6 +209,8 @@ function App() {
         return <ProjectOverview />;
       case 'projects_calendar':
         return <ProjectScheduleCalendarView />;
+      case 'projects_meetings':
+        return <MeetingsView />;
       case 'projects_process':
         return <ProcessManagement />;
       case 'projects_tasks':
@@ -407,6 +435,18 @@ function App() {
             </button>
 
             <button
+              onClick={() => setView('my_work')}
+              className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
+                currentView === 'my_work'
+                  ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
+                  : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
+              }`}
+            >
+              <Bell className="w-4.5 h-4.5" />
+              <span>My Work</span>
+            </button>
+
+            <button
               onClick={() => setView('calendar')}
               className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
                 currentView === 'calendar'
@@ -522,8 +562,20 @@ function App() {
                     : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
                 }`}
               >
-                <Calendar className="w-4.5 h-4.5" />
-                <span>상세 일정 캘린더</span>
+              <Calendar className="w-4.5 h-4.5" />
+              <span>상세 일정 캘린더</span>
+            </button>
+
+              <button
+                onClick={() => setView('projects_meetings')}
+                className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
+                  currentView === 'projects_meetings'
+                    ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
+                    : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
+                }`}
+              >
+                <CalendarClock className="w-4.5 h-4.5" />
+                <span>회의</span>
               </button>
 
               {currentUser?.role !== 'member' && (

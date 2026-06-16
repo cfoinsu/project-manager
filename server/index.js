@@ -17,6 +17,9 @@ import worklogRoutes from './routes/worklogs.js';
 import emergencyRoutes from './routes/emergency.js';
 import brandRoutes from './routes/brand.js';
 import settingsRoutes from './routes/settings.js';
+import meetingRoutes from './routes/meetings.js';
+import todoRoutes from './routes/todos.js';
+import notificationRoutes from './routes/notifications.js';
 
 dotenv.config();
 
@@ -62,6 +65,9 @@ app.use('/worklogs', worklogRoutes);
 app.use('/emergency', emergencyRoutes);
 app.use('/brand', brandRoutes);
 app.use('/settings', settingsRoutes);
+app.use('/meetings', meetingRoutes);
+app.use('/todos', todoRoutes);
+app.use('/notifications', notificationRoutes);
 
 // Static files: uploaded documents (direct file serving)
 app.use('/uploads', express.static(join(new URL('.', import.meta.url).pathname.slice(1), 'uploads')));

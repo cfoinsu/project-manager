@@ -655,3 +655,72 @@ export interface Comment {
   // Client-side assembled
   replies?: Comment[];
 }
+
+export interface Meeting {
+  id: string;
+  project_id: string;
+  title: string;
+  agenda?: string;
+  agenda_items?: MeetingAgendaItem[];
+  notes?: string;
+  decisions?: string;
+  location?: string;
+  meeting_url?: string;
+  start_date: string;
+  start_time: string;
+  end_time: string;
+  attendees: string[];
+  attendee_names?: string[];
+  responses?: Record<string, 'pending' | 'accepted' | 'declined'>;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  project_name?: string;
+  project_code?: string;
+}
+
+export interface MeetingAgendaItem {
+  id: string;
+  title: string;
+}
+
+export interface MeetingNote {
+  id: string;
+  meeting_id: string;
+  agenda_item_id?: string | null;
+  user_id?: string;
+  author_name?: string;
+  content: string;
+  note_time: string;
+  created_at: string;
+}
+
+export interface PersonalTodo {
+  id: string;
+  user_id: string;
+  project_id?: string | null;
+  task_id?: string | null;
+  meeting_id?: string | null;
+  title: string;
+  memo?: string;
+  due_date?: string;
+  priority: 'low' | 'normal' | 'high' | 'urgent';
+  status: 'todo' | 'doing' | 'done';
+  created_at: string;
+  updated_at: string;
+  project_name?: string;
+  task_title?: string;
+  meeting_title?: string;
+}
+
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  type: 'meeting' | 'task' | 'todo' | 'comment' | 'system';
+  title: string;
+  body?: string;
+  link_view?: string;
+  link_id?: string;
+  read_at?: string | null;
+  created_at: string;
+}

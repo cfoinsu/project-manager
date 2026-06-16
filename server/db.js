@@ -468,6 +468,100 @@ export const initDatabase = async () => {
       )
     `);
 
+    // 14. Create Meetings Table
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS meetings (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        agenda TEXT DEFAULT '',
+        agenda_items TEXT NOT NULL DEFAULT '[]',
+        notes TEXT DEFAULT '',
+        decisions TEXT DEFAULT '',
+        location TEXT DEFAULT '',
+        meeting_url TEXT DEFAULT '',
+        start_date TEXT NOT NULL,
+        start_time TEXT NOT NULL DEFAULT '',
+        end_time TEXT NOT NULL DEFAULT '',
+        attendees TEXT NOT NULL DEFAULT '[]',
+        attendee_names TEXT NOT NULL DEFAULT '[]',
+        responses TEXT NOT NULL DEFAULT '{}',
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+        FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
+      )
+    `);
+
+    // 15. Create Meeting Notes Table
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS meeting_notes (
+        id TEXT PRIMARY KEY,
+        meeting_id TEXT NOT NULL,
+        agenda_item_id TEXT,
+        user_id TEXT,
+        author_name TEXT DEFAULT '',
+        content TEXT NOT NULL,
+        note_time TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(meeting_id) REFERENCES meetings(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+      )
+    `);
+
+    const meetingColumnMigrations = [
+      'ALTER TABLE meetings ADD COLUMN agenda_items TEXT NOT NULL DEFAULT "[]"'
+    ];
+    for (const sql of meetingColumnMigrations) {
+      try { await dbRun(sql); } catch (error) { if (!error.message.includes('duplicate column')) console.error('Meeting migration skipped:', error.message); }
+    }
+
+    const meetingNoteColumnMigrations = [
+      'ALTER TABLE meeting_notes ADD COLUMN agenda_item_id TEXT'
+    ];
+    for (const sql of meetingNoteColumnMigrations) {
+      try { await dbRun(sql); } catch (error) { if (!error.message.includes('duplicate column')) console.error('Meeting note migration skipped:', error.message); }
+    }
+
+    // 16. Create Personal Todos Table
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS personal_todos (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        project_id TEXT,
+        task_id TEXT,
+        meeting_id TEXT,
+        title TEXT NOT NULL,
+        memo TEXT DEFAULT '',
+        due_date TEXT DEFAULT '',
+        priority TEXT NOT NULL DEFAULT 'normal',
+        status TEXT NOT NULL DEFAULT 'todo',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE SET NULL,
+        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE SET NULL,
+        FOREIGN KEY(meeting_id) REFERENCES meetings(id) ON DELETE SET NULL
+      )
+    `);
+
+    // 17. Create Notifications Table
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'system',
+        title TEXT NOT NULL,
+        body TEXT DEFAULT '',
+        link_view TEXT DEFAULT '',
+        link_id TEXT DEFAULT '',
+        read_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
     // Seed default template
     const templatesCount = await dbGet('SELECT COUNT(*) as count FROM templates');
     if (templatesCount.count === 0) {

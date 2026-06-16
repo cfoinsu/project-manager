@@ -6,6 +6,7 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use tauri::{CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu, WindowEvent};
 
 #[derive(serde::Serialize)]
 struct FolderNode {
@@ -177,7 +178,48 @@ fn move_file_or_dir(src: String, dest: String) -> Result<(), String> {
 mod db;
 
 fn main() {
+    let tray_menu = SystemTrayMenu::new()
+        .add_item(CustomMenuItem::new("show".to_string(), "열기"))
+        .add_item(CustomMenuItem::new("my_work".to_string(), "My Work"))
+        .add_item(CustomMenuItem::new("quit".to_string(), "종료"));
+    let system_tray = SystemTray::new().with_menu(tray_menu);
+
     tauri::Builder::default()
+        .system_tray(system_tray)
+        .on_system_tray_event(|app, event| match event {
+            SystemTrayEvent::LeftClick { .. } => {
+                if let Some(window) = app.get_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
+                "show" => {
+                    if let Some(window) = app.get_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                "my_work" => {
+                    if let Some(window) = app.get_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        let _ = window.emit("navigate", "my_work");
+                    }
+                }
+                "quit" => {
+                    app.exit(0);
+                }
+                _ => {}
+            },
+            _ => {}
+        })
+        .on_window_event(|event| {
+            if let WindowEvent::CloseRequested { api, .. } = event.event() {
+                api.prevent_close();
+                let _ = event.window().hide();
+            }
+        })
         .setup(|app| {
             let db_path = db::get_db_path(&app.handle());
             if let Err(e) = db::init_db(&db_path) {

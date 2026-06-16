@@ -8,8 +8,13 @@ import {
   ArrowRight,
   Layers,
   CheckSquare,
-  AlertCircle
+  AlertCircle,
+  FileText,
+  Users
 } from 'lucide-react';
+import type { Meeting } from '../types';
+import { getMeetings, respondMeeting } from '../utils/collaborationApi';
+import { MeetingMinutesModal } from './MeetingMinutesModal';
 // 프로젝트 코드를 기준으로 유형별 테마 색상 반환
 export const getProjectColorClass = (code?: string, variant: 'project' | 'process' | 'task' = 'project') => {
   if (!code || code.length < 5) {
@@ -80,7 +85,7 @@ interface LaneEvent {
   startCol: number;
   endCol: number;
   colorClass: string;
-  type: 'process' | 'task';
+  type: 'process' | 'task' | 'meeting';
   original: any;
   start?: string;
   end?: string;
@@ -153,6 +158,8 @@ export const ProjectScheduleCalendarView: React.FC = () => {
   }, [joiningFeedback]);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
 
   // Show local toast feedback
   const showLocalToast = (msg: string) => {
@@ -161,6 +168,22 @@ export const ProjectScheduleCalendarView: React.FC = () => {
       setToastMessage(prev => prev === msg ? null : prev);
     }, 2500);
   };
+
+  const loadMeetings = async () => {
+    if (!activeProject?.id) {
+      setMeetings([]);
+      return;
+    }
+    try {
+      setMeetings(await getMeetings(activeProject.id));
+    } catch (error) {
+      console.error('Load meetings for schedule failed:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadMeetings();
+  }, [activeProject?.id]);
 
   // Synchronize calendar focus with selected date
   useEffect(() => {
@@ -333,7 +356,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
 
 
   const getEventsForRange = (startStr: string, endStr: string) => {
-    const events: { id: string; type: 'process' | 'task'; title: string; start?: string; end?: string; colorClass: string; original: any }[] = [];
+    const events: { id: string; type: 'process' | 'task' | 'meeting'; title: string; start?: string; end?: string; colorClass: string; original: any }[] = [];
     const projCode = activeProject?.code;
     
     processes
@@ -364,6 +387,20 @@ export const ProjectScheduleCalendarView: React.FC = () => {
         });
       });
 
+    meetings
+      .filter(m => m.start_date && isRangeOverlapping(m.start_date, m.start_date, startStr, endStr))
+      .forEach(m => {
+        events.push({
+          id: m.id,
+          type: 'meeting',
+          title: m.title,
+          start: m.start_date,
+          end: m.start_date,
+          colorClass: 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200/70 dark:border-amber-900/40',
+          original: m
+        });
+      });
+
     return events;
   };
 
@@ -378,11 +415,11 @@ export const ProjectScheduleCalendarView: React.FC = () => {
       const weekEvents = getEventsForRange(startWeekStr, endWeekStr);
       
       weekEvents.forEach(ev => {
-        if (ev.type === 'task' && ev.original) {
-          const task = ev.original;
-          if (task.start_time || task.end_time) {
-            const sh = parseTimeToHourFloat(task.start_time, 9);
-            const eh = parseTimeToHourFloat(task.end_time, 18);
+        if ((ev.type === 'task' || ev.type === 'meeting') && ev.original) {
+          const timedItem = ev.original;
+          if (timedItem.start_time || timedItem.end_time) {
+            const sh = parseTimeToHourFloat(timedItem.start_time, 9);
+            const eh = parseTimeToHourFloat(timedItem.end_time, 18);
             if (sh < minHour) minHour = Math.floor(sh);
             if (eh > maxHour) maxHour = Math.ceil(eh);
           }
@@ -408,16 +445,21 @@ export const ProjectScheduleCalendarView: React.FC = () => {
       totalHours,
       slots
     };
-  }, [weekDays, processes, tasks]);
+  }, [weekDays, processes, tasks, meetings]);
 
   // Deterministic daily event time slots calculation based on ID hashes or actual task time
   const getEventTimeSlot = (id: string) => {
     const targetTask = tasks.find(t => t.id === id);
+    const targetMeeting = meetings.find(m => m.id === id);
     let startHour = 9;
     let endHour = 18;
     let hasActualTime = false;
     
-    if (targetTask && (targetTask.start_time || targetTask.end_time)) {
+    if (targetMeeting && (targetMeeting.start_time || targetMeeting.end_time)) {
+      startHour = parseTimeToHourFloat(targetMeeting.start_time, 9);
+      endHour = parseTimeToHourFloat(targetMeeting.end_time, Math.max(startHour + 1, 10));
+      hasActualTime = true;
+    } else if (targetTask && (targetTask.start_time || targetTask.end_time)) {
       startHour = parseTimeToHourFloat(targetTask.start_time, 9);
       endHour = parseTimeToHourFloat(targetTask.end_time, 18);
       hasActualTime = true;
@@ -457,7 +499,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
 
   // Get active events on a specific day
   const getEventsForDay = (dateStr: string) => {
-    const events: { id: string; type: 'process' | 'task'; title: string; start?: string; end?: string; colorClass: string; original: any }[] = [];
+    const events: { id: string; type: 'process' | 'task' | 'meeting'; title: string; start?: string; end?: string; colorClass: string; original: any }[] = [];
     const projCode = activeProject?.code;
     
     processes
@@ -488,6 +530,20 @@ export const ProjectScheduleCalendarView: React.FC = () => {
         });
       });
 
+    meetings
+      .filter(m => m.start_date === dateStr)
+      .forEach(m => {
+        events.push({
+          id: m.id,
+          type: 'meeting',
+          title: m.title,
+          start: m.start_date,
+          end: m.start_date,
+          colorClass: 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200/70 dark:border-amber-900/40',
+          original: m
+        });
+      });
+
     return events;
   };
 
@@ -501,17 +557,35 @@ export const ProjectScheduleCalendarView: React.FC = () => {
         timeStr: timeSlot.timeStr
       };
     });
-  }, [selectedDateStr, processes, tasks]);
+  }, [selectedDateStr, processes, tasks, meetings, timelineRange]);
 
   // Navigate to WBS or Kanban view directly from event list
-  const handleNavigateToWbsOrKanban = (ev: { id: string; type: 'process' | 'task'; title: string; original: any }) => {
+  const handleNavigateToWbsOrKanban = (ev: { id: string; type: 'process' | 'task' | 'meeting'; title: string; original: any }) => {
     if (ev.type === 'process') {
       setView('projects_process');
       showLocalToast(`WBS 단계 관리 뷰로 이동했습니다.`);
     } else if (ev.type === 'task') {
       setView('projects_tasks');
       showLocalToast(`칸반 작업 관리 보드로 이동했습니다.`);
+    } else if (ev.type === 'meeting') {
+      setSelectedMeeting(ev.original as Meeting);
     }
+  };
+
+  const handleScheduleParticipation = async (
+    ev: { id: string; type: 'process' | 'task' | 'meeting'; original: any },
+    value: 'yes' | 'no'
+  ) => {
+    if (ev.type === 'meeting') {
+      await respondMeeting(ev.id, value === 'yes' ? 'accepted' : 'declined');
+      setJoiningFeedback(prev => ({ ...prev, [ev.id]: value }));
+      await loadMeetings();
+      showLocalToast(value === 'yes' ? '회의 참석으로 응답했습니다.' : '회의 불참으로 응답했습니다.');
+      return;
+    }
+
+    setJoiningFeedback(prev => ({ ...prev, [ev.id]: value }));
+    showLocalToast(value === 'yes' ? '?쇱젙 李멸?媛 ?섎씫?섏뿀?듬땲??' : '?쇱젙 李멸?媛 嫄곗젅?섏뿀?듬땲??');
   };
 
   // Helper to render overlapping avatars
@@ -561,7 +635,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
 
   // Helper to layout timeline events inside a row lane
   const getDayRowLanes = (dateStr: string) => {
-    const list = getEventsForRange(dateStr, dateStr).filter(ev => ev.type === 'task');
+    const list = getEventsForRange(dateStr, dateStr).filter(ev => ev.type === 'task' || ev.type === 'meeting');
     
     const eventsWithTime = list.map((ev) => {
       const timeSlot = getEventTimeSlot(ev.id);
@@ -786,7 +860,10 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                           {lanes.map((lane, laneIdx) => 
                             lane.map(ev => {
                               const top = laneIdx * 44 + 10;
-                              const itemColor = 'bg-purple-50/90 hover:bg-purple-100/90 text-purple-600 border-purple-100 dark:bg-purple-950/40 dark:text-purple-400 dark:border-purple-900/30 h-[38px] rounded-xl';
+                              const isMeeting = ev.type === 'meeting';
+                              const itemColor = isMeeting
+                                ? 'bg-amber-50/95 hover:bg-amber-100/95 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/40 h-[38px] rounded-xl'
+                                : 'bg-purple-50/90 hover:bg-purple-100/90 text-purple-600 border-purple-100 dark:bg-purple-950/40 dark:text-purple-400 dark:border-purple-900/30 h-[38px] rounded-xl';
 
                               const duration = (ev.endHour || 18) - (ev.startHour || 9);
                               const isVeryShort = duration < 1.5;
@@ -798,6 +875,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSelectedDateStr(day.dateStr);
+                                    if (isMeeting) setSelectedMeeting(ev.original as Meeting);
                                   }}
                                   className={`cds--schedule-timeline-event-pill border flex items-center justify-between transition-all ${itemColor}`}
                                   style={{
@@ -810,9 +888,9 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                                   title={`${ev.title} (${ev.timeStr})`}
                                 >
                                   <div className="flex flex-col justify-center overflow-hidden pr-2 text-left w-full min-w-0">
-                                    <span className="truncate text-xs font-extrabold leading-tight text-purple-700 dark:text-purple-300">{ev.title}</span>
+                                    <span className={`truncate text-xs font-extrabold leading-tight ${isMeeting ? 'text-amber-700 dark:text-amber-300' : 'text-purple-700 dark:text-purple-300'}`}>{ev.title}</span>
                                     {!isVeryShort && !isMediumShort && (
-                                      <span className="text-[10px] opacity-75 font-semibold mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis text-purple-500/80 dark:text-purple-400/80">{ev.timeStr}</span>
+                                      <span className={`text-[10px] opacity-75 font-semibold mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis ${isMeeting ? 'text-amber-600/80 dark:text-amber-300/80' : 'text-purple-500/80 dark:text-purple-400/80'}`}>{ev.timeStr}</span>
                                     )}
                                   </div>
                                   {!isVeryShort && renderAvatars(ev.id)}
@@ -958,12 +1036,18 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                               const colSpan = ev.endCol - ev.startCol + 1;
 
                               const isProcess = ev.type === 'process';
+                              const isMeeting = ev.type === 'meeting';
                               const procColor = isProcess ? getProcessColor(ev.id) : '';
+                              const meetingStyle = isMeeting ? {
+                                backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                                color: '#d97706',
+                                borderColor: 'rgba(245, 158, 11, 0.28)',
+                              } : {};
                               const customStyle = isProcess ? {
                                 backgroundColor: `${procColor}20`,
                                 color: procColor,
                                 borderColor: `${procColor}40`,
-                              } : {};
+                              } : meetingStyle;
 
                               return (
                                 <div
@@ -971,8 +1055,9 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
+                                    if (isMeeting) setSelectedMeeting(ev.original as Meeting);
                                   }}
-                                  className={`cds--month-gantt-bar border ${isProcess ? '' : ev.colorClass} cursor-default`}
+                                  className={`cds--month-gantt-bar border ${isProcess || isMeeting ? '' : ev.colorClass} ${isMeeting ? 'pointer-events-auto cursor-pointer' : 'cursor-default'}`}
                                   style={{
                                     left: `${left}%`,
                                     width: `calc(${width}% - 4px)`,
@@ -1057,7 +1142,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                     >
                       <div className="flex flex-col gap-0.5">
                         <span className="text-sm font-black text-black/50 uppercase tracking-widest">
-                          {ev.type === 'process' ? 'Process Stage' : 'Task Item'}
+                          {ev.type === 'meeting' ? 'Meeting' : ev.type === 'process' ? 'Process Stage' : 'Task Item'}
                         </span>
                         <h4 className="text-base font-black leading-tight line-clamp-2">{ev.title}</h4>
                       </div>
@@ -1070,7 +1155,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                       <div className="flex justify-between items-center mt-1">
                         {renderAvatars(ev.id)}
                         <span className="text-sm font-extrabold bg-white/20 px-2 py-0.5 rounded-full select-none">
-                          {ev.type === 'process' ? 'WBS' : 'Kanban'}
+                          {ev.type === 'meeting' ? 'Minutes' : ev.type === 'process' ? 'WBS' : 'Kanban'}
                         </span>
                       </div>
 
@@ -1079,7 +1164,12 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                         onClick={() => handleNavigateToWbsOrKanban(ev)}
                         className="cds--schedule-highlight-btn"
                       >
-                        {ev.type === 'process' ? (
+                        {ev.type === 'meeting' ? (
+                          <>
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>회의록 작성</span>
+                          </>
+                        ) : ev.type === 'process' ? (
                           <>
                             <Layers className="w-3.5 h-3.5" />
                             <span>WBS 단계 보기</span>
@@ -1098,6 +1188,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => {
+                              if (ev.type === 'meeting') { void handleScheduleParticipation(ev, 'yes'); return; }
                               setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'yes' }));
                               showLocalToast('일정 참가가 수락되었습니다.');
                             }}
@@ -1111,6 +1202,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                           </button>
                           <button
                             onClick={() => {
+                              if (ev.type === 'meeting') { void handleScheduleParticipation(ev, 'no'); return; }
                               setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'no' }));
                               showLocalToast('일정 참가가 거절되었습니다.');
                             }}
@@ -1135,16 +1227,16 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        {ev.type === 'process' ? <Layers className="w-4 h-4 text-emerald-500" /> : <CheckSquare className="w-4 h-4 text-purple-500" />}
+                        {ev.type === 'meeting' ? <Users className="w-4 h-4 text-amber-500" /> : ev.type === 'process' ? <Layers className="w-4 h-4 text-emerald-500" /> : <CheckSquare className="w-4 h-4 text-purple-500" />}
                         <span className="text-sm text-gray-400 dark:text-slate-500 font-extrabold uppercase select-none">
-                          {ev.type === 'process' ? '프로세스' : '작업'}
+                          {ev.type === 'meeting' ? '회의' : ev.type === 'process' ? '프로세스' : '작업'}
                         </span>
                       </div>
                       <button
                         onClick={() => handleNavigateToWbsOrKanban(ev)}
                         className="text-sm text-toss-blue hover:text-toss-blue-hover font-bold hover:underline flex items-center gap-0.5 cursor-pointer border-none bg-transparent"
                       >
-                        이동 <ArrowRight className="w-2.5 h-2.5" />
+                        {ev.type === 'meeting' ? '회의록' : '이동'} <ArrowRight className="w-2.5 h-2.5" />
                       </button>
                     </div>
 
@@ -1167,6 +1259,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={() => {
+                              if (ev.type === 'meeting') { void handleScheduleParticipation(ev, 'yes'); return; }
                               setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'yes' }));
                               showLocalToast('일정 참가가 수락되었습니다.');
                             }}
@@ -1180,6 +1273,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                           </button>
                           <button
                             onClick={() => {
+                              if (ev.type === 'meeting') { void handleScheduleParticipation(ev, 'no'); return; }
                               setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'no' }));
                               showLocalToast('일정 참가가 거절되었습니다.');
                             }}
@@ -1208,6 +1302,16 @@ export const ProjectScheduleCalendarView: React.FC = () => {
         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900/90 text-white text-sm font-bold px-4 py-2.5 rounded-xl shadow-toss-lg z-50 animate-scale-in select-none backdrop-blur-sm">
           {toastMessage}
         </div>
+      )}
+      {selectedMeeting && (
+        <MeetingMinutesModal
+          meeting={selectedMeeting}
+          onClose={() => setSelectedMeeting(null)}
+          onSaved={async (updated) => {
+            if (updated) setSelectedMeeting(updated);
+            await loadMeetings();
+          }}
+        />
       )}
     </div>
   );
