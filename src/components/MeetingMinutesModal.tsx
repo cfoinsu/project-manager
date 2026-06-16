@@ -51,6 +51,19 @@ export const MeetingMinutesModal: React.FC<MeetingMinutesModalProps> = ({ meetin
     return [...notes].sort((a, b) => `${a.note_time}${a.created_at}`.localeCompare(`${b.note_time}${b.created_at}`));
   }, [notes]);
 
+  const groupedNotes = useMemo(() => {
+    return orderedNotes.reduce<Array<{ time: string; notes: MeetingNote[] }>>((groups, note) => {
+      const time = note.note_time || note.created_at.slice(11, 16);
+      const last = groups[groups.length - 1];
+      if (last?.time === time) {
+        last.notes.push(note);
+      } else {
+        groups.push({ time, notes: [note] });
+      }
+      return groups;
+    }, []);
+  }, [orderedNotes]);
+
   const addNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim()) return;
@@ -176,19 +189,26 @@ export const MeetingMinutesModal: React.FC<MeetingMinutesModalProps> = ({ meetin
               ) : (
                 <div className="relative pl-6 flex flex-col gap-4">
                   <div className="absolute left-[7px] top-1 bottom-1 w-px bg-slate-200 dark:bg-slate-800" />
-                  {orderedNotes.map((note) => (
-                    <div key={note.id} className="relative rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                      <div className="absolute -left-[22px] top-4 w-3.5 h-3.5 rounded-full bg-toss-blue ring-4 ring-white dark:ring-slate-950" />
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-xs font-black text-toss-blue">{note.note_time || note.created_at.slice(11, 16)}</span>
-                          <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-black text-slate-500 truncate">
-                            {agendaById.get(note.agenda_item_id || '') || '공통'}
-                          </span>
-                        </div>
-                        <span className="text-[11px] font-bold text-slate-400 shrink-0">{note.author_name || 'Me'}</span>
+                  {groupedNotes.map((group) => (
+                    <div key={group.time} className="relative flex flex-col gap-2">
+                      <div className="absolute -left-[24px] top-1 w-4 h-4 rounded-full bg-toss-blue ring-4 ring-white dark:ring-slate-950" />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-toss-blue">{group.time}</span>
+                        <span className="text-[10px] font-black text-slate-400">{group.notes.length}개 메모</span>
                       </div>
-                      <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-700 dark:text-slate-200 whitespace-pre-wrap">{note.content}</p>
+                      <div className="flex flex-col gap-2">
+                        {group.notes.map((note) => (
+                          <div key={note.id} className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-black text-slate-500 truncate">
+                                {agendaById.get(note.agenda_item_id || '') || '공통'}
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-400 shrink-0">{note.author_name || 'Me'}</span>
+                            </div>
+                            <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-700 dark:text-slate-200 whitespace-pre-wrap">{note.content}</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>

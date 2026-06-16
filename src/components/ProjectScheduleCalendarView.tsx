@@ -91,6 +91,28 @@ interface LaneEvent {
   end?: string;
 }
 
+type ScheduleEventType = 'process' | 'task' | 'meeting';
+type ScheduleEventLike = { type: ScheduleEventType; title: string; start?: string; end?: string; original: any };
+
+const getScheduleEventLabel = (type: ScheduleEventType) => {
+  if (type === 'meeting') return '회의';
+  if (type === 'process') return '프로세스';
+  return '작업';
+};
+
+const getScheduleEventActionLabel = (type: ScheduleEventType) => {
+  if (type === 'meeting') return '회의록';
+  return '이동';
+};
+
+const getScheduleEventTimeText = (ev: ScheduleEventLike, fallback = '') => {
+  if (ev.type === 'meeting') {
+    const meeting = ev.original as Meeting;
+    return `${meeting.start_date} ${meeting.start_time} ~ ${meeting.end_time}`;
+  }
+  return fallback || [ev.start, ev.end].filter(Boolean).join(' ~ ');
+};
+
 export const ProjectScheduleCalendarView: React.FC = () => {
   const { activeProject, processes, tasks: tasksMap, setView } = useProjectStore();
 
@@ -885,12 +907,13 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                                     top: `${top}px`,
                                     marginLeft: '4px'
                                   }}
-                                  title={`${ev.title} (${ev.timeStr})`}
+                                  title={`${getScheduleEventLabel(ev.type)} · ${ev.title} (${getScheduleEventTimeText(ev, ev.timeStr)})`}
                                 >
                                   <div className="flex flex-col justify-center overflow-hidden pr-2 text-left w-full min-w-0">
-                                    <span className={`truncate text-xs font-extrabold leading-tight ${isMeeting ? 'text-amber-700 dark:text-amber-300' : 'text-purple-700 dark:text-purple-300'}`}>{ev.title}</span>
+                                    <span className={`truncate text-[10px] font-black leading-none ${isMeeting ? 'text-amber-500 dark:text-amber-300' : 'text-purple-500 dark:text-purple-400'}`}>{getScheduleEventLabel(ev.type)}</span>
+                                    <span className={`truncate text-xs font-extrabold leading-tight mt-0.5 ${isMeeting ? 'text-amber-700 dark:text-amber-300' : 'text-purple-700 dark:text-purple-300'}`}>{ev.title}</span>
                                     {!isVeryShort && !isMediumShort && (
-                                      <span className={`text-[10px] opacity-75 font-semibold mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis ${isMeeting ? 'text-amber-600/80 dark:text-amber-300/80' : 'text-purple-500/80 dark:text-purple-400/80'}`}>{ev.timeStr}</span>
+                                      <span className={`text-[10px] opacity-75 font-semibold mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis ${isMeeting ? 'text-amber-600/80 dark:text-amber-300/80' : 'text-purple-500/80 dark:text-purple-400/80'}`}>{getScheduleEventTimeText(ev, ev.timeStr)}</span>
                                     )}
                                   </div>
                                   {!isVeryShort && renderAvatars(ev.id)}
@@ -1066,9 +1089,9 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                                     top: '0px',
                                     ...customStyle
                                   }}
-                                  title={ev.title}
+                                  title={`${getScheduleEventLabel(ev.type)} · ${ev.title}${isMeeting ? ` · ${getScheduleEventTimeText(ev)}` : ''}`}
                                 >
-                                  <span className="truncate pr-1 select-none leading-none text-xs">{ev.title}</span>
+                                  <span className="truncate pr-1 select-none leading-none text-xs">{isMeeting ? `회의 · ${ev.title}` : ev.title}</span>
                                   {colSpan >= 2 && renderAvatars(ev.id)}
                                 </div>
                               );
@@ -1142,20 +1165,22 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                     >
                       <div className="flex flex-col gap-0.5">
                         <span className="text-sm font-black text-black/50 uppercase tracking-widest">
-                          {ev.type === 'meeting' ? 'Meeting' : ev.type === 'process' ? 'Process Stage' : 'Task Item'}
+                          {getScheduleEventLabel(ev.type)}
                         </span>
-                        <h4 className="text-base font-black leading-tight line-clamp-2">{ev.title}</h4>
+                        <h4 className="text-base font-black leading-tight line-clamp-2">
+                          {ev.type === 'meeting' ? `회의명 · ${ev.title}` : ev.title}
+                        </h4>
                       </div>
 
                       <div className="flex items-center gap-1.5 text-sm font-bold text-white/95">
                         <Clock className="w-3.5 h-3.5" />
-                        <span>{ev.timeStr}</span>
+                        <span>{getScheduleEventTimeText(ev, ev.timeStr)}</span>
                       </div>
 
                       <div className="flex justify-between items-center mt-1">
                         {renderAvatars(ev.id)}
                         <span className="text-sm font-extrabold bg-white/20 px-2 py-0.5 rounded-full select-none">
-                          {ev.type === 'meeting' ? 'Minutes' : ev.type === 'process' ? 'WBS' : 'Kanban'}
+                          {ev.type === 'meeting' ? '회의' : ev.type === 'process' ? 'WBS' : 'Kanban'}
                         </span>
                       </div>
 
@@ -1229,25 +1254,25 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                       <div className="flex items-center gap-2">
                         {ev.type === 'meeting' ? <Users className="w-4 h-4 text-amber-500" /> : ev.type === 'process' ? <Layers className="w-4 h-4 text-emerald-500" /> : <CheckSquare className="w-4 h-4 text-purple-500" />}
                         <span className="text-sm text-gray-400 dark:text-slate-500 font-extrabold uppercase select-none">
-                          {ev.type === 'meeting' ? '회의' : ev.type === 'process' ? '프로세스' : '작업'}
+                          {getScheduleEventLabel(ev.type)}
                         </span>
                       </div>
                       <button
                         onClick={() => handleNavigateToWbsOrKanban(ev)}
                         className="text-sm text-toss-blue hover:text-toss-blue-hover font-bold hover:underline flex items-center gap-0.5 cursor-pointer border-none bg-transparent"
                       >
-                        {ev.type === 'meeting' ? '회의록' : '이동'} <ArrowRight className="w-2.5 h-2.5" />
+                        {getScheduleEventActionLabel(ev.type)} <ArrowRight className="w-2.5 h-2.5" />
                       </button>
                     </div>
 
                     <h4 className="text-sm font-black text-toss-gray-800 dark:text-gray-200 leading-normal line-clamp-2">
-                      {ev.title}
+                      {ev.type === 'meeting' ? `회의명 · ${ev.title}` : ev.title}
                     </h4>
 
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-1.5 text-sm font-bold text-toss-gray-400">
                         <Clock className="w-3.5 h-3.5" />
-                        <span>{ev.timeStr}</span>
+                        <span>{getScheduleEventTimeText(ev, ev.timeStr)}</span>
                       </div>
                       {renderAvatars(ev.id)}
                     </div>

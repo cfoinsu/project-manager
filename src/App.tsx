@@ -122,6 +122,32 @@ function App() {
   
   // Local tab state for the Folder Structure view ('tree' | 'stats' | 'mindmap' | 'treemap')
   const [structureTab, setStructureTab] = useState<'tree' | 'stats' | 'mindmap' | 'treemap'>('tree');
+  const projectContextViews = [
+    'projects_overview',
+    'projects_process',
+    'projects_tasks',
+    'projects_documents',
+    'projects_structure',
+    'projects_meetings',
+    'projects_calendar',
+    'projects_reports',
+    'projects_analysis',
+    'assignments',
+    'settings'
+  ];
+  const projectTabs = [
+    { label: '개요', view: 'projects_overview' },
+    { label: '프로세스', view: 'projects_process', managerOnly: true },
+    { label: '작업', view: 'projects_tasks' },
+    { label: '문서', view: 'projects_documents' },
+    { label: '회의', view: 'projects_meetings' },
+    { label: '일정', view: 'projects_calendar' },
+    { label: '구조', view: 'projects_structure' },
+    { label: '보고서', view: 'projects_reports' },
+    { label: '인력', view: 'assignments' },
+    { label: '설정', view: 'settings' }
+  ].filter((tab) => !tab.managerOnly || currentUser?.role !== 'member');
+  const showProjectHeader = Boolean(activeProject && projectContextViews.includes(currentView));
 
   // Show Toast
   const showToast = (msg: string) => {
@@ -538,7 +564,7 @@ function App() {
           </div>
 
           {/* Project-specific Management Section */}
-          {activeProject && (
+          {false && activeProject && (
             <div className="flex flex-col gap-1 border-t border-toss-gray-100 dark:border-slate-800/80 pt-4">
               <span className="px-3 text-xs font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1">Project OS</span>
               
@@ -730,8 +756,83 @@ function App() {
           />
         )}
 
+        {/* Project Header */}
+        {showProjectHeader && activeProject && (
+          <header className="min-h-20 px-8 glass-header flex flex-col justify-between sticky top-0 z-30 shrink-0 print:hidden select-none border-b border-toss-gray-150/60 dark:border-slate-800/80">
+            <div className="h-12 flex items-center justify-between gap-5">
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  onClick={() => handleOpenFolder(activeProject.path)}
+                  className="flex items-center gap-1.5 min-w-0 text-left cursor-pointer group"
+                  title="프로젝트 폴더 열기"
+                >
+                  <span className="font-black text-sm text-toss-gray-900 dark:text-slate-100 truncate group-hover:text-toss-blue">
+                    {activeProject.name}
+                  </span>
+                  <span className="text-toss-gray-400 group-hover:text-toss-blue">⌄</span>
+                </button>
+                <span className="px-2.5 py-1 rounded-full bg-toss-blue-light/70 text-toss-blue text-[11px] font-black">
+                  {activeProject.status || '진행중'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-4 shrink-0">
+                {currentView === 'projects_structure' && (
+                  <div className="relative hidden md:flex items-center w-64">
+                    <Search className="absolute left-3.5 w-4 h-4 text-toss-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="폴더 구조 검색"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full text-xs pl-10 pr-4 py-2.5 bg-toss-gray-50 dark:bg-slate-800 border border-toss-gray-150/70 dark:border-slate-800 rounded-full focus:outline-none focus:ring-1 focus:ring-toss-blue/60 transition-all placeholder:text-toss-gray-400 font-semibold text-toss-gray-800 dark:text-slate-200"
+                    />
+                  </div>
+                )}
+
+                <div className="hidden sm:flex items-center -space-x-2">
+                  <Avatar name={currentUser?.name} profileImage={currentUser?.profile_image} className="w-7 h-7 text-[10px] ring-2 ring-white dark:ring-slate-950" />
+                  {projects.slice(0, 2).map((project) => (
+                    <Avatar key={project.id} name={project.name} className="w-7 h-7 text-[10px] ring-2 ring-white dark:ring-slate-950" />
+                  ))}
+                  <span className="w-8 h-7 rounded-full bg-toss-gray-100 dark:bg-slate-800 text-[10px] font-black text-toss-gray-500 dark:text-slate-400 flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
+                    +3
+                  </span>
+                </div>
+
+                <button className="p-2 rounded-full text-toss-gray-500 hover:text-toss-blue hover:bg-toss-gray-100 dark:hover:bg-slate-850 transition-colors" title="알림">
+                  <Bell className="w-4.5 h-4.5" />
+                </button>
+                <button className="px-2 py-1 rounded-full text-lg leading-none text-toss-gray-500 hover:text-toss-gray-900 hover:bg-toss-gray-100 dark:hover:bg-slate-850 transition-colors" title="더보기">
+                  ...
+                </button>
+              </div>
+            </div>
+
+            <nav className="flex items-end gap-8 overflow-x-auto scrollbar-hide">
+              {projectTabs.map((tab) => {
+                const isActive = currentView === tab.view;
+                return (
+                  <button
+                    key={tab.view}
+                    onClick={() => setView(tab.view)}
+                    className={`relative h-8 pb-3 text-xs font-black whitespace-nowrap transition-colors cursor-pointer ${
+                      isActive
+                        ? 'text-toss-blue'
+                        : 'text-toss-gray-500 hover:text-toss-gray-900 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {tab.label}
+                    {isActive && <span className="absolute left-0 right-0 bottom-0 h-0.5 rounded-full bg-toss-blue" />}
+                  </button>
+                );
+              })}
+            </nav>
+          </header>
+        )}
+
         {/* Unified Header (Visible only when an active project is selected & we are inside a project subview) */}
-        {activeProject && currentView.startsWith('projects_') && (
+        {false && activeProject && currentView.startsWith('projects_') && (
           <header className="h-16 px-6 glass-header flex items-center justify-between sticky top-0 z-30 shrink-0 print:hidden select-none">
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-base text-toss-gray-800 dark:text-slate-200">Project OS</span>
@@ -739,12 +840,12 @@ function App() {
               
               {/* Breadcrumb Path Dropdown */}
               <button 
-                onClick={() => handleOpenFolder(activeProject.path)}
+                onClick={() => activeProject?.path && handleOpenFolder(activeProject.path)}
                 className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-toss-gray-100 hover:bg-toss-gray-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-xs font-bold text-toss-gray-700 dark:text-slate-300 transition-colors cursor-pointer"
                 title="탐색기로 경로 열기"
               >
                 <Compass className="w-3.5 h-3.5 text-toss-blue" />
-                <span>{activeProject.name}</span>
+                <span>{activeProject?.name}</span>
               </button>
             </div>
 
@@ -762,7 +863,7 @@ function App() {
               </div>
 
               <button 
-                onClick={() => handleOpenFolder(activeProject.path)}
+                onClick={() => activeProject?.path && handleOpenFolder(activeProject.path)}
                 className="p-2.5 rounded-xl border border-toss-gray-200/50 dark:border-slate-850 hover:bg-toss-gray-50 dark:hover:bg-slate-850 transition-colors cursor-pointer text-toss-gray-500 dark:text-slate-400"
                 title="프로젝트 폴더 열기"
               >
