@@ -40,8 +40,10 @@ import { MyWorkView } from './components/MyWorkView';
 import { CustomSelect } from './components/CustomSelect';
 import { getAssignments, migrateComments, syncGlobalServerUrl } from './utils/api';
 import { getMeetings } from './utils/collaborationApi';
+import { PROJECT_RISK_UPDATED_EVENT, readProjectRisksByProjectId, type ProjectRiskItem } from './utils/projectRiskStore';
 import { Avatar } from './components/Avatar';
 import { FullscreenLoadingOverlay } from './components/ModalOverlay';
+import { ProjectHeaderActivityList, type ProjectHeaderActivityItem } from './components/ProjectHeaderActivityList';
 
 import {
   Search,
@@ -49,36 +51,19 @@ import {
   Sun,
   LayoutDashboard,
   Calendar,
-  GitFork,
-  ShieldCheck,
   FolderOpen,
   Settings,
   Activity,
-  FileText,
-  CheckSquare,
-  Printer,
   ClipboardList,
-  Compass,
   Users,
   UserCheck,
   Library,
   LogOut,
   UserCog,
   Bell,
-  CalendarClock,
   ChevronDown,
   MoreHorizontal
 } from 'lucide-react';
-
-interface ProjectRiskItem {
-  id: string;
-  project_id: string;
-  title: string;
-  description?: string;
-  level: 'HIGH' | 'MEDIUM' | 'LOW';
-  status?: 'open' | 'resolved';
-  created_at: string;
-}
 
 function App() {
   const { user: currentUser, isLoggedIn, checkSession, logout, serverMode } = useAuthStore();
@@ -218,8 +203,7 @@ function App() {
         if (cancelled) return;
         setProjectAssignments(assignmentList.filter((assignment) => assignment.project_id === activeProject.id));
         setProjectMeetings(meetingList);
-        const storedRisks = JSON.parse(localStorage.getItem('pa_project_risks') || '[]') as ProjectRiskItem[];
-        setProjectRisks(storedRisks.filter((risk) => risk.project_id === activeProject.id));
+        setProjectRisks(readProjectRisksByProjectId(activeProject.id));
       } catch {
         if (cancelled) return;
         setProjectAssignments([]);
@@ -230,13 +214,12 @@ function App() {
 
     loadHeaderContext();
     const reloadRisks = () => {
-      const storedRisks = JSON.parse(localStorage.getItem('pa_project_risks') || '[]') as ProjectRiskItem[];
-      setProjectRisks(storedRisks.filter((risk) => risk.project_id === activeProject.id));
+      setProjectRisks(readProjectRisksByProjectId(activeProject.id));
     };
-    window.addEventListener('project-risk:updated', reloadRisks);
+    window.addEventListener(PROJECT_RISK_UPDATED_EVENT, reloadRisks);
     return () => {
       cancelled = true;
-      window.removeEventListener('project-risk:updated', reloadRisks);
+      window.removeEventListener(PROJECT_RISK_UPDATED_EVENT, reloadRisks);
     };
   }, [activeProject?.id, currentUser?.id, currentUser?.role, serverMode]);
 
@@ -348,20 +331,19 @@ function App() {
     actor: '?? ??',
     when: formatActivityWhen(risk.created_at)
   }));
-  const projectHeaderActivity = [
+  const projectHeaderActivity: ProjectHeaderActivityItem[] = [
     ...projectRiskActivity,
     ...projectTaskActivity,
     ...projectMeetingActivity,
     ...projectAssignmentActivity
   ].slice(0, 8);
-  const getActivityBadgeClass = (tone: string) => {
-    if (tone === 'task') return 'bg-blue-50 text-toss-blue dark:bg-blue-950/30';
-    if (tone === 'meeting') return 'bg-violet-50 text-violet-600 dark:bg-violet-950/30 dark:text-violet-300';
-    if (tone === 'assignment') return 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-300';
-    if (tone === 'risk') return 'bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-300';
-    return 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300';
-  };
-
+  const projectHeaderPeople: Pick<Assignment, 'id' | 'user_name' | 'user_profile_image'>[] = projectAssignments.length
+    ? projectAssignments.slice(0, 3)
+    : [{
+      id: 'me',
+      user_name: currentUser?.name || '',
+      user_profile_image: currentUser?.profile_image
+    }];
   // Render the core active subview
   const renderView = () => {
     // Role-based route protection
@@ -372,7 +354,7 @@ function App() {
       return <DashboardView />;
     }
 
-    switch (currentView as any) {
+    switch (currentView) {
       case 'dashboard':
         return <DashboardView />;
       case 'my_work':
@@ -727,123 +709,6 @@ function App() {
             </button>
           </div>
 
-          {/* Project-specific Management Section */}
-          {false && activeProject && (
-            <div className="flex flex-col gap-1 border-t border-toss-gray-100 dark:border-slate-800/80 pt-4">
-              <span className="px-3 text-xs font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1">Project OS</span>
-              
-              <button
-                onClick={() => setView('projects_overview')}
-                className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
-                  currentView === 'projects_overview'
-                    ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
-                    : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
-                }`}
-              >
-                <Activity className="w-4.5 h-4.5" />
-                <span>종합 개요</span>
-              </button>
-
-              <button
-                onClick={() => setView('projects_calendar')}
-                className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
-                  currentView === 'projects_calendar'
-                    ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
-                    : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
-                }`}
-              >
-              <Calendar className="w-4.5 h-4.5" />
-              <span>상세 일정 캘린더</span>
-            </button>
-
-              <button
-                onClick={() => setView('projects_meetings')}
-                className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
-                  currentView === 'projects_meetings'
-                    ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
-                    : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
-                }`}
-              >
-                <CalendarClock className="w-4.5 h-4.5" />
-                <span>회의</span>
-              </button>
-
-              {currentUser?.role !== 'member' && (
-                <button
-                  onClick={() => setView('projects_process')}
-                  className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
-                    currentView === 'projects_process'
-                      ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
-                      : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
-                  }`}
-                >
-                  <GitFork className="w-4.5 h-4.5" />
-                  <span>프로세스 편집</span>
-                </button>
-              )}
-
-              <button
-                onClick={() => setView('projects_tasks')}
-                className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
-                  currentView === 'projects_tasks'
-                    ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
-                    : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
-                }`}
-              >
-                <CheckSquare className="w-4.5 h-4.5" />
-                <span>작업 칸반 보드</span>
-              </button>
-
-              <button
-                onClick={() => setView('projects_documents')}
-                className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
-                  currentView === 'projects_documents'
-                    ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
-                    : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
-                }`}
-              >
-                <FileText className="w-4.5 h-4.5" />
-                <span>산출물 관리</span>
-              </button>
-
-              <button
-                onClick={() => setView('projects_structure')}
-                className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
-                  currentView === 'projects_structure'
-                    ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
-                    : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
-                }`}
-              >
-                <FolderOpen className="w-4.5 h-4.5" />
-                <span>폴더 구조 탐색</span>
-              </button>
-
-              <button
-                onClick={() => setView('projects_analysis')}
-                className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
-                  currentView === 'projects_analysis'
-                    ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
-                    : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
-                }`}
-              >
-                <ShieldCheck className="w-4.5 h-4.5" />
-                <span>건강도 진단</span>
-              </button>
-
-              <button
-                onClick={() => setView('projects_reports')}
-                className={`flex items-center gap-3.5 px-3 py-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer w-full ${
-                  currentView === 'projects_reports'
-                    ? 'bg-toss-blue-light/50 text-toss-blue dark:bg-toss-blue/20 dark:text-toss-blue'
-                    : 'text-toss-gray-500 hover:bg-toss-gray-50 dark:text-slate-400 dark:hover:bg-slate-850'
-                }`}
-              >
-                <Printer className="w-4.5 h-4.5" />
-                <span>리포트 출력</span>
-              </button>
-            </div>
-          )}
-
         </div>
 
         {/* User Profile and Logout */}
@@ -1010,7 +875,7 @@ function App() {
                   className="hidden sm:flex items-center -space-x-2 cursor-pointer rounded-full hover:opacity-85 transition-opacity"
                   title="참여 인력"
                 >
-                  {(projectAssignments.length ? projectAssignments.slice(0, 3) : [{ id: 'me', user_name: currentUser?.name, user_profile_image: currentUser?.profile_image }]).map((person: any) => (
+                  {projectHeaderPeople.map((person) => (
                     <Avatar key={person.id} name={person.user_name} profileImage={person.user_profile_image} className="w-7 h-7 text-[10px] ring-2 ring-white dark:ring-slate-950" />
                   ))}
                   <span className="w-8 h-7 rounded-full bg-toss-gray-100 dark:bg-slate-800 text-[10px] font-black text-toss-gray-500 dark:text-slate-400 flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
@@ -1087,20 +952,7 @@ function App() {
                         </div>
                       </div>
                       <div className="max-h-80 overflow-y-auto py-2">
-                        {projectHeaderActivity.length === 0 ? (
-                          <p className="py-8 text-center text-xs font-bold text-slate-400">표시할 알림이 없습니다.</p>
-                        ) : projectHeaderActivity.map((item) => (
-                          <div key={item.id} className="flex gap-3 rounded-xl px-2 py-2.5 hover:bg-toss-gray-50 dark:hover:bg-slate-900">
-                            <span className={`mt-0.5 h-7 min-w-7 shrink-0 rounded-full px-2 text-[10px] font-black flex items-center justify-center ${getActivityBadgeClass(item.tone)}`}>{item.label}</span>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-xs font-black text-slate-900 dark:text-slate-100">{item.target}</p>
-                              <p className="mt-1 truncate text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                                {item.actor} · {item.action}
-                              </p>
-                              <p className="mt-1 text-[10px] font-bold text-slate-400">{item.when}</p>
-                            </div>
-                          </div>
-                        ))}
+                        <ProjectHeaderActivityList items={projectHeaderActivity} />
                       </div>
                     </div>
                   </>
@@ -1161,55 +1013,12 @@ function App() {
           </header>
         )}
 
-        {/* Unified Header (Visible only when an active project is selected & we are inside a project subview) */}
-        {false && activeProject && currentView.startsWith('projects_') && (
-          <header className="h-16 px-6 glass-header flex items-center justify-between sticky top-0 z-30 shrink-0 print:hidden select-none">
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-base text-toss-gray-800 dark:text-slate-200">Project OS</span>
-              <div className="w-px h-3.5 bg-toss-gray-300 dark:bg-slate-700 mx-2.5"></div>
-              
-              {/* Breadcrumb Path Dropdown */}
-              <button 
-                onClick={() => activeProject?.path && handleOpenFolder(activeProject.path)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-toss-gray-100 hover:bg-toss-gray-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-xs font-bold text-toss-gray-700 dark:text-slate-300 transition-colors cursor-pointer"
-                title="탐색기로 경로 열기"
-              >
-                <Compass className="w-3.5 h-3.5 text-toss-blue" />
-                <span>{activeProject?.name}</span>
-              </button>
-            </div>
-
-            {/* Header Search Bar */}
-            <div className="flex items-center gap-3">
-              <div className="relative flex items-center w-60 sm:w-80">
-                <Search className="absolute left-3.5 w-4.5 h-4.5 text-toss-gray-400" />
-                <input
-                  type="text"
-                  placeholder="폴더 및 산출물 구조 검색..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full text-xs pl-10.5 pr-4 py-2.5 bg-toss-gray-50 dark:bg-slate-800 border-none rounded-xl focus:outline-none focus:ring-1 focus:ring-toss-blue/60 transition-all placeholder:text-toss-gray-400 font-semibold text-toss-gray-800 dark:text-slate-200"
-                />
-              </div>
-
-              <button 
-                onClick={() => activeProject?.path && handleOpenFolder(activeProject.path)}
-                className="p-2.5 rounded-xl border border-toss-gray-200/50 dark:border-slate-850 hover:bg-toss-gray-50 dark:hover:bg-slate-850 transition-colors cursor-pointer text-toss-gray-500 dark:text-slate-400"
-                title="프로젝트 폴더 열기"
-              >
-                <FolderOpen className="w-4.5 h-4.5" />
-              </button>
-            </div>
-          </header>
-        )}
-
         {/* View Switcher Viewport */}
         <div className="flex-1 min-h-0 flex flex-col gap-6 relative p-6 overflow-hidden print:p-0">
           {renderView()}
         </div>
       </div>
 
-      {/* global Toast message portal */}
       {toastMessage && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] bg-slate-900/90 dark:bg-slate-100/95 text-white dark:text-slate-900 px-5 py-3 rounded-2xl shadow-toss-lg text-xs font-semibold flex items-center gap-2 animate-slide-up backdrop-blur-md">
           <span className="w-1.5 h-1.5 rounded-full bg-toss-blue animate-pulse"></span>

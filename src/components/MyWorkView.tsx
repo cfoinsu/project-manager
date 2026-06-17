@@ -32,6 +32,7 @@ import type { AppNotification, Meeting, PersonalTodo, Project, Task } from '../t
 import { MeetingMinutesModal } from './MeetingMinutesModal';
 import { ModalOverlay } from './ModalOverlay';
 import { CustomDatePicker } from './CustomDatePicker';
+import { EmptyState } from './ui/EmptyState';
 
 interface AssignedTask extends Task {
   project?: Project;
@@ -769,5 +770,5 @@ const FooterLink = ({ label, onClick }: { label: string; onClick: () => void }) 
 );
 
 const Empty = ({ text }: { text: string }) => (
-  <div className="p-5 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs font-bold text-slate-400">{text}</div>
+  <EmptyState text={text} variant="dashed" />
 );

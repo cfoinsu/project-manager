@@ -10,18 +10,8 @@ import { Avatar } from './Avatar';
 import { ModalOverlay } from './ModalOverlay';
 import { RegionPickerModal } from './RegionPickerModal';
 import { openInExplorer } from '../utils/tauriBridge';
-
-interface ProjectRiskItem {
-  id: string;
-  project_id: string;
-  title: string;
-  description?: string;
-  level: 'HIGH' | 'MEDIUM' | 'LOW';
-  status?: 'open' | 'resolved';
-  created_at: string;
-  resolved_at?: string;
-  resolution_note?: string;
-}
+import { PROJECT_RISK_UPDATED_EVENT, readProjectRisksByProjectId, type ProjectRiskItem } from '../utils/projectRiskStore';
+import { EmptyState } from './ui/EmptyState';
 
 export const ProjectOverview: React.FC = () => {
   const REGION_CODES = getRegionCodes();
@@ -92,12 +82,11 @@ export const ProjectOverview: React.FC = () => {
       return;
     }
     const loadRisks = () => {
-      const stored = JSON.parse(localStorage.getItem('pa_project_risks') || '[]') as ProjectRiskItem[];
-      setProjectRisks(stored.filter((risk) => risk.project_id === activeProject.id));
+      setProjectRisks(readProjectRisksByProjectId(activeProject.id));
     };
     loadRisks();
-    window.addEventListener('project-risk:updated', loadRisks);
-    return () => window.removeEventListener('project-risk:updated', loadRisks);
+    window.addEventListener(PROJECT_RISK_UPDATED_EVENT, loadRisks);
+    return () => window.removeEventListener(PROJECT_RISK_UPDATED_EVENT, loadRisks);
   }, [activeProject?.id]);
 
   const handleOpenEditModal = () => {
@@ -683,10 +672,6 @@ const RiskProgress = ({ label, value, className }: { label: string; value: numbe
       <div className={`h-full rounded-full ${className}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
     </div>
   </div>
-);
-
-const EmptyState = ({ text }: { text: string }) => (
-  <div className="py-10 text-center text-xs font-bold text-slate-400">{text}</div>
 );
 
 const NarrativeBlock = ({ title, value, empty }: { title: string; value?: string; empty: string }) => (

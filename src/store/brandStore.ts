@@ -53,7 +53,9 @@ function loadConfig(): BrandConfig {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) return { ...DEFAULT_CONFIG, ...JSON.parse(stored) };
-  } catch {}
+  } catch {
+    return DEFAULT_CONFIG;
+  }
   return DEFAULT_CONFIG;
 }
 

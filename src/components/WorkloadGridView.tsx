@@ -102,7 +102,7 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
     const startMonday = new Date(getMonday(startStr));
     const endMonday = new Date(getMonday(endStr));
     const weeks: string[] = [];
-    let current = new Date(startMonday);
+    const current = new Date(startMonday);
 
     let count = 0;
     while (current <= endMonday && count < 104) { // 최대 2개년 제한
@@ -193,9 +193,6 @@ export const WorkloadGridView: React.FC<WorkloadGridViewProps> = ({
   };
 
   // status 토글 (UI에서 책불도 기능 예약)
-  const _handleStatusToggle = async (_wl: Workload) => {};
-  void _handleStatusToggle;
-
   const maxPages = Math.ceil(allWeeks.length / VISIBLE_WEEKS);
 
   if (assignments.length === 0) {

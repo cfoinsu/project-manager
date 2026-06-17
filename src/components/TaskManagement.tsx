@@ -280,7 +280,7 @@ const ChecklistPanel: React.FC<ChecklistPanelProps> = ({ taskId, serverMode }) =
                     : 'border-slate-300 dark:border-slate-600 hover:border-toss-blue dark:hover:border-toss-blue/70'
                 }`}
               >
-                {Boolean(item.done) ? <Check className="w-3 h-3 text-white" strokeWidth={3} /> : null}
+                {item.done ? <Check className="w-3 h-3 text-white" strokeWidth={3} /> : null}
               </button>
 
               {/* 제목 / 인라인 편집 */}

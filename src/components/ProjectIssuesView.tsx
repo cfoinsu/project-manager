@@ -2,50 +2,21 @@ import React, { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, RotateCcw, Trash2, X } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import { ModalOverlay } from './ModalOverlay';
+import { readProjectRisks, writeProjectRisks, type ProjectRiskItem, type ProjectRiskLevel, type ProjectRiskStatus } from '../utils/projectRiskStore';
 
-type RiskLevel = 'HIGH' | 'MEDIUM' | 'LOW';
-type RiskStatus = 'open' | 'resolved';
-
-interface ProjectRiskItem {
-  id: string;
-  project_id: string;
-  title: string;
-  description?: string;
-  level: RiskLevel;
-  status?: RiskStatus;
-  created_at: string;
-  resolved_at?: string;
-  resolution_note?: string;
-}
-
-const STORAGE_KEY = 'pa_project_risks';
-
-const levelOptions: { value: RiskLevel; label: string; className: string }[] = [
+const levelOptions: { value: ProjectRiskLevel; label: string; className: string }[] = [
   { value: 'HIGH', label: '높음', className: 'bg-rose-50 text-rose-600 border-rose-100' },
   { value: 'MEDIUM', label: '중간', className: 'bg-amber-50 text-amber-600 border-amber-100' },
   { value: 'LOW', label: '낮음', className: 'bg-emerald-50 text-emerald-600 border-emerald-100' }
 ];
 
-const readRisks = (): ProjectRiskItem[] => {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') as ProjectRiskItem[];
-  } catch {
-    return [];
-  }
-};
-
-const writeRisks = (risks: ProjectRiskItem[]) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(risks));
-  window.dispatchEvent(new CustomEvent('project-risk:updated'));
-};
-
 export const ProjectIssuesView: React.FC = () => {
   const { activeProject } = useProjectStore();
-  const [risks, setRisks] = useState<ProjectRiskItem[]>(readRisks);
+  const [risks, setRisks] = useState<ProjectRiskItem[]>(readProjectRisks);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [level, setLevel] = useState<RiskLevel>('MEDIUM');
-  const [statusFilter, setStatusFilter] = useState<'all' | RiskStatus>('open');
+  const [level, setLevel] = useState<ProjectRiskLevel>('MEDIUM');
+  const [statusFilter, setStatusFilter] = useState<'all' | ProjectRiskStatus>('open');
   const [resolvingRiskId, setResolvingRiskId] = useState<string | null>(null);
   const [resolutionNote, setResolutionNote] = useState('');
 
@@ -73,7 +44,7 @@ export const ProjectIssuesView: React.FC = () => {
 
   const persist = (next: ProjectRiskItem[]) => {
     setRisks(next);
-    writeRisks(next);
+    writeProjectRisks(next);
   };
 
   const handleAddRisk = () => {

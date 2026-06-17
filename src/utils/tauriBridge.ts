@@ -46,13 +46,11 @@ const buildTreeFromFiles = (files: File[], rootName: string, rootPath: string): 
 
     // Ensure all parent directories exist
     let currentDirKey = '';
-    let currentDepth = 0;
-    
     for (let i = 0; i < pathParts.length - 1; i++) {
       const dirName = pathParts[i];
       const parentKey = currentDirKey;
       currentDirKey = currentDirKey ? `${currentDirKey}/${dirName}` : dirName;
-      currentDepth = i + 1;
+      const currentDepth = i + 1;
 
       if (!dirMap.has(currentDirKey)) {
         const dirNode: FolderNode = {

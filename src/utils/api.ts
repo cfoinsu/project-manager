@@ -933,7 +933,7 @@ export const generateWorkload = async (serverMode: boolean, assignment_id: strin
     const mondayEnd = new Date(getMonday(end));
 
     const generatedWls: any[] = [];
-    let current = new Date(mondayStart);
+    const current = new Date(mondayStart);
 
     while (current <= mondayEnd) {
       const weekStartStr = current.toISOString().split('T')[0];
