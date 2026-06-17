@@ -240,6 +240,27 @@ function App() {
     };
   }, [activeProject?.id, currentUser?.id, currentUser?.role, serverMode]);
 
+  const closeProjectHeaderPopovers = () => {
+    setIsProjectSwitcherOpen(false);
+    setIsProjectPeopleOpen(false);
+    setIsProjectActivityOpen(false);
+    setIsProjectMoreOpen(false);
+  };
+
+  useEffect(() => {
+    const hasOpenPopover = isProjectSwitcherOpen || isProjectPeopleOpen || isProjectActivityOpen || isProjectMoreOpen;
+    if (!hasOpenPopover) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-project-header-popover]')) return;
+      closeProjectHeaderPopovers();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+  }, [isProjectActivityOpen, isProjectMoreOpen, isProjectPeopleOpen, isProjectSwitcherOpen]);
+
   if (!isLoggedIn) {
     return <LoginView />;
   }
@@ -271,36 +292,61 @@ function App() {
   const handleSwitchProject = async (project: typeof projects[number]) => {
     await selectProject(project);
     setView('projects_overview');
-    setIsProjectSwitcherOpen(false);
+    closeProjectHeaderPopovers();
   };
 
-  const projectTaskActivity = Object.values(tasks).flat().slice(-5).reverse().map((task) => ({
-    id: `task-${task.id}`,
-    type: '작업',
-    title: task.status === '완료' ? '작업 완료' : '작업 업데이트',
-    body: task.title,
-    meta: task.updated_at || task.created_at || ''
-  }));
+  const formatActivityWhen = (value?: string) => {
+    if (!value) return '?? ???';
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      const yyyy = parsed.getFullYear();
+      const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+      const dd = String(parsed.getDate()).padStart(2, '0');
+      const hh = String(parsed.getHours()).padStart(2, '0');
+      const mi = String(parsed.getMinutes()).padStart(2, '0');
+      return `${yyyy}.${mm}.${dd} ${hh}:${mi}`;
+    }
+    return value;
+  };
+
+  const projectTaskActivity = Object.values(tasks).flat().slice(-5).reverse().map((task) => {
+    const actor = task.assignee_names?.join(', ') || task.assignee || '??? ???';
+    return {
+      id: `task-${task.id}`,
+      tone: 'task',
+      label: '??',
+      target: task.title,
+      action: task.status === '??' ? '?? ??' : '?? ????',
+      actor,
+      when: formatActivityWhen(task.updated_at || task.created_at)
+    };
+  });
   const projectMeetingActivity = projectMeetings.slice(-3).reverse().map((meeting) => ({
     id: `meeting-${meeting.id}`,
-    type: '회의',
-    title: '회의 일정',
-    body: meeting.title,
-    meta: `${meeting.start_date} ${meeting.start_time}`
+    tone: 'meeting',
+    label: '??',
+    target: meeting.title,
+    action: '?? ??',
+    actor: meeting.attendee_names?.join(', ') || `${meeting.attendees.length}? ?? ??`,
+    when: formatActivityWhen(`${meeting.start_date}T${meeting.start_time}`)
   }));
   const projectAssignmentActivity = projectAssignments.slice(-3).reverse().map((assignment) => ({
     id: `assignment-${assignment.id}`,
-    type: '인력',
-    title: '인력 투입',
-    body: `${assignment.user_name || '이름 없음'} · ${assignment.role || '역할 미지정'}`,
-    meta: `${assignment.allocation_percent}%`
+    tone: 'assignment',
+    label: '??',
+    target: assignment.role || '?? ???',
+    action: `${assignment.allocation_percent}% ??`,
+    actor: assignment.user_name || '?? ??',
+    when: [assignment.start_date, assignment.end_date].filter(Boolean).join(' ~ ') || '?? ???'
   }));
   const projectRiskActivity = projectRisks.slice(-4).reverse().map((risk) => ({
     id: `risk-${risk.id}`,
-    type: '리스크',
-    title: `${risk.level} 리스크`,
-    body: risk.title,
-    meta: risk.created_at.slice(0, 10)
+    tone: 'risk',
+    label: '??',
+    target: risk.title,
+    action: risk.status === 'resolved' ? '???' : `${risk.level} ???`,
+    actor: '?? ??',
+    when: formatActivityWhen(risk.created_at)
   }));
   const projectHeaderActivity = [
     ...projectRiskActivity,
@@ -308,11 +354,11 @@ function App() {
     ...projectMeetingActivity,
     ...projectAssignmentActivity
   ].slice(0, 8);
-  const getActivityBadgeClass = (type: string) => {
-    if (type === '작업') return 'bg-blue-50 text-toss-blue dark:bg-blue-950/30';
-    if (type === '회의') return 'bg-violet-50 text-violet-600 dark:bg-violet-950/30 dark:text-violet-300';
-    if (type === '인력') return 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-300';
-    if (type === '리스크') return 'bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-300';
+  const getActivityBadgeClass = (tone: string) => {
+    if (tone === 'task') return 'bg-blue-50 text-toss-blue dark:bg-blue-950/30';
+    if (tone === 'meeting') return 'bg-violet-50 text-violet-600 dark:bg-violet-950/30 dark:text-violet-300';
+    if (tone === 'assignment') return 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-300';
+    if (tone === 'risk') return 'bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-300';
     return 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300';
   };
 
@@ -880,7 +926,13 @@ function App() {
             <div className="h-12 flex items-center justify-between gap-5">
               <div className="relative flex items-center gap-2 min-w-0">
                 <button
-                  onClick={() => setIsProjectSwitcherOpen((open) => !open)}
+                  data-project-header-popover
+                  onClick={() => {
+                    setIsProjectSwitcherOpen((open) => !open);
+                    setIsProjectPeopleOpen(false);
+                    setIsProjectActivityOpen(false);
+                    setIsProjectMoreOpen(false);
+                  }}
                   className="flex items-center gap-1.5 min-w-0 text-left cursor-pointer group"
                   title="프로젝트 전환"
                 >
@@ -894,8 +946,8 @@ function App() {
                 </span>
                 {isProjectSwitcherOpen && (
                   <>
-                    <button className="fixed inset-0 z-40 cursor-default" aria-label="프로젝트 전환 닫기" onClick={() => setIsProjectSwitcherOpen(false)} />
-                    <div className="absolute left-0 top-9 z-50 w-80 max-h-[420px] overflow-hidden rounded-2xl border border-toss-gray-150/70 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-toss-lg">
+                    <button className="fixed inset-0 z-40 cursor-default" aria-label="프로젝트 전환 닫기" onClick={closeProjectHeaderPopovers} />
+                    <div data-project-header-popover onClick={(event) => event.stopPropagation()} className="absolute left-0 top-9 z-50 w-80 max-h-[420px] overflow-hidden rounded-2xl border border-toss-gray-150/70 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-toss-lg">
                       <div className="px-4 py-3 border-b border-toss-gray-100 dark:border-slate-800">
                         <p className="text-[11px] font-black text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider">Projects</p>
                         <p className="mt-1 text-xs font-bold text-toss-gray-600 dark:text-slate-300">이동할 프로젝트를 선택하세요.</p>
@@ -948,10 +1000,12 @@ function App() {
                 )}
 
                 <button
+                  data-project-header-popover
                   onClick={() => {
                     setIsProjectPeopleOpen((open) => !open);
                     setIsProjectActivityOpen(false);
                     setIsProjectMoreOpen(false);
+                    setIsProjectSwitcherOpen(false);
                   }}
                   className="hidden sm:flex items-center -space-x-2 cursor-pointer rounded-full hover:opacity-85 transition-opacity"
                   title="참여 인력"
@@ -965,8 +1019,8 @@ function App() {
                 </button>
                 {isProjectPeopleOpen && (
                   <>
-                    <button className="fixed inset-0 z-40 cursor-default" aria-label="참여 인력 닫기" onClick={() => setIsProjectPeopleOpen(false)} />
-                    <div className="absolute right-24 top-12 z-50 w-80 rounded-2xl border border-toss-gray-150/70 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-toss-lg p-3">
+                    <button className="fixed inset-0 z-40 cursor-default" aria-label="참여 인력 닫기" onClick={closeProjectHeaderPopovers} />
+                    <div data-project-header-popover onClick={(event) => event.stopPropagation()} className="absolute right-24 top-12 z-50 w-80 rounded-2xl border border-toss-gray-150/70 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-toss-lg p-3">
                       <div className="flex items-center justify-between px-1 pb-3 border-b border-toss-gray-100 dark:border-slate-800">
                         <div>
                           <p className="text-xs font-black text-slate-900 dark:text-slate-100">참여 인력</p>
@@ -1010,10 +1064,12 @@ function App() {
                   <FolderOpen className="w-4.5 h-4.5" />
                 </button>
                 <button
+                  data-project-header-popover
                   onClick={() => {
                     setIsProjectActivityOpen((open) => !open);
                     setIsProjectPeopleOpen(false);
                     setIsProjectMoreOpen(false);
+                    setIsProjectSwitcherOpen(false);
                   }}
                   className="p-2 rounded-full text-toss-gray-500 hover:text-toss-blue hover:bg-toss-gray-100 dark:hover:bg-slate-850 transition-colors"
                   title="프로젝트 알림"
@@ -1022,8 +1078,8 @@ function App() {
                 </button>
                 {isProjectActivityOpen && (
                   <>
-                    <button className="fixed inset-0 z-40 cursor-default" aria-label="프로젝트 알림 닫기" onClick={() => setIsProjectActivityOpen(false)} />
-                    <div className="absolute right-12 top-12 z-50 w-96 rounded-2xl border border-toss-gray-150/70 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-toss-lg p-3">
+                    <button className="fixed inset-0 z-40 cursor-default" aria-label="프로젝트 알림 닫기" onClick={closeProjectHeaderPopovers} />
+                    <div data-project-header-popover onClick={(event) => event.stopPropagation()} className="absolute right-12 top-12 z-50 w-96 rounded-2xl border border-toss-gray-150/70 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-toss-lg p-3">
                       <div className="flex items-center justify-between px-1 pb-3 border-b border-toss-gray-100 dark:border-slate-800">
                         <div>
                           <p className="text-xs font-black text-slate-900 dark:text-slate-100">프로젝트 알림</p>
@@ -1035,11 +1091,13 @@ function App() {
                           <p className="py-8 text-center text-xs font-bold text-slate-400">표시할 알림이 없습니다.</p>
                         ) : projectHeaderActivity.map((item) => (
                           <div key={item.id} className="flex gap-3 rounded-xl px-2 py-2.5 hover:bg-toss-gray-50 dark:hover:bg-slate-900">
-                            <span className={`mt-0.5 h-7 w-7 shrink-0 rounded-full text-[10px] font-black flex items-center justify-center ${getActivityBadgeClass(item.type)}`}>{item.type}</span>
+                            <span className={`mt-0.5 h-7 min-w-7 shrink-0 rounded-full px-2 text-[10px] font-black flex items-center justify-center ${getActivityBadgeClass(item.tone)}`}>{item.label}</span>
                             <div className="min-w-0 flex-1">
-                              <p className="text-xs font-black text-slate-900 dark:text-slate-100">{item.title}</p>
-                              <p className="mt-1 truncate text-[11px] font-bold text-slate-500 dark:text-slate-400">{item.body}</p>
-                              <p className="mt-1 text-[10px] font-bold text-slate-400">{item.meta}</p>
+                              <p className="truncate text-xs font-black text-slate-900 dark:text-slate-100">{item.target}</p>
+                              <p className="mt-1 truncate text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                {item.actor} · {item.action}
+                              </p>
+                              <p className="mt-1 text-[10px] font-bold text-slate-400">{item.when}</p>
                             </div>
                           </div>
                         ))}
@@ -1049,7 +1107,13 @@ function App() {
                 )}
                 <div className="relative">
                   <button
-                    onClick={() => setIsProjectMoreOpen((open) => !open)}
+                    data-project-header-popover
+                    onClick={() => {
+                      setIsProjectMoreOpen((open) => !open);
+                      setIsProjectSwitcherOpen(false);
+                      setIsProjectPeopleOpen(false);
+                      setIsProjectActivityOpen(false);
+                    }}
                     className="px-2 py-1 rounded-full text-lg leading-none text-toss-gray-500 hover:text-toss-gray-900 hover:bg-toss-gray-100 dark:hover:bg-slate-850 transition-colors"
                     title="더보기"
                   >
@@ -1057,8 +1121,8 @@ function App() {
                   </button>
                   {isProjectMoreOpen && (
                     <>
-                      <button className="fixed inset-0 z-40 cursor-default" aria-label="더보기 닫기" onClick={() => setIsProjectMoreOpen(false)} />
-                      <div onClick={() => setIsProjectMoreOpen(false)} className="absolute right-0 top-9 z-50 w-48 rounded-2xl border border-toss-gray-150/70 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-toss-lg p-2">
+                      <button className="fixed inset-0 z-40 cursor-default" aria-label="더보기 닫기" onClick={closeProjectHeaderPopovers} />
+                      <div data-project-header-popover onClick={(event) => event.stopPropagation()} className="absolute right-0 top-9 z-50 w-48 rounded-2xl border border-toss-gray-150/70 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-toss-lg p-2">
                         <button onClick={handleOpenProjectInfoEdit} className="w-full px-3 py-2.5 rounded-xl text-left text-xs font-black text-toss-gray-700 dark:text-slate-200 hover:bg-toss-gray-50 dark:hover:bg-slate-900">
                           사업 정보 수정
                         </button>
