@@ -33,7 +33,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   isLoggedIn: false,
   serverMode: true,
-  loading: false,
+  loading: true,
   error: null,
   registrationRequiredUserId: null,
 
@@ -60,7 +60,12 @@ export const useAuthStore = create<AuthState>((set) => ({
 
             if (!response.ok) {
               const errData = await response.json().catch(() => ({}));
-              throw new Error(errData.message || `HTTP error! status: ${response.status}`);
+              const candidateError = new Error(errData.message || `HTTP error! status: ${response.status}`);
+              if (response.status === 401 || response.status === 403) {
+                lastError = candidateError;
+                continue;
+              }
+              throw candidateError;
             }
 
             loginData = await response.json();
@@ -141,6 +146,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       localStorage.setItem('pa_token', loginData.token);
       localStorage.setItem('pa_user', JSON.stringify(loginData.user));
+      localStorage.setItem('pa_server_mode', String(isServer));
 
       set({
         token: loginData.token,
@@ -212,6 +218,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     localStorage.removeItem('pa_token');
     localStorage.removeItem('pa_user');
+    localStorage.removeItem('pa_server_mode');
     set({
       user: null,
       token: null,
@@ -222,13 +229,34 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   checkSession: async () => {
+    set({ loading: true });
     const token = localStorage.getItem('pa_token');
     const userJson = localStorage.getItem('pa_user');
 
     if (!token || !userJson) {
-      set({ isLoggedIn: false, user: null, token: null });
+      set({ isLoggedIn: false, user: null, token: null, loading: false });
       return;
     }
+
+    let cachedUser: User;
+    try {
+      cachedUser = JSON.parse(userJson);
+    } catch {
+      localStorage.removeItem('pa_token');
+      localStorage.removeItem('pa_user');
+      set({ isLoggedIn: false, user: null, token: null, loading: false });
+      return;
+    }
+
+    const cachedServerMode = !token.startsWith('mock-jwt-token-for-');
+    localStorage.setItem('pa_server_mode', String(cachedServerMode));
+    set({
+      user: cachedUser,
+      token,
+      isLoggedIn: true,
+      serverMode: cachedServerMode,
+      loading: false
+    });
 
     try {
       // Try validating token with Express server
@@ -237,22 +265,31 @@ export const useAuthStore = create<AuthState>((set) => ({
         user: data.user,
         token,
         isLoggedIn: true,
-        serverMode: true
+        serverMode: true,
+        loading: false
       });
+      localStorage.setItem('pa_server_mode', 'true');
     } catch (err: any) {
       if (err.message === 'SERVER_OFFLINE' || err.message.includes('Failed to fetch') || err.message.includes('Load failed')) {
         // Fallback to local stored session info if server offline
+        localStorage.setItem('pa_server_mode', 'false');
         set({
-          user: JSON.parse(userJson),
+          user: cachedUser,
           token,
           isLoggedIn: true,
-          serverMode: !token.startsWith('mock-jwt-token-for-')
+          serverMode: false,
+          loading: false
         });
       } else {
-        // Real session expired or invalid token
-        localStorage.removeItem('pa_token');
-        localStorage.removeItem('pa_user');
-        set({ isLoggedIn: false, user: null, token: null });
+        console.warn('Session validation failed. Keeping cached session to avoid unexpected logout:', err);
+        localStorage.setItem('pa_server_mode', 'false');
+        set({
+          user: cachedUser,
+          token,
+          isLoggedIn: true,
+          serverMode: false,
+          loading: false
+        });
       }
     }
   },

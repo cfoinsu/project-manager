@@ -5,12 +5,10 @@ interface EmptyStateProps {
 }
 
 export const EmptyState = ({ text, variant = 'plain', className = '' }: EmptyStateProps) => {
-  const variantClass = variant === 'dashed'
-    ? 'rounded-xl border border-dashed border-slate-200 p-5 dark:border-slate-800'
-    : 'py-8';
+  const variantClass = variant === 'dashed' ? 'pm-empty-state--dashed' : '';
 
   return (
-    <div className={`${variantClass} text-center text-xs font-bold text-slate-400 ${className}`}>
+    <div className={`pm-empty-state ${variantClass} ${className}`}>
       {text}
     </div>
   );

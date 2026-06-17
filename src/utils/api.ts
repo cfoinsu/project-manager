@@ -121,20 +121,23 @@ const repairApiServerUrl = (value: string | null): string | null => {
       parsed.port = '5000';
       return parsed.toString().replace(/\/$/, '');
     }
+    return parsed.toString().replace(/\/$/, '');
   } catch {
     return null;
   }
-  return null;
 };
 
 export const getApiBaseUrl = (): string => {
+  const envUrl = repairApiServerUrl(import.meta.env.VITE_API_URL || null);
+  if (envUrl) return envUrl;
+
   const savedUrl = localStorage.getItem('pa_server_url');
   const repaired = repairApiServerUrl(savedUrl);
   if (repaired) {
     localStorage.setItem('pa_server_url', repaired);
     return repaired;
   }
-  return savedUrl || import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  return 'http://localhost:5000';
 };
 
 export const normalizeServerUrl = (value: string): string => {
@@ -149,11 +152,11 @@ export const normalizeServerUrl = (value: string): string => {
 export const getServerUrlCandidates = (): string[] => {
   const savedUrl = localStorage.getItem('pa_server_url');
   const repairedSavedUrl = repairApiServerUrl(savedUrl);
+  const envUrl = repairApiServerUrl(import.meta.env.VITE_API_URL || null);
 
   const candidates = [
-    savedUrl,
+    envUrl,
     repairedSavedUrl,
-    import.meta.env.VITE_API_URL,
     'http://localhost:5000'
   ].filter(Boolean) as string[];
 

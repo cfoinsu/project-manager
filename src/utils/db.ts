@@ -7,6 +7,8 @@ const isTauriMode = isTauri();
 const getServerMode = (): boolean => {
   try {
     const token = localStorage.getItem('pa_token');
+    const serverMode = localStorage.getItem('pa_server_mode');
+    if (serverMode === 'false') return false;
     return !!token && !token.startsWith('mock-jwt-token-for-');
   } catch {
     return false;

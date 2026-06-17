@@ -66,7 +66,7 @@ import {
 } from 'lucide-react';
 
 function App() {
-  const { user: currentUser, isLoggedIn, checkSession, logout, serverMode } = useAuthStore();
+  const { user: currentUser, isLoggedIn, checkSession, logout, serverMode, loading: authLoading } = useAuthStore();
   const brand = useBrandStore();
 
   useEffect(() => {
@@ -243,6 +243,10 @@ function App() {
     document.addEventListener('pointerdown', handlePointerDown, true);
     return () => document.removeEventListener('pointerdown', handlePointerDown, true);
   }, [isProjectActivityOpen, isProjectMoreOpen, isProjectPeopleOpen, isProjectSwitcherOpen]);
+
+  if (authLoading) {
+    return <FullscreenLoadingOverlay message="세션을 확인하는 중입니다." />;
+  }
 
   if (!isLoggedIn) {
     return <LoginView />;

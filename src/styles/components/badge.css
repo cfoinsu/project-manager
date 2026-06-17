@@ -1,0 +1,52 @@
+.pm-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 var(--pm-space-2);
+  border-radius: var(--pm-radius-full);
+  font-size: var(--pm-font-size-2xs);
+  font-weight: 900;
+  line-height: var(--pm-line-height-tight);
+  white-space: nowrap;
+}
+
+.pm-badge--task {
+  background: var(--pm-color-task-soft);
+  color: var(--pm-color-task);
+}
+
+.pm-badge--meeting {
+  background: var(--pm-color-meeting-soft);
+  color: var(--pm-color-meeting);
+}
+
+.pm-badge--assignment {
+  background: var(--pm-color-assignment-soft);
+  color: var(--pm-color-assignment);
+}
+
+.pm-badge--risk {
+  background: var(--pm-color-risk-soft);
+  color: var(--pm-color-risk);
+}
+
+.pm-badge--success {
+  background: var(--pm-color-success-soft);
+  color: var(--pm-color-success);
+}
+
+.pm-badge--warning {
+  background: var(--pm-color-warning-soft);
+  color: var(--pm-color-warning);
+}
+
+.pm-badge--danger {
+  background: var(--pm-color-danger-soft);
+  color: var(--pm-color-danger);
+}
+
+.pm-badge--neutral {
+  background: var(--pm-color-surface-subtle);
+  color: var(--pm-color-text-muted);
+}

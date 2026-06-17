@@ -1,0 +1,39 @@
+.pm-root {
+  color: var(--pm-color-text-primary);
+  font-family: var(--pm-font-sans);
+  font-size: var(--pm-font-size-md);
+  line-height: var(--pm-line-height-base);
+}
+
+.pm-page {
+  min-width: 0;
+  color: var(--pm-color-text-primary);
+}
+
+.pm-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pm-space-4);
+}
+
+.pm-page__body {
+  min-width: 0;
+}
+
+.pm-text-primary {
+  color: var(--pm-color-text-primary);
+}
+
+.pm-text-secondary {
+  color: var(--pm-color-text-secondary);
+}
+
+.pm-text-muted {
+  color: var(--pm-color-text-muted);
+}
+
+.pm-scroll-area {
+  min-height: 0;
+  overflow: auto;
+}
