@@ -11,7 +11,7 @@ import { ModalOverlay } from './ModalOverlay';
 import { RegionPickerModal } from './RegionPickerModal';
 import { openInExplorer } from '../utils/tauriBridge';
 import { PROJECT_RISK_UPDATED_EVENT, readProjectRisksByProjectId, type ProjectRiskItem } from '../utils/projectRiskStore';
-import { Button, DashboardGrid, DashboardGridItem, EmptyState, Page, PageBody, PageHeader, Panel } from './ui';
+import { Badge, Button, DashboardGrid, DashboardGridItem, EmptyState, Page, PageBody, PageHeader, Panel } from './ui';
 
 export const ProjectOverview: React.FC = () => {
   const REGION_CODES = getRegionCodes();
@@ -378,27 +378,26 @@ export const ProjectOverview: React.FC = () => {
       </DashboardGrid>
 
       <PageBody>
-      <section className="mb-4 overflow-hidden rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-        <div className="grid grid-cols-1 xl:grid-cols-[1.35fr_1fr]">
-          <div className="relative min-h-[260px] bg-gradient-to-br from-blue-50 via-white to-emerald-50 dark:from-blue-950/30 dark:via-slate-900 dark:to-emerald-950/20 p-7">
-            <div className="absolute right-6 top-6 h-24 w-24 rounded-full bg-toss-blue/10 blur-2xl" />
-            <p className="relative text-xs font-black text-toss-blue">프로젝트 설명</p>
-            <h2 className="relative mt-3 max-w-3xl text-2xl font-black leading-snug text-slate-950 dark:text-slate-100">
+      <section className="pm-overview-hero mb-4">
+        <div className="pm-overview-hero__grid">
+          <div className="pm-overview-hero__summary">
+            <p className="pm-overview-hero__eyebrow">프로젝트 설명</p>
+            <h2 className="pm-overview-hero__description">
               {activeProject.description || '등록된 프로젝트 설명이 없습니다.'}
             </h2>
-            <div className="relative mt-6 flex flex-wrap gap-2">
-              <span className="rounded-full bg-white/80 dark:bg-slate-950/70 px-3 py-1.5 text-[11px] font-black text-slate-600 dark:text-slate-300 ring-1 ring-slate-200/70 dark:ring-slate-800">
+            <div className="pm-overview-hero__badges">
+              <Badge tone="neutral">
                 {activeProject.importance || 'Medium'}
-              </span>
-              <span className="rounded-full bg-white/80 dark:bg-slate-950/70 px-3 py-1.5 text-[11px] font-black text-indigo-600 ring-1 ring-slate-200/70 dark:ring-slate-800">
+              </Badge>
+              <Badge tone="meeting">
                 {activeProject.priority || 'P3'}
-              </span>
-              <span className="rounded-full bg-white/80 dark:bg-slate-950/70 px-3 py-1.5 text-[11px] font-black text-toss-blue ring-1 ring-slate-200/70 dark:ring-slate-800">
+              </Badge>
+              <Badge tone="task">
                 {dateLine}
-              </span>
+              </Badge>
             </div>
           </div>
-          <div className="grid grid-cols-1 gap-4 border-t border-slate-100 dark:border-slate-800 p-5 xl:border-l xl:border-t-0">
+          <div className="pm-overview-hero__aside">
             <NarrativeBlock title="사업 목적" value={activeProject.business_purpose} empty="등록된 사업 목적이 없습니다." />
             <NarrativeBlock title="주요 범위" value={activeProject.major_scope} empty="등록된 주요 범위가 없습니다." />
             <NarrativeBlock title="특이사항" value={activeProject.special_notes} empty="등록된 특이사항이 없습니다." />
@@ -554,12 +553,14 @@ export const ProjectOverview: React.FC = () => {
         </OverviewCard>
         <OverviewCard title="빠른 작업">
           <div className="flex flex-col gap-2">
-            <button onClick={scanAndSync} className="flex items-center justify-center gap-2 rounded-xl bg-toss-blue px-4 py-3 text-xs font-black text-white">
-              <Activity className="w-4 h-4" /> 폴더 구조 동기화
-            </button>
-            <button onClick={() => openInExplorer(activeProject.path)} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-xs font-black text-slate-700 dark:text-slate-200 dark:border-slate-800">
-              <FolderOpen className="w-4 h-4" /> 프로젝트 폴더 열기
-            </button>
+            <div className="pm-overview-actions">
+              <Button variant="primary" icon={<Activity className="w-4 h-4" />} onClick={scanAndSync}>
+                폴더 구조 동기화
+              </Button>
+              <Button variant="secondary" icon={<FolderOpen className="w-4 h-4" />} onClick={() => openInExplorer(activeProject.path)}>
+                프로젝트 폴더 열기
+              </Button>
+            </div>
           </div>
         </OverviewCard>
         </div>
@@ -654,15 +655,15 @@ const MeetingStat = ({ label, value, active = false }: { label: string; value: n
 );
 
 const InfoRow = ({ label, value, accent, progress }: { label: string; value: React.ReactNode; accent?: 'rose' | 'blue' | 'indigo'; progress?: number }) => (
-  <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 dark:border-slate-800 last:border-b-0">
-    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{label}</span>
-    <div className="flex items-center gap-3 min-w-0">
+  <div className="pm-info-row">
+    <span className="pm-info-row__label">{label}</span>
+    <div className="pm-info-row__value-wrap">
       {typeof progress === 'number' && (
-        <div className="w-24 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-          <div className="h-full rounded-full bg-toss-blue" style={{ width: `${progress}%` }} />
+        <div className="pm-info-row__progress">
+          <div className="pm-info-row__progress-fill" style={{ width: `${progress}%` }} />
         </div>
       )}
-      <span className={`text-xs font-black truncate ${accent === 'rose' ? 'text-rose-600' : accent === 'indigo' ? 'text-indigo-600' : accent === 'blue' ? 'text-toss-blue' : 'text-slate-850 dark:text-slate-100'}`}>
+      <span className={`pm-info-row__value ${accent ? `pm-info-row__value--${accent}` : ''}`}>
         {value}
       </span>
     </div>
@@ -682,10 +683,10 @@ const RiskProgress = ({ label, value, className }: { label: string; value: numbe
 );
 
 const NarrativeBlock = ({ title, value, empty }: { title: string; value?: string; empty: string }) => (
-  <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-white/75 dark:bg-slate-950/30 p-4 min-h-28">
-    <h3 className="text-[11px] font-black text-slate-500 dark:text-slate-400 mb-2">{title}</h3>
-    <p className="text-xs font-semibold leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
-      {value || <span className="text-slate-400 italic">{empty}</span>}
+  <div className="pm-overview-narrative">
+    <h3 className="pm-overview-narrative__title">{title}</h3>
+    <p className="pm-overview-narrative__text">
+      {value || <span className="pm-overview-narrative__empty">{empty}</span>}
     </p>
   </div>
 );
@@ -693,14 +694,14 @@ const NarrativeBlock = ({ title, value, empty }: { title: string; value?: string
 const CompactList = ({ items, empty, danger = false }: { items: { title: string; sub: string; meta: string }[]; empty: string; danger?: boolean }) => {
   if (items.length === 0) return <EmptyState text={empty} />;
   return (
-    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+    <div className="pm-compact-list">
       {items.map((item, index) => (
-        <div key={`${item.title}-${index}`} className="flex items-center justify-between gap-4 py-3">
-          <div className="min-w-0">
-            <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">{item.title}</p>
-            <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400 truncate">{item.sub}</p>
+        <div key={`${item.title}-${index}`} className="pm-compact-list__item">
+          <div className="pm-compact-list__content">
+            <p className="pm-compact-list__title">{item.title}</p>
+            <p className="pm-compact-list__sub">{item.sub}</p>
           </div>
-          <span className={`shrink-0 text-[10px] font-black ${danger ? 'text-rose-500' : 'text-slate-400'}`}>{item.meta}</span>
+          <Badge tone={danger ? 'danger' : 'neutral'}>{item.meta}</Badge>
         </div>
       ))}
     </div>
