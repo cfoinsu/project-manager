@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useProjectStore } from '../store/projectStore';
+import { useAuthStore } from '../store/authStore';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -10,8 +11,10 @@ import {
   Layers,
   CheckSquare
 } from 'lucide-react';
-import type { Process, Task } from '../types';
+import type { Assignment, Process, Task } from '../types';
+import { getAssignments } from '../utils/api';
 import { CustomSelect } from './CustomSelect';
+import { Avatar } from './Avatar';
 
 interface LaneEvent {
   id: string;
@@ -91,6 +94,7 @@ export const getProjectColorClass = (code?: string, variant: 'project' | 'proces
 
 export const ScheduleCalendarView: React.FC = () => {
   const { projects, selectProject, setView } = useProjectStore();
+  const { user, serverMode } = useAuthStore();
   
   // View mode: 'all' (All Projects) or 'single' (By Project)
   const [viewMode, setViewMode] = useState<'all' | 'single'>('all');
@@ -105,25 +109,25 @@ export const ScheduleCalendarView: React.FC = () => {
     return `${today.getFullYear()}-${mm}-${dd}`;
   });
 
-  // Invitation response feedback states
-  const [joiningFeedback, setJoiningFeedback] = useState<Record<string, 'yes' | 'no'>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('pa_calendar_feedback') || '{}');
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pa_calendar_feedback', JSON.stringify(joiningFeedback));
-  }, [joiningFeedback]);
-
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
 
   // Local data for selected project (Single Project Mode)
   const [localProcesses, setLocalProcesses] = useState<Process[]>([]);
   const [localTasks, setLocalTasks] = useState<Task[]>([]);
   const [loadingLocal, setLoadingLocal] = useState<boolean>(false);
+
+  useEffect(() => {
+    const loadAssignments = async () => {
+      try {
+        setAssignments(await getAssignments(serverMode, user?.role || 'member', user?.id || ''));
+      } catch (error) {
+        console.error('Failed to load calendar assignments:', error);
+        setAssignments([]);
+      }
+    };
+    loadAssignments();
+  }, [serverMode, user?.id, user?.role]);
 
   // Show local toast feedback
   const showLocalToast = (msg: string) => {
@@ -459,42 +463,49 @@ export const ScheduleCalendarView: React.FC = () => {
     }
   };
 
-  // Helper to render overlapping avatars
-  const renderAvatars = (id: string) => {
-    const names = ['Rick Adam', 'Sofia Vergara', 'John Doe', 'Alice Smith', 'Bob Jones', 'Emma Watson'];
-    const colors = [
-      'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300',
-      'bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-300',
-      'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-300',
-      'bg-pink-100 text-pink-600 dark:bg-pink-900/50 dark:text-pink-300',
-      'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-300',
-      'bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300'
-    ];
-    
-    let seed = 0;
-    for (let i = 0; i < id.length; i++) seed += id.charCodeAt(i);
-    
-    const count = (seed % 3) + 1;
-    const avatars = [];
-    for (let i = 0; i < count; i++) {
-      const idx = (seed + i) % names.length;
-      const name = names[idx];
-      const color = colors[idx % colors.length];
-      const initials = name.split(' ').map(n => n[0]).join('');
-      avatars.push({ name, color, initials });
+  const getEventProjectId = (ev: { type: 'project' | 'process' | 'task'; original: any }) => {
+    if (ev.type === 'project') return ev.original?.id;
+    return ev.original?.project_id || selectedProjectId;
+  };
+
+  const getEventParticipants = (ev: { type: 'project' | 'process' | 'task'; original: any }) => {
+    if (ev.type === 'task') {
+      const ids = ev.original?.assignees || [];
+      const names = ev.original?.assignee_names || (ev.original?.assignee ? [ev.original.assignee] : []);
+      if (ids.length > 0 || names.length > 0) {
+        const byIds = ids.map((id: string) => assignments.find((assignment) => assignment.user_id === id)).filter(Boolean) as Assignment[];
+        const byNames = names
+          .filter((name: string) => !byIds.some((assignment) => assignment.user_name === name))
+          .map((name: string, index: number) => ({ id: `${ev.original.id}-name-${index}`, user_id: name, user_name: name } as Assignment));
+        return [...byIds, ...byNames];
+      }
     }
-    
+
+    const projectId = getEventProjectId(ev);
+    return assignments.filter((assignment) => assignment.project_id === projectId);
+  };
+
+  // Helper to render overlapping avatars from matched project/task assignments
+  const renderAvatars = (ev: { type: 'project' | 'process' | 'task'; original: any }) => {
+    const participants = getEventParticipants(ev);
+    if (participants.length === 0) return null;
+    const visible = participants.slice(0, 3);
+
     return (
       <div className="flex -space-x-1 overflow-hidden select-none items-center">
-        {avatars.map((av, index) => (
-          <div 
-            key={index}
-            className={`w-4.5 h-4.5 rounded-full ${av.color} text-[9px] font-black flex items-center justify-center border border-white dark:border-slate-900`}
-            title={av.name}
-          >
-            {av.initials}
-          </div>
+        {visible.map((participant) => (
+          <Avatar
+            key={participant.id || participant.user_id}
+            name={participant.user_name || '이름 없음'}
+            profileImage={participant.user_profile_image}
+            className="w-4.5 h-4.5 text-[8px] border border-white dark:border-slate-900"
+          />
         ))}
+        {participants.length > visible.length && (
+          <div className="w-4.5 h-4.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 text-[8px] font-black flex items-center justify-center border border-white dark:border-slate-900">
+            +{participants.length - visible.length}
+          </div>
+        )}
       </div>
     );
   };
@@ -738,7 +749,7 @@ export const ScheduleCalendarView: React.FC = () => {
                               title={ev.title}
                             >
                               <span className="truncate pr-1 select-none leading-none">{ev.title}</span>
-                              {colSpan >= 2 && renderAvatars(ev.id)}
+                              {colSpan >= 2 && renderAvatars(ev)}
                             </div>
                           );
                         })}
@@ -791,13 +802,13 @@ export const ScheduleCalendarView: React.FC = () => {
             ) : (
               selectedDayEvents.map((ev, index) => {
                 const isFirst = index === 0;
-                const feedbackValue = joiningFeedback[ev.id];
 
                 if (isFirst) {
                   return (
                     <div 
                       key={ev.id}
-                      className="cds--schedule-highlight-card"
+                      onClick={() => handleNavigateToWbsOrKanban(ev)}
+                      className="cds--schedule-highlight-card cursor-pointer"
                     >
                       <div className="flex flex-col gap-0.5">
                         <span className="text-sm font-black text-black/50 uppercase tracking-widest">
@@ -812,7 +823,7 @@ export const ScheduleCalendarView: React.FC = () => {
                       </div>
 
                       <div className="flex justify-between items-center mt-1">
-                        {renderAvatars(ev.id)}
+                        {renderAvatars(ev)}
                         <span className="text-sm font-extrabold bg-white/20 px-2 py-0.5 rounded-full select-none">
                           {ev.type === 'project' ? '1단계' : ev.type === 'process' ? 'WBS' : 'Kanban'}
                         </span>
@@ -820,7 +831,10 @@ export const ScheduleCalendarView: React.FC = () => {
 
                       {/* Go to Link action button */}
                       <button
-                        onClick={() => handleNavigateToWbsOrKanban(ev)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleNavigateToWbsOrKanban(ev);
+                        }}
                         className="cds--schedule-highlight-btn"
                       >
                         {ev.type === 'project' ? (
@@ -840,39 +854,6 @@ export const ScheduleCalendarView: React.FC = () => {
                           </>
                         )}
                       </button>
-
-                      {/* Invitation response feedback */}
-                      <div className="border-t border-white/15 pt-3.5 mt-1 text-left flex flex-col gap-2">
-                        <span className="text-sm font-bold text-white/80">본 일정에 참가할 예정입니까?</span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'yes' }));
-                              showLocalToast('일정 참가가 수락되었습니다.');
-                            }}
-                            className={`flex-1 py-1.5 rounded-xl text-sm font-bold border-none transition-all cursor-pointer ${
-                              feedbackValue === 'yes'
-                                ? 'bg-white text-orange-600 font-extrabold'
-                                : 'bg-white/10 hover:bg-white/20 text-white font-bold'
-                            }`}
-                          >
-                            참가 (Yes)
-                          </button>
-                          <button
-                            onClick={() => {
-                              setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'no' }));
-                              showLocalToast('일정 참가가 거절되었습니다.');
-                            }}
-                            className={`flex-1 py-1.5 rounded-xl text-sm font-bold border-none transition-all cursor-pointer ${
-                              feedbackValue === 'no'
-                                ? 'bg-white text-orange-600 font-extrabold'
-                                : 'bg-white/10 hover:bg-white/20 text-white font-bold'
-                            }`}
-                          >
-                            불참 (No)
-                          </button>
-                        </div>
-                      </div>
                     </div>
                   );
                 }
@@ -880,7 +861,8 @@ export const ScheduleCalendarView: React.FC = () => {
                 return (
                   <div
                     key={ev.id}
-                    className="p-4 rounded-2xl bg-gray-50/50 dark:bg-slate-850/20 border border-gray-150 dark:border-slate-800/40 hover:bg-gray-100/50 dark:hover:bg-slate-850/30 transition-all flex flex-col gap-3 text-left relative group"
+                    onClick={() => handleNavigateToWbsOrKanban(ev)}
+                    className="p-4 rounded-2xl bg-gray-50/50 dark:bg-slate-850/20 border border-gray-150 dark:border-slate-800/40 hover:bg-gray-100/50 dark:hover:bg-slate-850/30 transition-all flex flex-col gap-3 text-left relative group cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -890,7 +872,10 @@ export const ScheduleCalendarView: React.FC = () => {
                         </span>
                       </div>
                       <button
-                        onClick={() => handleNavigateToWbsOrKanban(ev)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleNavigateToWbsOrKanban(ev);
+                        }}
                         className="text-sm text-toss-blue hover:text-toss-blue-hover font-bold hover:underline flex items-center gap-0.5 cursor-pointer border-none bg-transparent"
                       >
                         이동 <ArrowRight className="w-2.5 h-2.5" />
@@ -906,42 +891,7 @@ export const ScheduleCalendarView: React.FC = () => {
                         <Clock className="w-3.5 h-3.5" />
                         <span>{ev.timeStr}</span>
                       </div>
-                      {renderAvatars(ev.id)}
-                    </div>
-
-                    {/* Invitation Response inside standard cards */}
-                    <div className="border-t border-gray-100 dark:border-slate-800/60 pt-3 mt-1 flex flex-col gap-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-toss-gray-500 dark:text-slate-400">참가 응답:</span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => {
-                              setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'yes' }));
-                              showLocalToast('일정 참가가 수락되었습니다.');
-                            }}
-                            className={`px-3 py-1 rounded-xl text-sm font-bold border cursor-pointer select-none transition-all ${
-                              feedbackValue === 'yes'
-                                ? 'bg-toss-blue border-toss-blue text-white shadow-sm font-extrabold'
-                                : 'bg-white hover:bg-gray-50 text-toss-gray-700 border-gray-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700 font-bold'
-                            }`}
-                          >
-                            수락
-                          </button>
-                          <button
-                            onClick={() => {
-                              setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'no' }));
-                              showLocalToast('일정 참가가 거절되었습니다.');
-                            }}
-                            className={`px-3 py-1 rounded-xl text-sm font-bold border cursor-pointer select-none transition-all ${
-                              feedbackValue === 'no'
-                                ? 'bg-rose-500 border-rose-500 text-white shadow-sm font-extrabold'
-                                : 'bg-white hover:bg-gray-50 text-toss-gray-700 border-gray-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700 font-bold'
-                            }`}
-                          >
-                            거절
-                          </button>
-                        </div>
-                      </div>
+                      {renderAvatars(ev)}
                     </div>
                   </div>
                 );

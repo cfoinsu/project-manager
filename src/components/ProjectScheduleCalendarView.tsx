@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useProjectStore } from '../store/projectStore';
+import { useAuthStore } from '../store/authStore';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -12,9 +13,11 @@ import {
   FileText,
   Users
 } from 'lucide-react';
-import type { Meeting } from '../types';
-import { getMeetings, respondMeeting } from '../utils/collaborationApi';
+import type { Assignment, Meeting } from '../types';
+import { getAssignments } from '../utils/api';
+import { getMeetings } from '../utils/collaborationApi';
 import { MeetingMinutesModal } from './MeetingMinutesModal';
+import { Avatar } from './Avatar';
 // 프로젝트 코드를 기준으로 유형별 테마 색상 반환
 export const getProjectColorClass = (code?: string, variant: 'project' | 'process' | 'task' = 'project') => {
   if (!code || code.length < 5) {
@@ -115,6 +118,7 @@ const getScheduleEventTimeText = (ev: ScheduleEventLike, fallback = '') => {
 
 export const ProjectScheduleCalendarView: React.FC = () => {
   const { activeProject, processes, tasks: tasksMap, setView } = useProjectStore();
+  const { user, serverMode } = useAuthStore();
 
   // Drag scroll state for timeline view
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -166,22 +170,10 @@ export const ProjectScheduleCalendarView: React.FC = () => {
     return `${today.getFullYear()}-${mm}-${dd}`;
   });
 
-  // Invitation response feedback states
-  const [joiningFeedback, setJoiningFeedback] = useState<Record<string, 'yes' | 'no'>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('pa_calendar_feedback') || '{}');
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pa_calendar_feedback', JSON.stringify(joiningFeedback));
-  }, [joiningFeedback]);
-
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
 
   // Show local toast feedback
   const showLocalToast = (msg: string) => {
@@ -206,6 +198,23 @@ export const ProjectScheduleCalendarView: React.FC = () => {
   useEffect(() => {
     loadMeetings();
   }, [activeProject?.id]);
+
+  useEffect(() => {
+    const loadAssignments = async () => {
+      if (!activeProject?.id) {
+        setAssignments([]);
+        return;
+      }
+      try {
+        const list = await getAssignments(serverMode, user?.role || 'member', user?.id || '');
+        setAssignments(list.filter((assignment) => assignment.project_id === activeProject.id));
+      } catch (error) {
+        console.error('Load assignments for project schedule failed:', error);
+        setAssignments([]);
+      }
+    };
+    loadAssignments();
+  }, [activeProject?.id, serverMode, user?.id, user?.role]);
 
   // Synchronize calendar focus with selected date
   useEffect(() => {
@@ -594,61 +603,52 @@ export const ProjectScheduleCalendarView: React.FC = () => {
     }
   };
 
-  const handleScheduleParticipation = async (
-    ev: { id: string; type: 'process' | 'task' | 'meeting'; original: any },
-    value: 'yes' | 'no'
-  ) => {
+  const getEventParticipants = (ev: { id: string; type: 'process' | 'task' | 'meeting'; original: any }) => {
     if (ev.type === 'meeting') {
-      await respondMeeting(ev.id, value === 'yes' ? 'accepted' : 'declined');
-      setJoiningFeedback(prev => ({ ...prev, [ev.id]: value }));
-      await loadMeetings();
-      showLocalToast(value === 'yes' ? '회의 참석으로 응답했습니다.' : '회의 불참으로 응답했습니다.');
-      return;
+      const meeting = ev.original as Meeting;
+      const ids = meeting.attendees || [];
+      const names = meeting.attendee_names || [];
+      const byIds = ids.map((id) => assignments.find((assignment) => assignment.user_id === id)).filter(Boolean) as Assignment[];
+      const byNames = names
+        .filter((name) => !byIds.some((assignment) => assignment.user_name === name))
+        .map((name, index) => ({ id: `${meeting.id}-attendee-${index}`, user_id: name, user_name: name } as Assignment));
+      return [...byIds, ...byNames];
     }
 
-    setJoiningFeedback(prev => ({ ...prev, [ev.id]: value }));
-    showLocalToast(value === 'yes' ? '?쇱젙 李멸?媛 ?섎씫?섏뿀?듬땲??' : '?쇱젙 李멸?媛 嫄곗젅?섏뿀?듬땲??');
+    if (ev.type === 'task') {
+      const ids = ev.original?.assignees || [];
+      const names = ev.original?.assignee_names || (ev.original?.assignee ? [ev.original.assignee] : []);
+      if (ids.length > 0 || names.length > 0) {
+        const byIds = ids.map((id: string) => assignments.find((assignment) => assignment.user_id === id)).filter(Boolean) as Assignment[];
+        const byNames = names
+          .filter((name: string) => !byIds.some((assignment) => assignment.user_name === name))
+          .map((name: string, index: number) => ({ id: `${ev.original.id}-assignee-${index}`, user_id: name, user_name: name } as Assignment));
+        return [...byIds, ...byNames];
+      }
+    }
+
+    return assignments;
   };
 
-  // Helper to render overlapping avatars
-  const renderAvatars = (id: string) => {
-    const names = ['Rick Adam', 'Sofia Vergara', 'John Doe', 'Alice Smith', 'Bob Jones', 'Emma Watson'];
-    const colors = [
-      'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300',
-      'bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-300',
-      'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-300',
-      'bg-pink-100 text-pink-600 dark:bg-pink-900/50 dark:text-pink-300',
-      'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-300',
-      'bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-300'
-    ];
-    
-    let seed = 0;
-    for (let i = 0; i < id.length; i++) seed += id.charCodeAt(i);
-    
-    const count = (seed % 3) + 1;
-    const avatars = [];
-    for (let i = 0; i < count; i++) {
-      const idx = (seed + i) % names.length;
-      const name = names[idx];
-      const color = colors[idx % colors.length];
-      const initials = name.split(' ').map(n => n[0]).join('');
-      avatars.push({ name, color, initials });
-    }
-    
+  // Helper to render overlapping avatars from matched assignments or meeting attendees
+  const renderAvatars = (ev: { id: string; type: 'process' | 'task' | 'meeting'; original: any }) => {
+    const participants = getEventParticipants(ev);
+    if (participants.length === 0) return null;
+    const visible = participants.slice(0, 3);
+
     return (
       <div className="flex -space-x-1.5 overflow-hidden select-none items-center">
-        {avatars.map((av, index) => (
-          <div 
-            key={index}
-            className={`w-5.5 h-5.5 rounded-full ${av.color} text-[9.5px] font-black flex items-center justify-center border-2 border-white dark:border-slate-900`}
-            title={av.name}
-          >
-            {av.initials}
-          </div>
+        {visible.map((participant) => (
+          <Avatar
+            key={participant.id || participant.user_id}
+            name={participant.user_name || '?? ??'}
+            profileImage={participant.user_profile_image}
+            className="w-5.5 h-5.5 text-[9px] border-2 border-white dark:border-slate-900"
+          />
         ))}
-        {seed % 2 === 0 && (
+        {participants.length > visible.length && (
           <div className="w-5.5 h-5.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 text-[9.5px] font-black flex items-center justify-center border-2 border-white dark:border-slate-900">
-            +{seed % 3 + 1}
+            +{participants.length - visible.length}
           </div>
         )}
       </div>
@@ -916,7 +916,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                                       <span className={`text-[10px] opacity-75 font-semibold mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis ${isMeeting ? 'text-amber-600/80 dark:text-amber-300/80' : 'text-purple-500/80 dark:text-purple-400/80'}`}>{getScheduleEventTimeText(ev, ev.timeStr)}</span>
                                     )}
                                   </div>
-                                  {!isVeryShort && renderAvatars(ev.id)}
+                                  {!isVeryShort && renderAvatars(ev)}
                                 </div>
                               );
                             })
@@ -1092,7 +1092,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                                   title={`${getScheduleEventLabel(ev.type)} · ${ev.title}${isMeeting ? ` · ${getScheduleEventTimeText(ev)}` : ''}`}
                                 >
                                   <span className="truncate pr-1 select-none leading-none text-xs">{isMeeting ? `회의 · ${ev.title}` : ev.title}</span>
-                                  {colSpan >= 2 && renderAvatars(ev.id)}
+                                  {colSpan >= 2 && renderAvatars(ev)}
                                 </div>
                               );
                             })}
@@ -1155,13 +1155,13 @@ export const ProjectScheduleCalendarView: React.FC = () => {
             ) : (
               selectedDayEvents.map((ev, index) => {
                 const isFirst = index === 0;
-                const feedbackValue = joiningFeedback[ev.id];
 
                 if (isFirst) {
                   return (
                     <div 
                       key={ev.id}
-                      className="cds--schedule-highlight-card"
+                      onClick={() => handleNavigateToWbsOrKanban(ev)}
+                      className="cds--schedule-highlight-card cursor-pointer"
                     >
                       <div className="flex flex-col gap-0.5">
                         <span className="text-sm font-black text-black/50 uppercase tracking-widest">
@@ -1178,7 +1178,7 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                       </div>
 
                       <div className="flex justify-between items-center mt-1">
-                        {renderAvatars(ev.id)}
+                        {renderAvatars(ev)}
                         <span className="text-sm font-extrabold bg-white/20 px-2 py-0.5 rounded-full select-none">
                           {ev.type === 'meeting' ? '회의' : ev.type === 'process' ? 'WBS' : 'Kanban'}
                         </span>
@@ -1186,7 +1186,10 @@ export const ProjectScheduleCalendarView: React.FC = () => {
 
                       {/* Go to Link action button */}
                       <button
-                        onClick={() => handleNavigateToWbsOrKanban(ev)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleNavigateToWbsOrKanban(ev);
+                        }}
                         className="cds--schedule-highlight-btn"
                       >
                         {ev.type === 'meeting' ? (
@@ -1207,40 +1210,6 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                         )}
                       </button>
 
-                      {/* "Will you be joining?" interactive invitation */}
-                      <div className="border-t border-white/15 pt-3.5 mt-1 text-left flex flex-col gap-2">
-                        <span className="text-sm font-bold text-white/80">본 일정에 참가할 예정입니까?</span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              if (ev.type === 'meeting') { void handleScheduleParticipation(ev, 'yes'); return; }
-                              setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'yes' }));
-                              showLocalToast('일정 참가가 수락되었습니다.');
-                            }}
-                            className={`flex-1 py-1.5 rounded-xl text-xs font-bold border-none transition-all cursor-pointer ${
-                              feedbackValue === 'yes'
-                                ? 'bg-white text-orange-600'
-                                : 'bg-white/10 hover:bg-white/20 text-white'
-                            }`}
-                          >
-                            참가 (Yes)
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (ev.type === 'meeting') { void handleScheduleParticipation(ev, 'no'); return; }
-                              setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'no' }));
-                              showLocalToast('일정 참가가 거절되었습니다.');
-                            }}
-                            className={`flex-1 py-1.5 rounded-xl text-xs font-bold border-none transition-all cursor-pointer ${
-                              feedbackValue === 'no'
-                                ? 'bg-white text-orange-600'
-                                : 'bg-white/10 hover:bg-white/20 text-white'
-                            }`}
-                          >
-                            불참 (No)
-                          </button>
-                        </div>
-                      </div>
                     </div>
                   );
                 }
@@ -1248,7 +1217,8 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                 return (
                   <div
                     key={ev.id}
-                    className="p-4 rounded-2xl bg-gray-50/50 dark:bg-slate-850/20 border border-gray-150 dark:border-slate-800/40 hover:bg-gray-100/50 dark:hover:bg-slate-850/30 transition-all flex flex-col gap-3 text-left relative group"
+                    onClick={() => handleNavigateToWbsOrKanban(ev)}
+                    className="p-4 rounded-2xl bg-gray-50/50 dark:bg-slate-850/20 border border-gray-150 dark:border-slate-800/40 hover:bg-gray-100/50 dark:hover:bg-slate-850/30 transition-all flex flex-col gap-3 text-left relative group cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1258,7 +1228,10 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                         </span>
                       </div>
                       <button
-                        onClick={() => handleNavigateToWbsOrKanban(ev)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleNavigateToWbsOrKanban(ev);
+                        }}
                         className="text-sm text-toss-blue hover:text-toss-blue-hover font-bold hover:underline flex items-center gap-0.5 cursor-pointer border-none bg-transparent"
                       >
                         {getScheduleEventActionLabel(ev.type)} <ArrowRight className="w-2.5 h-2.5" />
@@ -1274,45 +1247,9 @@ export const ProjectScheduleCalendarView: React.FC = () => {
                         <Clock className="w-3.5 h-3.5" />
                         <span>{getScheduleEventTimeText(ev, ev.timeStr)}</span>
                       </div>
-                      {renderAvatars(ev.id)}
+                      {renderAvatars(ev)}
                     </div>
 
-                    {/* Invitation Response inside standard cards */}
-                    <div className="border-t border-gray-100 dark:border-slate-800/60 pt-3 mt-1 flex flex-col gap-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-toss-gray-500 dark:text-slate-400">참가 응답:</span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => {
-                              if (ev.type === 'meeting') { void handleScheduleParticipation(ev, 'yes'); return; }
-                              setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'yes' }));
-                              showLocalToast('일정 참가가 수락되었습니다.');
-                            }}
-                            className={`px-3 py-1 rounded-xl text-sm font-bold border cursor-pointer select-none transition-all ${
-                              feedbackValue === 'yes'
-                                ? 'bg-toss-blue border-toss-blue text-white shadow-sm'
-                                : 'bg-white hover:bg-gray-50 text-toss-gray-700 border-gray-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
-                            }`}
-                          >
-                            수락
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (ev.type === 'meeting') { void handleScheduleParticipation(ev, 'no'); return; }
-                              setJoiningFeedback(prev => ({ ...prev, [ev.id]: 'no' }));
-                              showLocalToast('일정 참가가 거절되었습니다.');
-                            }}
-                            className={`px-3 py-1 rounded-xl text-sm font-bold border cursor-pointer select-none transition-all ${
-                              feedbackValue === 'no'
-                                ? 'bg-rose-500 border-rose-500 text-white shadow-sm'
-                                : 'bg-white hover:bg-gray-50 text-toss-gray-700 border-gray-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
-                            }`}
-                          >
-                            거절
-                          </button>
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 );
               })

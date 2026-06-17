@@ -25,7 +25,7 @@ export const ProjectAnalysis: React.FC = () => {
     largeFilesList 
   } = useProjectStore();
 
-  const [activeTab, setActiveTab] = useState<'directory' | 'schedule'>('directory');
+  const [activeTab, setActiveTab] = useState<'directory' | 'schedule'>('schedule');
 
   if (!activeProject) {
     return (
@@ -235,26 +235,26 @@ export const ProjectAnalysis: React.FC = () => {
       {/* Tabs */}
       <div className="flex items-center gap-1.5 bg-toss-gray-100 dark:bg-slate-900 p-1 rounded-2xl border border-toss-gray-200/60 dark:border-slate-800/80 w-fit shrink-0">
         <button
-          onClick={() => setActiveTab('directory')}
-          className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
-            activeTab === 'directory'
-              ? 'bg-white dark:bg-slate-800 text-toss-blue shadow-sm'
-              : 'text-toss-gray-450 hover:text-toss-gray-800 dark:hover:text-slate-350'
-          }`}
-        >
-          <Heart className="w-4 h-4" />
-          <span>디렉토리 정합성/청결도</span>
-        </button>
-        <button
           onClick={() => setActiveTab('schedule')}
           className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === 'schedule'
               ? 'bg-white dark:bg-slate-800 text-toss-blue shadow-sm'
-              : 'text-toss-gray-455 hover:text-toss-gray-800 dark:hover:text-slate-355'
+              : 'text-toss-gray-450 hover:text-toss-gray-800 dark:hover:text-slate-350'
           }`}
         >
           <Calendar className="w-4 h-4" />
           <span>일정 진행 위험도 분석</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('directory')}
+          className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'directory'
+              ? 'bg-white dark:bg-slate-800 text-toss-blue shadow-sm'
+              : 'text-toss-gray-455 hover:text-toss-gray-800 dark:hover:text-slate-355'
+          }`}
+        >
+          <Heart className="w-4 h-4" />
+          <span>디렉토리 정합성/청결도</span>
         </button>
       </div>
 
