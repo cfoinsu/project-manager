@@ -556,7 +556,10 @@ const MinutesPreviewCard = ({ meeting, notes, onOpenMinutes }: { meeting: Meetin
     <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm flex flex-col gap-3 h-[340px] min-h-0">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">회의록</h3>
-        <button onClick={onOpenMinutes} className="px-3 py-1.5 rounded-lg bg-slate-950 dark:bg-white text-white dark:text-slate-950 text-xs font-black cursor-pointer">노션으로 보기</button>
+        <button onClick={onOpenMinutes} className="px-3 py-1.5 rounded-lg bg-slate-950 dark:bg-white text-white dark:text-slate-950 text-xs font-black cursor-pointer flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          메모하기
+        </button>
       </div>
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 flex-1 min-h-0 overflow-y-auto p-4 text-sm font-semibold text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
         {meeting.notes?.trim() || fallback || '회의 중 메모를 남기면 회의록 초안이 이곳에 표시됩니다.'}

@@ -1,5 +1,5 @@
 import express from 'express';
-import { dbAll, dbRun } from '../db.js';
+import { dbAll, dbRun, dbTransaction } from '../db.js';
 import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -33,37 +33,38 @@ router.post('/save', verifyToken, async (req, res) => {
   }
 
   try {
-    // SQLite 트랜잭션 수동 모방 또는 개별 루프 실행
-    // 단순 루프로 여러 개 저장 (보통 5~10개 내외이므로 루프도 충분히 빠름)
-    for (const proc of processes) {
-      await dbRun(
-        `INSERT INTO processes (
-          id, project_id, name, description, sort_order, progress, status, start_date, end_date, difficulty
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-          project_id = excluded.project_id,
-          name = excluded.name,
-          description = excluded.description,
-          sort_order = excluded.sort_order,
-          progress = excluded.progress,
-          status = excluded.status,
-          start_date = excluded.start_date,
-          end_date = excluded.end_date,
-          difficulty = excluded.difficulty`,
-        [
-          proc.id,
-          proc.project_id,
-          proc.name,
-          proc.description || null,
-          proc.sort_order,
-          proc.progress || 0.0,
-          proc.status || '대기',
-          proc.start_date || '',
-          proc.end_date || '',
-          proc.difficulty || '보통'
-        ]
-      );
-    }
+    // [H-2] 트랜잭션으로 감싸 중간 실패 시 전체 롤백 보장
+    await dbTransaction(async () => {
+      for (const proc of processes) {
+        await dbRun(
+          `INSERT INTO processes (
+            id, project_id, name, description, sort_order, progress, status, start_date, end_date, difficulty
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+            project_id = excluded.project_id,
+            name = excluded.name,
+            description = excluded.description,
+            sort_order = excluded.sort_order,
+            progress = excluded.progress,
+            status = excluded.status,
+            start_date = excluded.start_date,
+            end_date = excluded.end_date,
+            difficulty = excluded.difficulty`,
+          [
+            proc.id,
+            proc.project_id,
+            proc.name,
+            proc.description || null,
+            proc.sort_order,
+            proc.progress || 0.0,
+            proc.status || '대기',
+            proc.start_date || '',
+            proc.end_date || '',
+            proc.difficulty || '보통'
+          ]
+        );
+      }
+    });
 
     return res.json({ message: '공정 목록이 성공적으로 업데이트되었습니다.' });
   } catch (error) {

@@ -19,8 +19,9 @@ const verifyAdminPassword = async (adminId, password) => {
 router.post('/register', verifyToken, checkRole(['admin']), async (req, res) => {
   const { username, name, email, password, role, department, position, job_role, phone, profile_image } = req.body;
 
-  if (!username || !name || !password || !role) {
-    return res.status(400).json({ message: '필수 필드(username, name, password, role)를 입력해 주세요.' });
+  // [C-1] email을 필수 필드로 추가 (DB 스키마 NOT NULL 제약 대응)
+  if (!username || !name || !email || !password || !role) {
+    return res.status(400).json({ message: '필수 필드(username, name, email, password, role)를 입력해 주세요.' });
   }
 
   if (!['admin', 'manager', 'member'].includes(role)) {

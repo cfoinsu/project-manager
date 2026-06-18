@@ -108,7 +108,13 @@ router.get('/', verifyToken, async (req, res) => {
     `;
     const params = [];
 
-    if (user_id) { sql += ' AND w.user_id = ?'; params.push(user_id); }
+    // [H-6] member는 자신의 workload만 조회 가능 (타인 업무량 열람 방지)
+    if (req.user.role === 'member') {
+      sql += ' AND w.user_id = ?';
+      params.push(req.user.id);
+    } else {
+      if (user_id) { sql += ' AND w.user_id = ?'; params.push(user_id); }
+    }
     if (project_id) { sql += ' AND w.project_id = ?'; params.push(project_id); }
     if (assignment_id) { sql += ' AND w.assignment_id = ?'; params.push(assignment_id); }
 

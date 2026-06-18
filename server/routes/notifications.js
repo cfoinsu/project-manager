@@ -30,17 +30,8 @@ router.get('/', verifyToken, async (req, res) => {
   }
 });
 
-router.put('/:id/read', verifyToken, async (req, res) => {
-  try {
-    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    await dbRun('UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ?', [nowStr, req.params.id, req.user.id]);
-    return res.json({ message: '알림을 읽음 처리했습니다.' });
-  } catch (error) {
-    console.error('Read notification failed:', error);
-    return res.status(500).json({ message: '알림 상태를 변경하지 못했습니다.' });
-  }
-});
-
+// [H-1] 정적 경로를 동적 경로보다 먼저 선언해야 올바르게 라우팅됨
+// "read-all"이 /:id에 먼저 매칭되는 버그 수정
 router.put('/read-all', verifyToken, async (req, res) => {
   try {
     const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -48,6 +39,17 @@ router.put('/read-all', verifyToken, async (req, res) => {
     return res.json({ message: '모든 알림을 읽음 처리했습니다.' });
   } catch (error) {
     console.error('Read all notifications failed:', error);
+    return res.status(500).json({ message: '알림 상태를 변경하지 못했습니다.' });
+  }
+});
+
+router.put('/:id/read', verifyToken, async (req, res) => {
+  try {
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    await dbRun('UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ?', [nowStr, req.params.id, req.user.id]);
+    return res.json({ message: '알림을 읽음 처리했습니다.' });
+  } catch (error) {
+    console.error('Read notification failed:', error);
     return res.status(500).json({ message: '알림 상태를 변경하지 못했습니다.' });
   }
 });

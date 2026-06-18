@@ -4,6 +4,135 @@ import { verifyToken, checkRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// [C-5] 정적 경로(static)를 동적 경로(dynamic /:id) 앞에 선언해야 Express가
+// 올바르게 매칭함. 순서: 정적 GET/POST → 목록/생성 → 동적 /:id
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── 정적 경로 (Static routes) ── 반드시 동적 /:id 보다 앞에 위치해야 함 ──
+
+// 5. POST /projects/documents/save - 산출물 매핑 정보 일괄 업데이트
+router.post('/documents/save', verifyToken, async (req, res) => {
+  const { documents } = req.body;
+
+  if (!Array.isArray(documents)) {
+    return res.status(400).json({ message: 'documents 배열이 유효하지 않습니다.' });
+  }
+
+  try {
+    for (const doc of documents) {
+      await dbRun(
+        `INSERT OR REPLACE INTO documents (
+          id, project_id, name, path, type, size, page_count, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          doc.id,
+          doc.project_id,
+          doc.name,
+          doc.path,
+          doc.type,
+          doc.size || 0,
+          doc.page_count || 0,
+          doc.updated_at
+        ]
+      );
+    }
+
+    return res.json({ message: '산출물 매핑 정보가 성공적으로 업데이트되었습니다.' });
+  } catch (error) {
+    console.error('Save documents failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 6. GET /projects/templates/list - 프로세스 템플릿 목록 조회
+router.get('/templates/list', verifyToken, async (req, res) => {
+  try {
+    const templates = await dbAll('SELECT * FROM templates ORDER BY created_at DESC');
+    return res.json({ templates });
+  } catch (error) {
+    console.error('Fetch templates failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 7. POST /projects/templates/save - 프로세스 템플릿 저장
+router.post('/templates/save', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
+  const { id, name, description, configJson } = req.body;
+
+  if (!name || !configJson) {
+    return res.status(400).json({ message: '이름(name)과 설정(configJson)은 필수 항목입니다.' });
+  }
+
+  try {
+    const tempId = id || 'temp-' + Math.random().toString(36).substr(2, 9);
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    await dbRun(
+      'INSERT OR REPLACE INTO templates (id, name, description, config_json, created_at) VALUES (?, ?, ?, ?, ?)',
+      [tempId, name, description || '', configJson, nowStr]
+    );
+
+    const template = await dbGet('SELECT * FROM templates WHERE id = ?', [tempId]);
+    return res.json({ template });
+  } catch (error) {
+    console.error('Save template failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 8. GET /projects/folder_templates/list - 폴더 양식 목록 조회
+router.get('/folder_templates/list', verifyToken, async (req, res) => {
+  try {
+    const templates = await dbAll('SELECT * FROM folder_templates ORDER BY created_at DESC');
+    return res.json({ templates });
+  } catch (error) {
+    console.error('Fetch folder templates failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 9. POST /projects/folder_templates/save - 폴더 양식 저장
+router.post('/folder_templates/save', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
+  const { id, name, description, structureJson } = req.body;
+
+  if (!name || !structureJson) {
+    return res.status(400).json({ message: '이름(name)과 구조(structureJson)는 필수 항목입니다.' });
+  }
+
+  try {
+    const tempId = id || 'foldertemp-' + Math.random().toString(36).substr(2, 9);
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    await dbRun(
+      'INSERT OR REPLACE INTO folder_templates (id, name, description, structure_json, created_at) VALUES (?, ?, ?, ?, ?)',
+      [tempId, name, description || '', structureJson, nowStr]
+    );
+
+    const template = await dbGet('SELECT * FROM folder_templates WHERE id = ?', [tempId]);
+    return res.json({ template });
+  } catch (error) {
+    console.error('Save folder template failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// 10. DELETE /projects/folder_templates/:id - 폴더 양식 삭제
+// 반드시 DELETE /:id 보다 앞에 위치해야 "folder_templates"가 :id로 오인되지 않음
+router.delete('/folder_templates/:id', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await dbRun('DELETE FROM folder_templates WHERE id = ?', [id]);
+    return res.json({ message: '폴더 양식이 삭제되었습니다.' });
+  } catch (error) {
+    console.error('Delete folder template failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// ── 동적 경로 (Dynamic routes) ── 정적 경로 뒤에 위치 ──
+
 // 1. GET /projects - 프로젝트 목록 조회
 router.get('/', verifyToken, async (req, res) => {
   try {
@@ -146,6 +275,22 @@ router.post('/', verifyToken, checkRole(['admin', 'manager']), async (req, res) 
   }
 });
 
+// 4. GET /projects/:projectId/documents - 프로젝트별 산출물 매핑 정보 조회
+router.get('/:projectId/documents', verifyToken, async (req, res) => {
+  const { projectId } = req.params;
+
+  try {
+    const documents = await dbAll(
+      'SELECT * FROM documents WHERE project_id = ? ORDER BY name ASC',
+      [projectId]
+    );
+    return res.json({ documents });
+  } catch (error) {
+    console.error('Fetch documents failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
 // 2.5 PUT /projects/:id - 프로젝트 수정 (admin, manager 가능)
 router.put('/:id', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
   const { id } = req.params;
@@ -213,141 +358,6 @@ router.delete('/:id', verifyToken, checkRole(['admin', 'manager']), async (req, 
     return res.json({ message: '프로젝트가 성공적으로 삭제되었습니다.' });
   } catch (error) {
     console.error('Delete project failed:', error);
-    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
-  }
-});
-
-// 4. GET /projects/:projectId/documents - 프로젝트별 산출물 매핑 정보 조회
-router.get('/:projectId/documents', verifyToken, async (req, res) => {
-  const { projectId } = req.params;
-
-  try {
-    const documents = await dbAll(
-      'SELECT * FROM documents WHERE project_id = ? ORDER BY name ASC',
-      [projectId]
-    );
-    return res.json({ documents });
-  } catch (error) {
-    console.error('Fetch documents failed:', error);
-    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
-  }
-});
-
-// 5. POST /projects/documents/save - 산출물 매핑 정보 일괄 업데이트
-router.post('/documents/save', verifyToken, async (req, res) => {
-  const { documents } = req.body;
-
-  if (!Array.isArray(documents)) {
-    return res.status(400).json({ message: 'documents 배열이 유효하지 않습니다.' });
-  }
-
-  try {
-    for (const doc of documents) {
-      await dbRun(
-        `INSERT OR REPLACE INTO documents (
-          id, project_id, name, path, type, size, page_count, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          doc.id,
-          doc.project_id,
-          doc.name,
-          doc.path,
-          doc.type,
-          doc.size || 0,
-          doc.page_count || 0,
-          doc.updated_at
-        ]
-      );
-    }
-
-    return res.json({ message: '산출물 매핑 정보가 성공적으로 업데이트되었습니다.' });
-  } catch (error) {
-    console.error('Save documents failed:', error);
-    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
-  }
-});
-
-// 6. GET /projects/templates/list - 프로세스 템플릿 목록 조회
-router.get('/templates/list', verifyToken, async (req, res) => {
-  try {
-    const templates = await dbAll('SELECT * FROM templates ORDER BY created_at DESC');
-    return res.json({ templates });
-  } catch (error) {
-    console.error('Fetch templates failed:', error);
-    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
-  }
-});
-
-// 7. POST /projects/templates/save - 프로세스 템플릿 저장
-router.post('/templates/save', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
-  const { id, name, description, configJson } = req.body;
-
-  if (!name || !configJson) {
-    return res.status(400).json({ message: '이름(name)과 설정(configJson)은 필수 항목입니다.' });
-  }
-
-  try {
-    const tempId = id || 'temp-' + Math.random().toString(36).substr(2, 9);
-    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
-
-    await dbRun(
-      'INSERT OR REPLACE INTO templates (id, name, description, config_json, created_at) VALUES (?, ?, ?, ?, ?)',
-      [tempId, name, description || '', configJson, nowStr]
-    );
-
-    const template = await dbGet('SELECT * FROM templates WHERE id = ?', [tempId]);
-    return res.json({ template });
-  } catch (error) {
-    console.error('Save template failed:', error);
-    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
-  }
-});
-
-// 8. GET /projects/folder_templates/list - 폴더 양식 목록 조회
-router.get('/folder_templates/list', verifyToken, async (req, res) => {
-  try {
-    const templates = await dbAll('SELECT * FROM folder_templates ORDER BY created_at DESC');
-    return res.json({ templates });
-  } catch (error) {
-    console.error('Fetch folder templates failed:', error);
-    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
-  }
-});
-
-// 9. POST /projects/folder_templates/save - 폴더 양식 저장
-router.post('/folder_templates/save', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
-  const { id, name, description, structureJson } = req.body;
-
-  if (!name || !structureJson) {
-    return res.status(400).json({ message: '이름(name)과 구조(structureJson)는 필수 항목입니다.' });
-  }
-
-  try {
-    const tempId = id || 'foldertemp-' + Math.random().toString(36).substr(2, 9);
-    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
-
-    await dbRun(
-      'INSERT OR REPLACE INTO folder_templates (id, name, description, structure_json, created_at) VALUES (?, ?, ?, ?, ?)',
-      [tempId, name, description || '', structureJson, nowStr]
-    );
-
-    const template = await dbGet('SELECT * FROM folder_templates WHERE id = ?', [tempId]);
-    return res.json({ template });
-  } catch (error) {
-    console.error('Save folder template failed:', error);
-    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
-  }
-});
-
-// 10. DELETE /projects/folder_templates/:id - 폴더 양식 삭제
-router.delete('/folder_templates/:id', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    await dbRun('DELETE FROM folder_templates WHERE id = ?', [id]);
-    return res.json({ message: '폴더 양식이 삭제되었습니다.' });
-  } catch (error) {
-    console.error('Delete folder template failed:', error);
     return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
   }
 });

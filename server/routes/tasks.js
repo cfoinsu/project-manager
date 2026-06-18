@@ -1,6 +1,6 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { dbAll, dbGet, dbRun } from '../db.js';
+import { dbAll, dbGet, dbRun, dbTransaction } from '../db.js';
 import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -53,45 +53,48 @@ router.post('/save', verifyToken, async (req, res) => {
   }
 
   try {
-    for (const task of tasks) {
-      await dbRun(
-        `INSERT INTO tasks (
-          id, process_id, title, description, assignee, status, priority,
-          created_at, updated_at, start_date, end_date, start_time, end_time, assignees, assignee_names
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-          process_id = excluded.process_id,
-          title = excluded.title,
-          description = excluded.description,
-          assignee = excluded.assignee,
-          status = excluded.status,
-          priority = excluded.priority,
-          updated_at = excluded.updated_at,
-          start_date = excluded.start_date,
-          end_date = excluded.end_date,
-          start_time = excluded.start_time,
-          end_time = excluded.end_time,
-          assignees = excluded.assignees,
-          assignee_names = excluded.assignee_names`,
-        [
-          task.id,
-          task.process_id,
-          task.title,
-          task.description || null,
-          task.assignee || '',
-          task.status || '대기',
-          task.priority || '보통',
-          task.created_at,
-          task.updated_at,
-          task.start_date || '',
-          task.end_date || '',
-          task.start_time || '',
-          task.end_time || '',
-          JSON.stringify(task.assignees || []),
-          JSON.stringify(task.assignee_names || [])
-        ]
-      );
-    }
+    // [H-2] 트랜잭션으로 감싸 중간 실패 시 전체 롤백 보장
+    await dbTransaction(async () => {
+      for (const task of tasks) {
+        await dbRun(
+          `INSERT INTO tasks (
+            id, process_id, title, description, assignee, status, priority,
+            created_at, updated_at, start_date, end_date, start_time, end_time, assignees, assignee_names
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+            process_id = excluded.process_id,
+            title = excluded.title,
+            description = excluded.description,
+            assignee = excluded.assignee,
+            status = excluded.status,
+            priority = excluded.priority,
+            updated_at = excluded.updated_at,
+            start_date = excluded.start_date,
+            end_date = excluded.end_date,
+            start_time = excluded.start_time,
+            end_time = excluded.end_time,
+            assignees = excluded.assignees,
+            assignee_names = excluded.assignee_names`,
+          [
+            task.id,
+            task.process_id,
+            task.title,
+            task.description || null,
+            task.assignee || '',
+            task.status || '대기',
+            task.priority || '보통',
+            task.created_at,
+            task.updated_at,
+            task.start_date || '',
+            task.end_date || '',
+            task.start_time || '',
+            task.end_time || '',
+            JSON.stringify(task.assignees || []),
+            JSON.stringify(task.assignee_names || [])
+          ]
+        );
+      }
+    });
 
     return res.json({ message: '작업 목록이 성공적으로 업데이트되었습니다.' });
   } catch (error) {

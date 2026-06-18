@@ -154,30 +154,89 @@ export const createMeetingNote = async (meetingId: string, content: string, note
 };
 
 const summarizeMeetingNotes = (notes: MeetingNote[]) => {
-  const ordered = [...notes].sort((a, b) => `${a.note_time}${a.created_at}`.localeCompare(`${b.note_time}${b.created_at}`));
-  const cleaned = ordered.map((note) => ({ ...note, content: note.content.trim() })).filter((note) => note.content);
+  if (!notes.length) return { notes: '', decisions: '' };
+
+  const cleaned = notes
+    .map((note) => ({ ...note, content: note.content.trim() }))
+    .filter((note) => note.content);
+
+  // 안건 정보를 현재 localStorage에서 찾아옴 (오프라인 fallback용)
   const meetings = readList<Meeting>('pa_meetings');
-  const agendaItems = meetings.flatMap((meeting) => meeting.agenda_items || []);
-  const agendaById = new Map(agendaItems.map((item) => [item.id, item.title]));
-  const grouped = cleaned.reduce<Record<string, MeetingNote[]>>((acc, note) => {
-    const key = note.agenda_item_id || 'general';
-    acc[key] = acc[key] || [];
-    acc[key].push(note);
-    return acc;
-  }, {});
-  const summary = Object.entries(grouped).map(([agendaId, group]) => {
-    const title = agendaById.get(agendaId) || '공통 메모';
-    return `[${title}]\n${group.map((note) => `- ${note.note_time || note.created_at.slice(11, 16)} ${note.author_name ? `${note.author_name}: ` : ''}${note.content}`).join('\n')}`;
-  }).join('\n\n');
-  const decisionKeywords = ['결정', '확정', '승인', '진행', '담당', '마감', '일정', '이슈', '리스크', '하기로', '필요'];
-  const decisions = cleaned
-    .filter((note) => decisionKeywords.some((keyword) => note.content.includes(keyword)))
-    .map((note) => `- ${agendaById.get(note.agenda_item_id || '') ? `[${agendaById.get(note.agenda_item_id || '')}] ` : ''}${note.content}`)
-    .join('\n');
+  const agendaItems = meetings.flatMap((m) => m.agenda_items || []);
+  const agendaOrder = new Map(agendaItems.map((item, idx) => [item.id, idx]));
+  const agendaById  = new Map(agendaItems.map((item) => [item.id, item.title]));
+
+  // 1차 정렬: 안건 순서 → 시간 → 생성 순
+  const sorted = [...cleaned].sort((a, b) => {
+    const oA = agendaOrder.get(a.agenda_item_id ?? '') ?? 9999;
+    const oB = agendaOrder.get(b.agenda_item_id ?? '') ?? 9999;
+    if (oA !== oB) return oA - oB;
+    const tA = `${a.note_time || a.created_at.slice(11, 16)}${a.created_at}`;
+    const tB = `${b.note_time || b.created_at.slice(11, 16)}${b.created_at}`;
+    return tA.localeCompare(tB);
+  });
+
+  // 2차 그룹핑: 안건별 → 같은 시간 + 같은 안건이면 하나 블록
+  const agendaGroups: Record<string, { title: string; blocks: { time: string; entries: MeetingNote[] }[] }> = {};
+  const ORDER_KEY = (note: MeetingNote) => note.agenda_item_id || 'general';
+
+  for (const note of sorted) {
+    const agendaKey = ORDER_KEY(note);
+    if (!agendaGroups[agendaKey]) {
+      agendaGroups[agendaKey] = { title: agendaById.get(agendaKey) || '공통 메모', blocks: [] };
+    }
+    const time = note.note_time || note.created_at.slice(11, 16);
+    const lastBlock = agendaGroups[agendaKey].blocks.at(-1);
+    if (lastBlock && lastBlock.time === time) {
+      lastBlock.entries.push(note);
+    } else {
+      agendaGroups[agendaKey].blocks.push({ time, entries: [note] });
+    }
+  }
+
+  // 3차 포맷 출력
+  const summaryParts = Object.values(agendaGroups).map(({ title, blocks }) => {
+    const lines = blocks.flatMap(({ time, entries }) => {
+      if (entries.length === 1) {
+        const n = entries[0];
+        const author = n.author_name ? `${n.author_name}: ` : '';
+        return [`- ${time} ${author}${n.content}`];
+      }
+      return [
+        `- ${time}`,
+        ...entries.map((n) => {
+          const author = n.author_name ? `${n.author_name}: ` : '';
+          return `  • ${author}${n.content}`;
+        }),
+      ];
+    });
+    return `[${title}]\n${lines.join('\n')}`;
+  });
+
+  const summary = summaryParts.join('\n\n');
+
+  // 결정사항 추출 (키워드 우선순위 분류)
+  const decisionKeywords = [
+    { label: '결정', words: ['결정', '확정', '승인', '하기로', '채택'] },
+    { label: '담당', words: ['담당', '책임자', '담당자'] },
+    { label: '마감', words: ['마감', '일정', '기한', '납기'] },
+    { label: '이슈', words: ['이슈', '리스크', '문제', '위험'] },
+    { label: '진행', words: ['진행', '필요', '검토', '확인'] },
+  ];
+  const allDecisionWords = decisionKeywords.flatMap((g) => g.words);
+
+  const decisionLines = sorted
+    .filter((note) => allDecisionWords.some((kw) => note.content.includes(kw)))
+    .map((note) => {
+      const group = decisionKeywords.find((g) => g.words.some((w) => note.content.includes(w)));
+      const agendaLabel = agendaById.get(note.agenda_item_id ?? '') ? `[${agendaById.get(note.agenda_item_id ?? '')}] ` : '';
+      const label = group ? `[${group.label}] ` : '';
+      return `- ${label}${agendaLabel}${note.content}`;
+    });
 
   return {
     notes: summary,
-    decisions: decisions || '- 별도 결정사항이 감지되지 않았습니다.',
+    decisions: decisionLines.length ? decisionLines.join('\n') : '- 별도 결정사항이 감지되지 않았습니다.',
   };
 };
 

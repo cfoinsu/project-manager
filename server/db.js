@@ -15,6 +15,10 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.error('Database connection failed:', err);
   } else {
     console.log('Connected to SQLite local.db at:', dbPath);
+    // [H-3] SQLite는 연결마다 PRAGMA를 설정해야 함 (세션 기반)
+    db.run('PRAGMA foreign_keys = ON', (pragmaErr) => {
+      if (pragmaErr) console.error('Failed to enable foreign keys:', pragmaErr);
+    });
   }
 });
 
@@ -46,10 +50,23 @@ export const dbAll = (sql, params = []) => {
   });
 };
 
+// [H-2] 트랜잭션 헬퍼 — 중간 실패 시 전체 롤백 보장
+export const dbTransaction = async (fn) => {
+  await dbRun('BEGIN TRANSACTION');
+  try {
+    const result = await fn();
+    await dbRun('COMMIT');
+    return result;
+  } catch (e) {
+    await dbRun('ROLLBACK');
+    throw e;
+  }
+};
+
 // Initialize Database Schemas and Seeds
 export const initDatabase = async () => {
   try {
-    // Enable foreign keys
+    // Enable foreign keys (also set on connect, but ensure it's on during init)
     await dbRun('PRAGMA foreign_keys = ON');
 
     // 1. Create Users Table

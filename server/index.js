@@ -36,10 +36,14 @@ app.use(cors({
 app.use(express.json());
 
 // Request logger middleware
+// [H-4] 민감 필드(비밀번호 등)는 마스킹하여 로그에 남기지 않음
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   if (req.method === 'POST' || req.method === 'PUT') {
-    console.log('  Body:', req.body);
+    const safeBody = { ...req.body };
+    const SENSITIVE_KEYS = ['password', 'newPassword', 'adminPassword', 'password_hash', 'pin'];
+    SENSITIVE_KEYS.forEach(k => { if (safeBody[k] !== undefined) safeBody[k] = '***'; });
+    console.log('  Body:', safeBody);
   }
   next();
 });
