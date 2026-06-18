@@ -159,21 +159,33 @@ export const initDatabase = async () => {
     await dbRun(`
       CREATE TABLE IF NOT EXISTS departments (
         id TEXT PRIMARY KEY,
-        name TEXT UNIQUE NOT NULL
+        name TEXT UNIQUE NOT NULL,
+        parent_id TEXT,
+        sort_order INTEGER DEFAULT 0
       )
     `);
     await dbRun(`
       CREATE TABLE IF NOT EXISTS positions (
         id TEXT PRIMARY KEY,
-        name TEXT UNIQUE NOT NULL
+        name TEXT UNIQUE NOT NULL,
+        sort_order INTEGER DEFAULT 0
       )
     `);
     await dbRun(`
       CREATE TABLE IF NOT EXISTS job_roles (
         id TEXT PRIMARY KEY,
-        name TEXT UNIQUE NOT NULL
+        name TEXT UNIQUE NOT NULL,
+        sort_order INTEGER DEFAULT 0
       )
     `);
+    for (const sql of [
+      'ALTER TABLE departments ADD COLUMN sort_order INTEGER DEFAULT 0',
+      'ALTER TABLE departments ADD COLUMN parent_id TEXT',
+      'ALTER TABLE positions ADD COLUMN sort_order INTEGER DEFAULT 0',
+      'ALTER TABLE job_roles ADD COLUMN sort_order INTEGER DEFAULT 0'
+    ]) {
+      try { await dbRun(sql); } catch (error) { if (!error.message.includes('duplicate column')) console.error('Org migration skipped:', error.message); }
+    }
 
     // Seed default organization data if empty
     const deptCount = await dbGet('SELECT COUNT(*) as count FROM departments');
@@ -181,7 +193,7 @@ export const initDatabase = async () => {
       const depts = ['기획부', '디자인부', '개발부', '경영지원부'];
       for (const d of depts) {
         const id = 'dept-' + Math.random().toString(36).substr(2, 9);
-        await dbRun('INSERT INTO departments (id, name) VALUES (?, ?)', [id, d]);
+        await dbRun('INSERT INTO departments (id, name, sort_order) VALUES (?, ?, ?)', [id, d, depts.indexOf(d)]);
       }
     }
     const posCount = await dbGet('SELECT COUNT(*) as count FROM positions');
@@ -189,7 +201,7 @@ export const initDatabase = async () => {
       const positions = ['사원', '대리', '과장', '차장', '부장', '이사', '대표'];
       for (const p of positions) {
         const id = 'pos-' + Math.random().toString(36).substr(2, 9);
-        await dbRun('INSERT INTO positions (id, name) VALUES (?, ?)', [id, p]);
+        await dbRun('INSERT INTO positions (id, name, sort_order) VALUES (?, ?, ?)', [id, p, positions.indexOf(p)]);
       }
     }
     const jroleCount = await dbGet('SELECT COUNT(*) as count FROM job_roles');
@@ -197,7 +209,7 @@ export const initDatabase = async () => {
       const jRoles = ['PM', 'PL', '기획자', '디자이너', '퍼블리셔', '개발자'];
       for (const jr of jRoles) {
         const id = 'jr-' + Math.random().toString(36).substr(2, 9);
-        await dbRun('INSERT INTO job_roles (id, name) VALUES (?, ?)', [id, jr]);
+        await dbRun('INSERT INTO job_roles (id, name, sort_order) VALUES (?, ?, ?)', [id, jr, jRoles.indexOf(jr)]);
       }
     }
 

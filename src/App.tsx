@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import type { Assignment, FolderNode, Meeting } from './types';
+import { useState, useEffect, useMemo } from 'react';
+import type { Assignment, FolderNode, Meeting, Project } from './types';
+import { getKoreaRegions } from './types';
 import { useProjectStore } from './store/projectStore';
 import { openInExplorer } from './utils/tauriBridge';
 import { useAuthStore } from './store/authStore';
@@ -37,7 +38,6 @@ import { DocumentLibraryView } from './components/DocumentLibraryView';
 import { MeetingsView } from './components/MeetingsView';
 import { MyWorkView } from './components/MyWorkView';
 
-import { CustomSelect } from './components/CustomSelect';
 import { getAssignments, migrateComments, syncGlobalServerUrl } from './utils/api';
 import { getMeetings } from './utils/collaborationApi';
 import { PROJECT_RISK_UPDATED_EVENT, readProjectRisksByProjectId, type ProjectRiskItem } from './utils/projectRiskStore';
@@ -62,7 +62,8 @@ import {
   UserCog,
   Bell,
   ChevronDown,
-  MoreHorizontal
+  MoreHorizontal,
+  MapPin
 } from 'lucide-react';
 
 function App() {
@@ -120,12 +121,15 @@ function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<string | null>(null);
   const [isProjectSwitcherOpen, setIsProjectSwitcherOpen] = useState(false);
+  const [isSidebarProjectPickerOpen, setIsSidebarProjectPickerOpen] = useState(false);
   const [isProjectMoreOpen, setIsProjectMoreOpen] = useState(false);
   const [isProjectPeopleOpen, setIsProjectPeopleOpen] = useState(false);
   const [isProjectActivityOpen, setIsProjectActivityOpen] = useState(false);
   const [projectAssignments, setProjectAssignments] = useState<Assignment[]>([]);
   const [projectMeetings, setProjectMeetings] = useState<Meeting[]>([]);
   const [projectRisks, setProjectRisks] = useState<ProjectRiskItem[]>([]);
+  const [sidebarProjectRegion, setSidebarProjectRegion] = useState('all');
+  const [switcherProjectRegion, setSwitcherProjectRegion] = useState('all');
   
   // Local tab state for the Folder Structure view ('tree' | 'stats' | 'mindmap' | 'treemap')
   const [structureTab, setStructureTab] = useState<'tree' | 'stats' | 'mindmap' | 'treemap'>('tree');
@@ -153,6 +157,45 @@ function App() {
     { label: '보고서', view: 'projects_reports' }
   ].filter((tab) => !tab.managerOnly || currentUser?.role !== 'member');
   const showProjectHeader = Boolean(activeProject && projectContextViews.includes(currentView));
+  const koreaRegionGroups = useMemo(() => getKoreaRegions(), []);
+
+  const getProjectRegionPath = (project: Project) => {
+    const codeMatch = koreaRegionGroups
+      .flatMap((group) => group.subRegions.map((subRegion) => ({ province: group.name, subRegion })))
+      .sort((a, b) => b.subRegion.code.length - a.subRegion.code.length)
+      .find((item) => project.code?.startsWith(item.subRegion.code));
+
+    if (codeMatch) {
+      return {
+        province: codeMatch.province,
+        subRegion: codeMatch.subRegion.name,
+      };
+    }
+
+    const regionText = project.client_region || '';
+    const provinceMatch = koreaRegionGroups.find((group) => regionText.includes(group.name));
+    if (provinceMatch) {
+      const subMatch = provinceMatch.subRegions.find((subRegion) => regionText.includes(subRegion.name));
+      return {
+        province: provinceMatch.name,
+        subRegion: subMatch?.name || '시군 미지정',
+      };
+    }
+
+    return { province: '지역 미지정', subRegion: '시군 미지정' };
+  };
+
+  const projectRegionSummaries = useMemo(() => {
+    const provinceCounts = new Map<string, number>();
+    projects.forEach((project) => {
+      const region = getProjectRegionPath(project);
+      provinceCounts.set(region.province, (provinceCounts.get(region.province) || 0) + 1);
+    });
+
+    return Array.from(provinceCounts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ko'));
+  }, [projects, koreaRegionGroups]);
 
   // Show Toast
   const showToast = (msg: string) => {
@@ -225,13 +268,14 @@ function App() {
 
   const closeProjectHeaderPopovers = () => {
     setIsProjectSwitcherOpen(false);
+    setIsSidebarProjectPickerOpen(false);
     setIsProjectPeopleOpen(false);
     setIsProjectActivityOpen(false);
     setIsProjectMoreOpen(false);
   };
 
   useEffect(() => {
-    const hasOpenPopover = isProjectSwitcherOpen || isProjectPeopleOpen || isProjectActivityOpen || isProjectMoreOpen;
+    const hasOpenPopover = isProjectSwitcherOpen || isSidebarProjectPickerOpen || isProjectPeopleOpen || isProjectActivityOpen || isProjectMoreOpen;
     if (!hasOpenPopover) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -242,7 +286,7 @@ function App() {
 
     document.addEventListener('pointerdown', handlePointerDown, true);
     return () => document.removeEventListener('pointerdown', handlePointerDown, true);
-  }, [isProjectActivityOpen, isProjectMoreOpen, isProjectPeopleOpen, isProjectSwitcherOpen]);
+  }, [isProjectActivityOpen, isProjectMoreOpen, isProjectPeopleOpen, isProjectSwitcherOpen, isSidebarProjectPickerOpen]);
 
   if (authLoading) {
     return <FullscreenLoadingOverlay message="세션을 확인하는 중입니다." />;
@@ -280,6 +324,118 @@ function App() {
     await selectProject(project);
     setView('projects_overview');
     closeProjectHeaderPopovers();
+  };
+
+  const renderProjectPickerPopover = (
+    selectedRegion: string,
+    onRegionChange: (region: string) => void,
+    className = 'absolute left-0 top-9 z-50'
+  ) => {
+    const visibleProjects = selectedRegion === 'all'
+      ? projects
+      : projects.filter((project) => getProjectRegionPath(project).province === selectedRegion);
+    const sectionMap = new Map<string, Project[]>();
+    visibleProjects.forEach((project) => {
+      const region = getProjectRegionPath(project);
+      const sectionName = selectedRegion === 'all' ? region.province : region.subRegion;
+      sectionMap.set(sectionName, [...(sectionMap.get(sectionName) || []), project]);
+    });
+    const sections = Array.from(sectionMap.entries())
+      .map(([name, items]) => ({ name, items: items.sort((a, b) => a.name.localeCompare(b.name, 'ko')) }))
+      .sort((a, b) => b.items.length - a.items.length || a.name.localeCompare(b.name, 'ko'));
+
+    return (
+      <div data-project-header-popover onClick={(event) => event.stopPropagation()} className={`${className} w-[560px] max-w-[calc(100vw-32px)] max-h-[520px] overflow-hidden rounded-2xl border border-toss-gray-150/70 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-toss-lg`}>
+        <div className="px-4 py-3 border-b border-toss-gray-100 dark:border-slate-800">
+          <p className="text-[11px] font-black text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider">지역별 프로젝트 선택</p>
+          <p className="mt-1 text-xs font-bold text-toss-gray-600 dark:text-slate-300">왼쪽에서 지역을 선택하고 오른쪽에서 프로젝트를 이동합니다.</p>
+        </div>
+        <div className="grid grid-cols-[170px_minmax(0,1fr)] min-h-[340px]">
+          <div className="border-r border-toss-gray-100 dark:border-slate-800 bg-toss-gray-50/60 dark:bg-slate-900/50 p-2 overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => onRegionChange('all')}
+              className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-black cursor-pointer ${
+                selectedRegion === 'all' ? 'bg-white dark:bg-slate-950 text-toss-blue shadow-sm' : 'text-toss-gray-500 dark:text-slate-400 hover:bg-white/70 dark:hover:bg-slate-950/70'
+              }`}
+            >
+              <span>전체 지역</span>
+              <span>{projects.length}</span>
+            </button>
+            <div className="mt-1 flex flex-col gap-1">
+              {projectRegionSummaries.map((region) => (
+                <button
+                  key={region.name}
+                  type="button"
+                  onClick={() => onRegionChange(region.name)}
+                  className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-black cursor-pointer ${
+                    selectedRegion === region.name ? 'bg-white dark:bg-slate-950 text-toss-blue shadow-sm' : 'text-toss-gray-500 dark:text-slate-400 hover:bg-white/70 dark:hover:bg-slate-950/70'
+                  }`}
+                >
+                  <span className="truncate">{region.name}</span>
+                  <span className="shrink-0">{region.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-y-auto p-3">
+            {sections.length === 0 ? (
+              <div className="h-full min-h-[260px] flex items-center justify-center text-xs font-bold text-toss-gray-400">선택한 지역의 프로젝트가 없습니다.</div>
+            ) : (
+              sections.map((section) => (
+                <div key={section.name} className="mb-3 last:mb-0">
+                  <div className="px-1.5 pb-1.5 flex items-center justify-between text-[10px] font-black text-toss-gray-400 dark:text-slate-500">
+                    <span className="flex items-center gap-1.5">
+                      <MapPin className="w-3 h-3" />
+                      {section.name}
+                    </span>
+                    <span>{section.items.length}</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {section.items.map((project) => {
+                      const isCurrentProject = project.id === activeProject?.id;
+                      const region = getProjectRegionPath(project);
+                      return (
+                        <button
+                          key={project.id}
+                          onClick={() => handleSwitchProject(project)}
+                          className={`w-full flex items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition-colors cursor-pointer ${
+                            isCurrentProject
+                              ? 'bg-toss-blue-light/70 text-toss-blue'
+                              : 'hover:bg-toss-gray-50 dark:hover:bg-slate-900 text-toss-gray-800 dark:text-slate-200'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {project.code && (
+                                <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-toss-gray-100 dark:bg-slate-800 text-[10px] font-mono font-black text-toss-gray-500 dark:text-slate-400">
+                                  {project.code}
+                                </span>
+                              )}
+                              <p className="text-sm font-black truncate">{project.name}</p>
+                            </div>
+                            <p className="mt-1 text-[11px] font-semibold text-toss-gray-400 dark:text-slate-500 truncate">
+                              {region.province} · {region.subRegion} · {project.client_name || project.path}
+                            </p>
+                          </div>
+                          <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${
+                            isCurrentProject
+                              ? 'bg-white/80 text-toss-blue'
+                              : 'bg-toss-gray-100 dark:bg-slate-800 text-toss-gray-500 dark:text-slate-400'
+                          }`}>
+                            {isCurrentProject ? '현재' : project.status || '진행중'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const formatActivityWhen = (value?: string) => {
@@ -564,29 +720,35 @@ function App() {
         {/* Project Selector dropdown in Sidebar */}
         {currentUser && (
           <div className="px-5 mb-6 shrink-0 text-left">
-            <label className="text-xs font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider">활성 프로젝트</label>
-            <div className="relative mt-1">
-              <CustomSelect
-                value={activeProject?.id || ''}
-                onChange={(e) => {
-                  if (e.target.value === '') {
-                    selectProject(null);
-                    setView('dashboard');
-                  } else {
-                    const found = projects.find(p => p.id === e.target.value);
-                    if (found) {
-                      selectProject(found);
-                      setView('projects_overview');
-                    }
-                  }
+            <label className="text-xs font-bold text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider">프로젝트</label>
+            <div className="relative mt-2" data-project-header-popover>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSidebarProjectPickerOpen((open) => !open);
+                  setIsProjectSwitcherOpen(false);
+                  setIsProjectPeopleOpen(false);
+                  setIsProjectActivityOpen(false);
+                  setIsProjectMoreOpen(false);
                 }}
-                className="w-full text-xs font-bold pl-3.5 pr-8 py-3 bg-toss-gray-50 hover:bg-toss-gray-100 dark:bg-slate-850 dark:hover:bg-slate-800 border-none rounded-2xl focus:outline-none transition-all font-semibold cursor-pointer appearance-none text-toss-gray-800 dark:text-slate-200"
+                className="w-full rounded-2xl bg-white hover:bg-toss-gray-50 dark:bg-slate-900 dark:hover:bg-slate-850 border border-toss-gray-100 dark:border-slate-800 px-3.5 py-3 text-left transition-all cursor-pointer"
               >
-                <option value="">프로젝트 선택 안 함</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.name}</option>
-                ))}
-              </CustomSelect>
+                <span className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 flex items-center gap-2">
+                    <FolderOpen className="w-4 h-4 text-toss-blue shrink-0" />
+                    <span className="block text-xs font-black text-toss-gray-800 dark:text-slate-200 truncate">
+                      {activeProject ? activeProject.name : '프로젝트 선택'}
+                    </span>
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-toss-gray-400 shrink-0 transition-transform ${isSidebarProjectPickerOpen ? 'rotate-180' : ''}`} />
+                </span>
+              </button>
+              {isSidebarProjectPickerOpen && (
+                <>
+                  <button className="fixed inset-0 z-40 cursor-default" aria-label="프로젝트 선택 닫기" onClick={closeProjectHeaderPopovers} />
+                  {renderProjectPickerPopover(sidebarProjectRegion, setSidebarProjectRegion, 'absolute left-0 top-[calc(100%+8px)] z-50')}
+                </>
+              )}
             </div>
           </div>
         )}
@@ -816,40 +978,7 @@ function App() {
                 {isProjectSwitcherOpen && (
                   <>
                     <button className="fixed inset-0 z-40 cursor-default" aria-label="프로젝트 전환 닫기" onClick={closeProjectHeaderPopovers} />
-                    <div data-project-header-popover onClick={(event) => event.stopPropagation()} className="absolute left-0 top-9 z-50 w-80 max-h-[420px] overflow-hidden rounded-2xl border border-toss-gray-150/70 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-toss-lg">
-                      <div className="px-4 py-3 border-b border-toss-gray-100 dark:border-slate-800">
-                        <p className="text-[11px] font-black text-toss-gray-400 dark:text-slate-500 uppercase tracking-wider">Projects</p>
-                        <p className="mt-1 text-xs font-bold text-toss-gray-600 dark:text-slate-300">이동할 프로젝트를 선택하세요.</p>
-                      </div>
-                      <div className="max-h-80 overflow-y-auto p-2">
-                        {projects.map((project) => {
-                          const isCurrentProject = project.id === activeProject.id;
-                          return (
-                            <button
-                              key={project.id}
-                              onClick={() => handleSwitchProject(project)}
-                              className={`w-full flex items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition-colors cursor-pointer ${
-                                isCurrentProject
-                                  ? 'bg-toss-blue-light/70 text-toss-blue'
-                                  : 'hover:bg-toss-gray-50 dark:hover:bg-slate-900 text-toss-gray-800 dark:text-slate-200'
-                              }`}
-                            >
-                              <div className="min-w-0">
-                                <p className="text-sm font-black truncate">{project.name}</p>
-                                <p className="mt-1 text-[11px] font-semibold text-toss-gray-400 dark:text-slate-500 truncate">{project.path}</p>
-                              </div>
-                              <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${
-                                isCurrentProject
-                                  ? 'bg-white/80 text-toss-blue'
-                                  : 'bg-toss-gray-100 dark:bg-slate-800 text-toss-gray-500 dark:text-slate-400'
-                              }`}>
-                                {isCurrentProject ? '현재' : project.status || '진행중'}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    {renderProjectPickerPopover(switcherProjectRegion, setSwitcherProjectRegion)}
                   </>
                 )}
               </div>

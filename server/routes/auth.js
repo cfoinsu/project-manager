@@ -257,6 +257,21 @@ router.put('/users/:id', verifyToken, checkRole(['admin']), async (req, res) => 
   }
 });
 
+// 5.0.1 PUT /auth/users/:id/department - 조직 트리에서 사용자 부서 빠른 이동
+router.put('/users/:id/department', verifyToken, checkRole(['admin']), async (req, res) => {
+  const { id } = req.params;
+  const { department } = req.body;
+
+  try {
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    await dbRun('UPDATE users SET department = ?, updated_at = ? WHERE id = ?', [department || null, nowStr, id]);
+    return res.json({ message: '부서가 변경되었습니다.' });
+  } catch (error) {
+    console.error('Move user department failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
 // 5.1 POST /auth/users/:id/reset-device - admin 전용 등록 장치 초기화 (비밀번호 재인증 필수)
 router.post('/users/:id/reset-device', verifyToken, checkRole(['admin']), async (req, res) => {
   const { id } = req.params;
@@ -334,13 +349,19 @@ router.delete('/users/:id', verifyToken, checkRole(['admin']), async (req, res) 
 // =============================================================
 // 조직 정보 관리 API (부서, 직급, 직무)
 // =============================================================
+const resolveOrgTable = (type) => {
+  if (type === 'departments') return 'departments';
+  if (type === 'positions') return 'positions';
+  if (type === 'job-roles') return 'job_roles';
+  return '';
+};
 
 // GET /auth/org-info - 부서, 직급, 직무 전체 목록 조회
 router.get('/org-info', verifyToken, async (req, res) => {
   try {
-    const departments = await dbAll('SELECT id, name FROM departments ORDER BY name ASC');
-    const positions = await dbAll('SELECT id, name FROM positions ORDER BY name ASC');
-    const jobRoles = await dbAll('SELECT id, name FROM job_roles ORDER BY name ASC');
+    const departments = await dbAll('SELECT id, name, parent_id, sort_order FROM departments ORDER BY sort_order ASC, name ASC');
+    const positions = await dbAll('SELECT id, name, sort_order FROM positions ORDER BY sort_order ASC, name ASC');
+    const jobRoles = await dbAll('SELECT id, name, sort_order FROM job_roles ORDER BY sort_order ASC, name ASC');
     return res.json({ departments, positions, jobRoles });
   } catch (error) {
     console.error('Fetch org-info failed:', error);
@@ -351,27 +372,103 @@ router.get('/org-info', verifyToken, async (req, res) => {
 // POST /auth/org-info/:type - 조직 정보 추가 (admin만 가능)
 router.post('/org-info/:type', verifyToken, checkRole(['admin']), async (req, res) => {
   const { type } = req.params;
-  const { name } = req.body;
+  const { name, parent_id } = req.body;
 
   if (!name) {
     return res.status(400).json({ message: '이름을 입력해 주세요.' });
   }
 
-  let table = '';
-  if (type === 'departments') table = 'departments';
-  else if (type === 'positions') table = 'positions';
-  else if (type === 'job-roles') table = 'job_roles';
-  else {
+  const table = resolveOrgTable(type);
+  if (!table) {
     return res.status(400).json({ message: '잘못된 타입입니다.' });
   }
 
   try {
     const prefix = type.substring(0, 3);
     const id = prefix + '-' + Math.random().toString(36).substr(2, 9);
-    await dbRun(`INSERT INTO ${table} (id, name) VALUES (?, ?)`, [id, name]);
-    return res.status(201).json({ message: '성공적으로 추가되었습니다.', item: { id, name } });
+    const countRow = type === 'departments'
+      ? await dbAll('SELECT COUNT(*) as count FROM departments WHERE COALESCE(parent_id, "") = COALESCE(?, "")', [parent_id || null])
+      : await dbAll(`SELECT COUNT(*) as count FROM ${table}`);
+    const sortOrder = countRow?.[0]?.count || 0;
+    if (type === 'departments') {
+      await dbRun('INSERT INTO departments (id, name, parent_id, sort_order) VALUES (?, ?, ?, ?)', [id, name, parent_id || null, sortOrder]);
+      return res.status(201).json({ message: '성공적으로 추가되었습니다.', item: { id, name, parent_id: parent_id || null, sort_order: sortOrder } });
+    }
+    await dbRun(`INSERT INTO ${table} (id, name, sort_order) VALUES (?, ?, ?)`, [id, name, sortOrder]);
+    return res.status(201).json({ message: '성공적으로 추가되었습니다.', item: { id, name, sort_order: sortOrder } });
   } catch (error) {
     console.error(`Add ${type} failed:`, error);
+    if (error.message && error.message.includes('UNIQUE')) {
+      return res.status(400).json({ message: '이미 존재하는 이름입니다.' });
+    }
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// PUT /auth/org-info/:type/reorder - 조직 정보 순서 저장
+router.put('/org-info/:type/reorder', verifyToken, checkRole(['admin']), async (req, res) => {
+  const { type } = req.params;
+  const { ids } = req.body;
+  const table = resolveOrgTable(type);
+  if (!table) return res.status(400).json({ message: '잘못된 타입입니다.' });
+  if (!Array.isArray(ids)) return res.status(400).json({ message: '순서 정보가 올바르지 않습니다.' });
+
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      if (type === 'departments') {
+        const row = await dbGet('SELECT parent_id FROM departments WHERE id = ?', [ids[i]]);
+        await dbRun('UPDATE departments SET parent_id = ?, sort_order = ? WHERE id = ?', [row?.parent_id || null, i, ids[i]]);
+      } else {
+        await dbRun(`UPDATE ${table} SET sort_order = ? WHERE id = ?`, [i, ids[i]]);
+      }
+    }
+    return res.json({ message: '순서가 저장되었습니다.' });
+  } catch (error) {
+    console.error(`Reorder ${type} failed:`, error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// PUT /auth/org-info/departments/:id/parent - 부서/팀의 상위 노드 변경
+router.put('/org-info/departments/:id/parent', verifyToken, checkRole(['admin']), async (req, res) => {
+  const { id } = req.params;
+  const { parent_id } = req.body;
+
+  if (parent_id === id) {
+    return res.status(400).json({ message: '자기 자신을 상위 조직으로 지정할 수 없습니다.' });
+  }
+
+  try {
+    const target = await dbGet('SELECT id FROM departments WHERE id = ?', [id]);
+    if (!target) return res.status(404).json({ message: '조직을 찾을 수 없습니다.' });
+
+    if (parent_id) {
+      const parent = await dbGet('SELECT id FROM departments WHERE id = ?', [parent_id]);
+      if (!parent) return res.status(404).json({ message: '상위 조직을 찾을 수 없습니다.' });
+    }
+
+    const countRow = await dbGet('SELECT COUNT(*) as count FROM departments WHERE COALESCE(parent_id, "") = COALESCE(?, "")', [parent_id || null]);
+    await dbRun('UPDATE departments SET parent_id = ?, sort_order = ? WHERE id = ?', [parent_id || null, countRow?.count || 0, id]);
+    return res.json({ message: '상위 조직이 변경되었습니다.' });
+  } catch (error) {
+    console.error('Move department parent failed:', error);
+    return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
+  }
+});
+
+// PUT /auth/org-info/:type/:id - 조직 정보 이름 수정
+router.put('/org-info/:type/:id', verifyToken, checkRole(['admin']), async (req, res) => {
+  const { type, id } = req.params;
+  const { name } = req.body;
+  const table = resolveOrgTable(type);
+  if (!table) return res.status(400).json({ message: '잘못된 타입입니다.' });
+  if (!name) return res.status(400).json({ message: '이름을 입력해 주세요.' });
+
+  try {
+    await dbRun(`UPDATE ${table} SET name = ? WHERE id = ?`, [name, id]);
+    return res.json({ message: '수정되었습니다.' });
+  } catch (error) {
+    console.error(`Update ${type} failed:`, error);
     if (error.message && error.message.includes('UNIQUE')) {
       return res.status(400).json({ message: '이미 존재하는 이름입니다.' });
     }
@@ -383,11 +480,8 @@ router.post('/org-info/:type', verifyToken, checkRole(['admin']), async (req, re
 router.delete('/org-info/:type/:id', verifyToken, checkRole(['admin']), async (req, res) => {
   const { type, id } = req.params;
 
-  let table = '';
-  if (type === 'departments') table = 'departments';
-  else if (type === 'positions') table = 'positions';
-  else if (type === 'job-roles') table = 'job_roles';
-  else {
+  const table = resolveOrgTable(type);
+  if (!table) {
     return res.status(400).json({ message: '잘못된 타입입니다.' });
   }
 

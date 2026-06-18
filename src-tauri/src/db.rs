@@ -415,33 +415,41 @@ pub fn init_db(db_path: &PathBuf) -> Result<()> {
     let _ = conn.execute("UPDATE users SET updated_at = created_at WHERE updated_at IS NULL", []);
 
     // Create org info tables
-    conn.execute("CREATE TABLE IF NOT EXISTS departments (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL)", [])?;
-    conn.execute("CREATE TABLE IF NOT EXISTS positions (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL)", [])?;
-    conn.execute("CREATE TABLE IF NOT EXISTS job_roles (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL)", [])?;
+    conn.execute("CREATE TABLE IF NOT EXISTS departments (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, parent_id TEXT, sort_order INTEGER DEFAULT 0)", [])?;
+    conn.execute("CREATE TABLE IF NOT EXISTS positions (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, sort_order INTEGER DEFAULT 0)", [])?;
+    conn.execute("CREATE TABLE IF NOT EXISTS job_roles (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, sort_order INTEGER DEFAULT 0)", [])?;
+    for sql in [
+        "ALTER TABLE departments ADD COLUMN sort_order INTEGER DEFAULT 0",
+        "ALTER TABLE departments ADD COLUMN parent_id TEXT",
+        "ALTER TABLE positions ADD COLUMN sort_order INTEGER DEFAULT 0",
+        "ALTER TABLE job_roles ADD COLUMN sort_order INTEGER DEFAULT 0",
+    ] {
+        let _ = conn.execute(sql, []);
+    }
 
     // Seed default org info in SQLite
     let dept_count: i64 = conn.query_row("SELECT COUNT(*) FROM departments", [], |row| row.get(0))?;
     if dept_count == 0 {
         let depts = vec!["기획부", "디자인부", "개발부", "경영지원부"];
-        for d in depts {
+        for (idx, d) in depts.iter().enumerate() {
             let id = format!("dept-{}", Uuid::new_v4().to_string().split_at(8).0);
-            let _ = conn.execute("INSERT INTO departments (id, name) VALUES (?, ?)", params![id, d]);
+            let _ = conn.execute("INSERT INTO departments (id, name, sort_order) VALUES (?, ?, ?)", params![id, d, idx as i64]);
         }
     }
     let pos_count: i64 = conn.query_row("SELECT COUNT(*) FROM positions", [], |row| row.get(0))?;
     if pos_count == 0 {
         let positions = vec!["사원", "대리", "과장", "차장", "부장", "이사", "대표"];
-        for p in positions {
+        for (idx, p) in positions.iter().enumerate() {
             let id = format!("pos-{}", Uuid::new_v4().to_string().split_at(8).0);
-            let _ = conn.execute("INSERT INTO positions (id, name) VALUES (?, ?)", params![id, p]);
+            let _ = conn.execute("INSERT INTO positions (id, name, sort_order) VALUES (?, ?, ?)", params![id, p, idx as i64]);
         }
     }
     let jrole_count: i64 = conn.query_row("SELECT COUNT(*) FROM job_roles", [], |row| row.get(0))?;
     if jrole_count == 0 {
         let jroles = vec!["PM", "PL", "기획자", "디자이너", "퍼블리셔", "개발자"];
-        for jr in jroles {
+        for (idx, jr) in jroles.iter().enumerate() {
             let id = format!("jr-{}", Uuid::new_v4().to_string().split_at(8).0);
-            let _ = conn.execute("INSERT INTO job_roles (id, name) VALUES (?, ?)", params![id, jr]);
+            let _ = conn.execute("INSERT INTO job_roles (id, name, sort_order) VALUES (?, ?, ?)", params![id, jr, idx as i64]);
         }
     }
 
@@ -1374,6 +1382,17 @@ pub fn db_reset_user_device(app_handle: tauri::AppHandle, id: String) -> Result<
 }
 
 #[tauri::command]
+pub fn db_move_user_department(app_handle: tauri::AppHandle, id: String, department: Option<String>) -> Result<(), String> {
+    let db_path = get_db_path(&app_handle);
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    
+    conn.execute("UPDATE users SET department = ?, updated_at = ? WHERE id = ?", params![department, now, id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn db_reset_user_password(app_handle: tauri::AppHandle, id: String, password_hash: String) -> Result<(), String> {
     let db_path = get_db_path(&app_handle);
     let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
@@ -1456,6 +1475,8 @@ pub fn get_raw_device_id() -> Result<String, String> {
 pub struct OrgItem {
     pub id: String,
     pub name: String,
+    pub parent_id: Option<String>,
+    pub sort_order: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -1470,23 +1491,23 @@ pub fn db_get_org_info(app_handle: tauri::AppHandle) -> Result<OrgInfo, String> 
     let db_path = get_db_path(&app_handle);
     let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
     
-    let mut stmt = conn.prepare("SELECT id, name FROM departments ORDER BY name ASC").map_err(|e| e.to_string())?;
-    let depts = stmt.query_map([], |row| Ok(OrgItem { id: row.get(0)?, name: row.get(1)? })).map_err(|e| e.to_string())?
+    let mut stmt = conn.prepare("SELECT id, name, parent_id, sort_order FROM departments ORDER BY sort_order ASC, name ASC").map_err(|e| e.to_string())?;
+    let depts = stmt.query_map([], |row| Ok(OrgItem { id: row.get(0)?, name: row.get(1)?, parent_id: row.get(2).ok(), sort_order: row.get(3).ok() })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
         
-    let mut stmt = conn.prepare("SELECT id, name FROM positions ORDER BY name ASC").map_err(|e| e.to_string())?;
-    let positions = stmt.query_map([], |row| Ok(OrgItem { id: row.get(0)?, name: row.get(1)? })).map_err(|e| e.to_string())?
+    let mut stmt = conn.prepare("SELECT id, name, sort_order FROM positions ORDER BY sort_order ASC, name ASC").map_err(|e| e.to_string())?;
+    let positions = stmt.query_map([], |row| Ok(OrgItem { id: row.get(0)?, name: row.get(1)?, parent_id: None, sort_order: row.get(2).ok() })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
         
-    let mut stmt = conn.prepare("SELECT id, name FROM job_roles ORDER BY name ASC").map_err(|e| e.to_string())?;
-    let job_roles = stmt.query_map([], |row| Ok(OrgItem { id: row.get(0)?, name: row.get(1)? })).map_err(|e| e.to_string())?
+    let mut stmt = conn.prepare("SELECT id, name, sort_order FROM job_roles ORDER BY sort_order ASC, name ASC").map_err(|e| e.to_string())?;
+    let job_roles = stmt.query_map([], |row| Ok(OrgItem { id: row.get(0)?, name: row.get(1)?, parent_id: None, sort_order: row.get(2).ok() })).map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
         
     Ok(OrgInfo { departments: depts, positions, job_roles })
 }
 
 #[tauri::command]
-pub fn db_add_org_info(app_handle: tauri::AppHandle, r#type: String, name: String) -> Result<OrgItem, String> {
+pub fn db_add_org_info(app_handle: tauri::AppHandle, r#type: String, name: String, parent_id: Option<String>) -> Result<OrgItem, String> {
     let db_path = get_db_path(&app_handle);
     let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
     
@@ -1505,10 +1526,74 @@ pub fn db_add_org_info(app_handle: tauri::AppHandle, r#type: String, name: Strin
     };
     
     let id = format!("{}-{}", prefix, Uuid::new_v4().to_string().split_at(8).0);
-    conn.execute(&format!("INSERT INTO {} (id, name) VALUES (?, ?)", table), params![id, name])
-        .map_err(|e| e.to_string())?;
+    let count: i64 = if r#type == "departments" {
+        conn.query_row("SELECT COUNT(*) FROM departments WHERE COALESCE(parent_id, '') = COALESCE(?, '')", params![parent_id.clone()], |row| row.get(0)).unwrap_or(0)
+    } else {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {}", table), [], |row| row.get(0)).unwrap_or(0)
+    };
+    if r#type == "departments" {
+        conn.execute("INSERT INTO departments (id, name, parent_id, sort_order) VALUES (?, ?, ?, ?)", params![id, name, parent_id, count])
+            .map_err(|e| e.to_string())?;
+    } else {
+        conn.execute(&format!("INSERT INTO {} (id, name, sort_order) VALUES (?, ?, ?)", table), params![id, name, count])
+            .map_err(|e| e.to_string())?;
+    }
         
-    Ok(OrgItem { id, name })
+    Ok(OrgItem { id, name, parent_id, sort_order: Some(count) })
+}
+
+#[tauri::command]
+pub fn db_update_org_info(app_handle: tauri::AppHandle, r#type: String, id: String, name: String) -> Result<(), String> {
+    let db_path = get_db_path(&app_handle);
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let table = match r#type.as_str() {
+        "departments" => "departments",
+        "positions" => "positions",
+        "job-roles" => "job_roles",
+        _ => return Err("Invalid type".to_string()),
+    };
+    conn.execute(&format!("UPDATE {} SET name = ? WHERE id = ?", table), params![name, id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn db_reorder_org_info(app_handle: tauri::AppHandle, r#type: String, ids: Vec<String>) -> Result<(), String> {
+    let db_path = get_db_path(&app_handle);
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let table = match r#type.as_str() {
+        "departments" => "departments",
+        "positions" => "positions",
+        "job-roles" => "job_roles",
+        _ => return Err("Invalid type".to_string()),
+    };
+    for (idx, id) in ids.iter().enumerate() {
+        conn.execute(&format!("UPDATE {} SET sort_order = ? WHERE id = ?", table), params![idx as i64, id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn db_move_department_parent(app_handle: tauri::AppHandle, id: String, parent_id: Option<String>) -> Result<(), String> {
+    if parent_id.as_deref() == Some(id.as_str()) {
+        return Err("Cannot move department under itself".to_string());
+    }
+    let db_path = get_db_path(&app_handle);
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM departments WHERE COALESCE(parent_id, '') = COALESCE(?, '')",
+            params![parent_id.clone()],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    conn.execute(
+        "UPDATE departments SET parent_id = ?, sort_order = ? WHERE id = ?",
+        params![parent_id, count, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

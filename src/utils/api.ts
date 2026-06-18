@@ -269,10 +269,10 @@ export const initLocalFallbackUsers = () => {
   }
   if (!localStorage.getItem('pa_fallback_departments')) {
     localStorage.setItem('pa_fallback_departments', JSON.stringify([
-      { id: 'dept-1', name: '기획부' },
-      { id: 'dept-2', name: '디자인부' },
-      { id: 'dept-3', name: '개발부' },
-      { id: 'dept-4', name: '경영지원부' }
+      { id: 'dept-1', name: '기획부', parent_id: null, sort_order: 0 },
+      { id: 'dept-2', name: '디자인부', parent_id: null, sort_order: 1 },
+      { id: 'dept-3', name: '개발부', parent_id: null, sort_order: 2 },
+      { id: 'dept-4', name: '경영지원부', parent_id: null, sort_order: 3 }
     ]));
   }
   if (!localStorage.getItem('pa_fallback_positions')) {
@@ -412,7 +412,7 @@ export const localFallbackGetOrgInfo = () => {
   return { departments, positions, jobRoles };
 };
 
-export const localFallbackAddOrgInfo = (type: string, name: string) => {
+export const localFallbackAddOrgInfo = (type: string, name: string, parentId?: string | null) => {
   const key = type === 'departments' ? 'pa_fallback_departments' :
               type === 'positions' ? 'pa_fallback_positions' : 'pa_fallback_job_roles';
   const list = JSON.parse(localStorage.getItem(key) || '[]');
@@ -421,11 +421,48 @@ export const localFallbackAddOrgInfo = (type: string, name: string) => {
   }
   const newItem = {
     id: type.substring(0, 3) + '-' + Math.random().toString(36).substr(2, 9),
-    name
+    name,
+    parent_id: type === 'departments' ? parentId || null : undefined,
+    sort_order: list.length
   };
   list.push(newItem);
   localStorage.setItem(key, JSON.stringify(list));
   return newItem;
+};
+
+export const localFallbackUpdateOrgInfo = (type: string, id: string, name: string) => {
+  const key = type === 'departments' ? 'pa_fallback_departments' :
+              type === 'positions' ? 'pa_fallback_positions' : 'pa_fallback_job_roles';
+  const list = JSON.parse(localStorage.getItem(key) || '[]');
+  if (list.some((item: any) => item.id !== id && item.name === name)) {
+    throw new Error('이미 존재하는 이름입니다.');
+  }
+  const idx = list.findIndex((item: any) => item.id === id);
+  if (idx > -1) {
+    list[idx] = { ...list[idx], name };
+    localStorage.setItem(key, JSON.stringify(list));
+  }
+};
+
+export const localFallbackReorderOrgInfo = (type: string, ids: string[]) => {
+  const key = type === 'departments' ? 'pa_fallback_departments' :
+              type === 'positions' ? 'pa_fallback_positions' : 'pa_fallback_job_roles';
+  const list = JSON.parse(localStorage.getItem(key) || '[]');
+  const order = new Map(ids.map((id, index) => [id, index]));
+  const next = [...list]
+    .sort((a: any, b: any) => (order.get(a.id) ?? 9999) - (order.get(b.id) ?? 9999))
+    .map((item: any, index: number) => ({ ...item, sort_order: index }));
+  localStorage.setItem(key, JSON.stringify(next));
+};
+
+export const localFallbackMoveDepartmentParent = (id: string, parentId: string | null) => {
+  const key = 'pa_fallback_departments';
+  const list = JSON.parse(localStorage.getItem(key) || '[]');
+  const idx = list.findIndex((item: any) => item.id === id);
+  if (idx > -1) {
+    list[idx] = { ...list[idx], parent_id: parentId || null };
+    localStorage.setItem(key, JSON.stringify(list));
+  }
 };
 
 export const localFallbackDeleteOrgInfo = (type: string, id: string) => {
@@ -560,6 +597,29 @@ export const updateUser = async (
     const idx = users.findIndex((u: any) => u.id === id);
     if (idx > -1) {
       users[idx] = { ...users[idx], ...updates, updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19) };
+      localStorage.setItem('pa_fallback_users', JSON.stringify(users));
+    }
+  }
+};
+
+export const moveUserDepartment = async (
+  serverMode: boolean,
+  id: string,
+  department: string | null
+): Promise<void> => {
+  if (serverMode) {
+    await apiRequest(`/auth/users/${id}/department`, {
+      method: 'PUT',
+      body: JSON.stringify({ department })
+    });
+  } else if (isTauri()) {
+    const invoke = await getInvoke();
+    await invoke('db_move_user_department', { id, department });
+  } else {
+    const users = JSON.parse(localStorage.getItem('pa_fallback_users') || '[]');
+    const idx = users.findIndex((u: any) => u.id === id);
+    if (idx > -1) {
+      users[idx] = { ...users[idx], department, updated_at: new Date().toISOString().replace('T', ' ').slice(0, 19) };
       localStorage.setItem('pa_fallback_users', JSON.stringify(users));
     }
   }
@@ -750,6 +810,8 @@ export const verifyAdminPassword = async (serverMode: boolean, password?: string
 export interface OrgItem {
   id: string;
   name: string;
+  parent_id?: string | null;
+  sort_order?: number;
 }
 
 export interface OrgInfo {
@@ -784,19 +846,20 @@ export const getOrgInfo = async (serverMode: boolean): Promise<OrgInfo> => {
 export const addOrgInfoItem = async (
   serverMode: boolean,
   type: 'departments' | 'positions' | 'job-roles',
-  name: string
+  name: string,
+  parentId?: string | null
 ): Promise<OrgItem> => {
   if (serverMode) {
     const data = await apiRequest(`/auth/org-info/${type}`, {
       method: 'POST',
-      body: JSON.stringify({ name })
+      body: JSON.stringify({ name, parent_id: parentId || null })
     });
     return data.item;
   } else if (isTauri()) {
     const invoke = await getInvoke();
-    return invoke('db_add_org_info', { type, name });
+    return invoke('db_add_org_info', { type, name, parentId: parentId || null });
   } else {
-    return localFallbackAddOrgInfo(type, name);
+    return localFallbackAddOrgInfo(type, name, parentId);
   }
 };
 
@@ -814,6 +877,61 @@ export const deleteOrgInfoItem = async (
     await invoke('db_delete_org_info', { type, id });
   } else {
     localFallbackDeleteOrgInfo(type, id);
+  }
+};
+
+export const updateOrgInfoItem = async (
+  serverMode: boolean,
+  type: 'departments' | 'positions' | 'job-roles',
+  id: string,
+  name: string
+): Promise<void> => {
+  if (serverMode) {
+    await apiRequest(`/auth/org-info/${type}/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name })
+    });
+  } else if (isTauri()) {
+    const invoke = await getInvoke();
+    await invoke('db_update_org_info', { type, id, name });
+  } else {
+    localFallbackUpdateOrgInfo(type, id, name);
+  }
+};
+
+export const reorderOrgInfoItems = async (
+  serverMode: boolean,
+  type: 'departments' | 'positions' | 'job-roles',
+  ids: string[]
+): Promise<void> => {
+  if (serverMode) {
+    await apiRequest(`/auth/org-info/${type}/reorder`, {
+      method: 'PUT',
+      body: JSON.stringify({ ids })
+    });
+  } else if (isTauri()) {
+    const invoke = await getInvoke();
+    await invoke('db_reorder_org_info', { type, ids });
+  } else {
+    localFallbackReorderOrgInfo(type, ids);
+  }
+};
+
+export const moveDepartmentParent = async (
+  serverMode: boolean,
+  id: string,
+  parentId: string | null
+): Promise<void> => {
+  if (serverMode) {
+    await apiRequest(`/auth/org-info/departments/${id}/parent`, {
+      method: 'PUT',
+      body: JSON.stringify({ parent_id: parentId })
+    });
+  } else if (isTauri()) {
+    const invoke = await getInvoke();
+    await invoke('db_move_department_parent', { id, parentId });
+  } else {
+    localFallbackMoveDepartmentParent(id, parentId);
   }
 };
 

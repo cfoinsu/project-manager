@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardList,
-  Filter,
   ListTodo,
   Megaphone,
   Plus,
@@ -128,6 +127,7 @@ export const MyWorkView: React.FC = () => {
   const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>('all');
   const [minutesMeeting, setMinutesMeeting] = useState<Meeting | null>(null);
   const [todoListOpen, setTodoListOpen] = useState(false);
+  const [notificationHeaderOpen, setNotificationHeaderOpen] = useState(false);
   const [notificationListOpen, setNotificationListOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -285,10 +285,50 @@ export const MyWorkView: React.FC = () => {
           <h2 className="text-xl font-black text-slate-900 dark:text-slate-100">나의 업무</h2>
           <p className="text-xs font-semibold text-slate-400 mt-1">내 업무, 회의, 개인 투두, 알림을 한 화면에서 확인합니다.</p>
         </div>
-        <button onClick={load} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-black flex items-center gap-2 cursor-pointer">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          새로고침
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              onClick={() => setNotificationHeaderOpen((open) => !open)}
+              className="relative w-10 h-10 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-toss-blue hover:bg-slate-50 dark:hover:bg-slate-850 flex items-center justify-center cursor-pointer"
+              title="내 업무 알림"
+            >
+              <Bell className="w-4.5 h-4.5" />
+              {unread.length > 0 && <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-toss-blue text-white text-[10px] font-black flex items-center justify-center">{unread.length}</span>}
+            </button>
+            {notificationHeaderOpen && (
+              <>
+                <button className="fixed inset-0 z-40 cursor-default" aria-label="내 업무 알림 닫기" onClick={() => setNotificationHeaderOpen(false)} />
+                <div onClick={(event) => event.stopPropagation()} className="absolute right-0 top-[calc(100%+8px)] z-50 w-96 max-h-[480px] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-toss-lg">
+                  <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-black text-slate-900 dark:text-slate-100">내 업무 알림</p>
+                      <p className="mt-1 text-[11px] font-bold text-slate-400">읽지 않음 {unread.length}건 · 전체 {notifications.length}건</p>
+                    </div>
+                    <button onClick={markAllRead} disabled={unread.length === 0} className="text-[11px] font-black text-toss-blue disabled:text-slate-300 cursor-pointer">모두 읽기</button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 p-2">
+                    {notifications.length === 0 ? <Empty text="알림이 없습니다." /> : notifications.slice(0, 6).map((item) => (
+                      <NotificationRow key={item.id} item={item} onClick={async () => { await markNotificationRead(item.id); setNotificationHeaderOpen(false); await load(); }} />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setNotificationHeaderOpen(false);
+                      setNotificationListOpen(true);
+                    }}
+                    className="w-full px-4 py-3 border-t border-slate-100 dark:border-slate-800 text-xs font-black text-toss-blue hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer text-left"
+                  >
+                    알림 센터 전체 보기
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <button onClick={load} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-black flex items-center gap-2 cursor-pointer">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            새로고침
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -498,49 +538,6 @@ export const MyWorkView: React.FC = () => {
             )}
           </div>
           <FooterLink label="투두 전체 보기" onClick={() => setTodoListOpen(true)} />
-        </section>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4">
-        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm max-h-[320px] flex flex-col">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">알림 센터</h3>
-              {unread.length > 0 && <span className="px-2 py-1 rounded-full bg-blue-50 text-toss-blue text-[11px] font-black">{unread.length}개 읽지 않음</span>}
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={markAllRead} className="text-xs font-black text-toss-blue cursor-pointer disabled:text-slate-300" disabled={unread.length === 0}>모두 읽기</button>
-              <button className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-500 cursor-pointer"><Filter className="w-4 h-4" /></button>
-            </div>
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-1 border-b border-slate-100 dark:border-slate-800">
-            {[
-              { key: 'all' as NotificationFilter, label: '전체', count: notifications.length },
-              { key: 'comment' as NotificationFilter, label: '멘션', count: notifications.filter((item) => item.type === 'comment').length },
-              { key: 'task' as NotificationFilter, label: '업무', count: notifications.filter((item) => item.type === 'task').length },
-              { key: 'meeting' as NotificationFilter, label: '회의', count: notifications.filter((item) => item.type === 'meeting').length },
-              { key: 'system' as NotificationFilter, label: '시스템', count: notifications.filter((item) => item.type === 'system').length },
-            ].map((tab) => (
-              <button key={tab.key} onClick={() => setNotificationFilter(tab.key)} className={`px-2 py-2 text-xs font-black border-b-2 cursor-pointer ${notificationFilter === tab.key ? 'border-toss-blue text-toss-blue' : 'border-transparent text-slate-500'}`}>
-                {tab.label} <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px]">{tab.count}</span>
-              </button>
-            ))}
-          </div>
-          <div className="divide-y divide-slate-100 dark:divide-slate-800 overflow-y-auto pr-1">
-            {filteredNotifications.length === 0 ? <Empty text="알림이 없습니다." /> : filteredNotifications.slice(0, 3).map((item) => (
-              <button key={item.id} onClick={async () => { await markNotificationRead(item.id); await load(); }} className="w-full py-3 flex items-center gap-3 text-left cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-850">
-                <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${notificationColor(item.type)}`}>{notificationIcon(item.type)}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{item.title}</span>
-                  {item.body && <span className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5 truncate">{item.body}</span>}
-                </span>
-                <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-black text-slate-500 shrink-0">{item.type}</span>
-                <span className="text-[11px] font-bold text-slate-400 shrink-0">{formatDateLabel(item.created_at.slice(0, 10))}</span>
-                {!item.read_at && <span className="w-2 h-2 rounded-full bg-toss-blue shrink-0" />}
-              </button>
-            ))}
-          </div>
-          <FooterLink label="알림 센터 전체 보기" onClick={() => setNotificationListOpen(true)} />
         </section>
       </div>
 
