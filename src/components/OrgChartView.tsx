@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import * as api from '../utils/api';
 import type { User } from '../types';
 import { Avatar } from './Avatar';
@@ -125,7 +125,6 @@ export const OrgChartView: React.FC<OrgChartViewProps> = ({
   const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   const tree      = buildDepartmentTree(departments);
   const all       = flattenTree(tree);

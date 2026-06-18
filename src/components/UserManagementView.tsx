@@ -1242,7 +1242,7 @@ interface DepartmentTreeManagerProps {
   onMoveDepartmentParent: (departmentId: string, parentId: string | null) => void | Promise<void>;
 }
 
-const DepartmentTreeManager: React.FC<DepartmentTreeManagerProps> = ({
+export const DepartmentTreeManager: React.FC<DepartmentTreeManagerProps> = ({
   departments,
   users,
   addValue,
