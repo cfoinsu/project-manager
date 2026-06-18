@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as api from '../utils/api';
+import { requestDeleteConfirmation } from '../utils/deleteConfirm';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import type { Comment, Workload, Assignment } from '../types';
@@ -728,6 +729,10 @@ export const CommentPanel: React.FC<CommentPanelProps> = ({
   };
 
   const handleDelete = async (commentId: string) => {
+    if (!requestDeleteConfirmation({
+      title: '댓글 삭제',
+      description: '삭제한 댓글은 복구할 수 없습니다.',
+    })) return;
     try {
       await api.deleteComment(serverMode, commentId);
       setAllComments(prev => prev.filter(c => c.id !== commentId));

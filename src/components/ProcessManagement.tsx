@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../store/projectStore';
+import { requestDeleteConfirmation } from '../utils/deleteConfirm';
 import { 
   Plus, 
   Trash2, 
@@ -328,7 +329,12 @@ export const ProcessManagement: React.FC = () => {
   };
 
   const handleRemove = async (id: string) => {
-    if (confirm('이 프로세스를 삭제하시겠습니까? (연결된 모든 작업도 함께 삭제됩니다)')) {
+    const target = processes.find((process) => process.id === id);
+    if (requestDeleteConfirmation({
+      title: '프로세스 삭제',
+      targetName: target?.name,
+      description: '연결된 모든 작업도 함께 삭제됩니다.',
+    })) {
       await removeProcess(id);
     }
   };

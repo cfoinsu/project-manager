@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, RotateCcw, Trash2, X } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore';
 import { ModalOverlay } from './ModalOverlay';
 import { readProjectRisks, writeProjectRisks, type ProjectRiskItem, type ProjectRiskLevel, type ProjectRiskStatus } from '../utils/projectRiskStore';
+import { requestDeleteConfirmation } from '../utils/deleteConfirm';
 
 const levelOptions: { value: ProjectRiskLevel; label: string; className: string }[] = [
   { value: 'HIGH', label: '높음', className: 'bg-rose-50 text-rose-600 border-rose-100' },
@@ -98,6 +99,12 @@ export const ProjectIssuesView: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
+    const target = risks.find((risk) => risk.id === id);
+    if (!requestDeleteConfirmation({
+      title: '이슈 및 리스크 삭제',
+      targetName: target?.title,
+      description: '삭제한 이슈 및 리스크 기록은 복구할 수 없습니다.',
+    })) return;
     persist(risks.filter((risk) => risk.id !== id));
   };
 

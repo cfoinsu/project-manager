@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen, Check, Clock, Copy, FileText, Loader2,
-  MessageSquarePlus, Plus, Sparkles, X
+  MessageSquarePlus, Sparkles, X
 } from 'lucide-react';
 import type { Meeting, MeetingNote } from '../types';
 import { createMeetingNote, getMeetingNotes, summarizeMeeting } from '../utils/collaborationApi';
@@ -267,7 +267,7 @@ export const MeetingMinutesModal: React.FC<MeetingMinutesModalProps> = ({ meetin
                           ) : (
                             // 복수 메모 — 합쳐서 표시, 작성자 구분선으로 구분
                             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                              {group.notes.map((note, nIdx) => (
+                              {group.notes.map((note) => (
                                 <div key={note.id} className="p-3">
                                   <div className="flex items-center gap-2 mb-1">
                                     <span className="w-1.5 h-1.5 rounded-full bg-toss-blue/50 shrink-0" />

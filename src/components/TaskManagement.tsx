@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useProjectStore } from '../store/projectStore';
 import { useAuthStore } from '../store/authStore';
 import * as api from '../utils/api';
+import { requestDeleteConfirmation } from '../utils/deleteConfirm';
 import { openInExplorer } from '../utils/tauriBridge';
 import {
   Plus, Trash2, ArrowLeft, ArrowRight, Edit, ClipboardList,
@@ -196,6 +197,12 @@ const ChecklistPanel: React.FC<ChecklistPanelProps> = ({ taskId, serverMode }) =
   };
 
   const handleDelete = async (id: string) => {
+    const item = items.find((subTask) => subTask.id === id);
+    if (!requestDeleteConfirmation({
+      title: '체크리스트 삭제',
+      targetName: item?.title,
+      description: '삭제한 체크리스트 항목은 복구할 수 없습니다.',
+    })) return;
     setError(null);
     try {
       await api.deleteSubTask(serverMode, id);
@@ -482,6 +489,12 @@ const WorkLogPanel: React.FC<WorkLogPanelProps> = ({ taskId, serverMode, users }
   };
 
   const handleDelete = async (id: string) => {
+    const log = logs.find((item) => item.id === id);
+    if (!requestDeleteConfirmation({
+      title: '업무 이력 삭제',
+      targetName: log?.content?.slice(0, 40),
+      description: '삭제한 업무 이력은 복구할 수 없습니다.',
+    })) return;
     await api.deleteWorkLog(serverMode, id);
     setLogs(prev => prev.filter(l => l.id !== id));
   };
@@ -1575,7 +1588,12 @@ export const TaskManagement: React.FC = () => {
   };
 
   const handleRemoveTask = async (id: string, procId: string) => {
-    if (confirm('이 작업을 삭제하시겠습니까?')) await removeTask(id, procId);
+    const target = tasks[procId]?.find((task: Task) => task.id === id);
+    if (requestDeleteConfirmation({
+      title: '작업 삭제',
+      targetName: target?.title,
+      description: '작업에 연결된 체크리스트, 댓글, 업무 이력이 함께 사라질 수 있습니다.',
+    })) await removeTask(id, procId);
   };
 
   const handleDetailUpdate = async (updated: Task) => {

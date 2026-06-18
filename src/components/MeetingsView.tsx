@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useProjectStore } from '../store/projectStore';
 import { createMeeting, deleteMeeting, getMeetingNotes, getMeetings, respondMeeting } from '../utils/collaborationApi';
+import { requestDeleteConfirmation } from '../utils/deleteConfirm';
 import { getUsers } from '../utils/api';
 import { useAuthStore } from '../store/authStore';
 import type { Meeting, MeetingAgendaItem, MeetingNote, User } from '../types';
@@ -24,6 +25,7 @@ import { MeetingMinutesModal } from './MeetingMinutesModal';
 import { CustomDatePicker } from './CustomDatePicker';
 import { CustomTimePicker } from './CustomTimePicker';
 import { UserMultiSelect } from './UserMultiSelect';
+import { Badge, Button, DashboardGrid, DashboardGridItem, EmptyState, IconButton, Page, PageBody, PageHeader, Panel } from './ui';
 
 const toDateTime = (date?: string, time?: string) => new Date(`${date || '1970-01-01'}T${time || '00:00'}`);
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -157,8 +159,19 @@ export const MeetingsView: React.FC = () => {
   if (!activeProject) return <div className="p-6 text-sm font-bold text-slate-400">프로젝트를 먼저 선택해 주세요.</div>;
 
   return (
-    <div className="h-full overflow-y-auto text-left flex flex-col gap-5">
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+    <Page scroll className="h-full text-left">
+      <PageHeader
+        title="회의"
+        description={`${activeProject.name} 회의 일정과 회의록을 관리합니다.`}
+        actions={(
+          <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setCreateOpen(true)}>
+            회의 생성
+          </Button>
+        )}
+      />
+
+      <DashboardGrid>
+        <DashboardGridItem span={4}>
         <SummaryCard
           title="다음 예정 회의"
           value={nextMeeting?.title || '예정 없음'}
@@ -168,13 +181,23 @@ export const MeetingsView: React.FC = () => {
           usersById={usersById}
           prominent
         />
+        </DashboardGridItem>
+        <DashboardGridItem span={2}>
         <SummaryCard title="예정 회의" value={`${upcoming.length}`} sub={`이번 주 ${upcoming.filter((m) => dayDiff(m.start_date) <= 7).length}건`} />
+        </DashboardGridItem>
+        <DashboardGridItem span={2}>
         <SummaryCard title="진행 중 회의" value={`${ongoing.length}`} sub="현재 시간 기준" />
+        </DashboardGridItem>
+        <DashboardGridItem span={2}>
         <SummaryCard title="마감 임박 회의" value={`${urgent}`} sub="D-1 이내" danger />
+        </DashboardGridItem>
+        <DashboardGridItem span={2}>
         <SummaryCard title="완료 회의" value={`${finished.length}`} sub={`이번 달 ${finishedThisMonth}건`} />
-      </div>
+        </DashboardGridItem>
+      </DashboardGrid>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[310px_minmax(0,1fr)_370px] gap-5 min-h-[660px]">
+      <PageBody>
+      <div className="pm-meeting-workspace">
         <MeetingSchedulePanel
           meetings={meetings}
           selectedId={selectedMeeting?.id || ''}
@@ -183,22 +206,25 @@ export const MeetingsView: React.FC = () => {
           onSelect={(meeting) => setSelectedMeetingId(meeting.id)}
         />
 
-        <main className="flex flex-col gap-4 min-w-0 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/30 p-3">
+        <main className="pm-meeting-main">
           {selectedMeeting ? (
             <>
-              <div className="px-1 flex items-center justify-between">
+              <div className="pm-meeting-section-head">
                 <div>
-                  <p className="text-[11px] font-black uppercase text-toss-blue">선택한 회의</p>
-                  <h2 className="text-base font-black text-slate-950 dark:text-slate-100 mt-1">{selectedMeeting.title}</h2>
+                  <p className="pm-meeting-section-head__eyebrow">선택한 회의</p>
+                  <h2 className="pm-meeting-section-head__title">{selectedMeeting.title}</h2>
                 </div>
-                <span className="px-2.5 py-1 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-black text-slate-500">
-                  {getMeetingStatusLabel(selectedMeeting)}
-                </span>
+                <Badge tone="meeting">{getMeetingStatusLabel(selectedMeeting)}</Badge>
               </div>
               <MeetingDetailCard
                 meeting={selectedMeeting}
                 currentUserId={user?.id || ''}
                 onDelete={async () => {
+                  if (!requestDeleteConfirmation({
+                    title: '회의 삭제',
+                    targetName: selectedMeeting.title,
+                    description: '회의 일정, 참석 응답, 회의록 메모가 함께 삭제될 수 있습니다.',
+                  })) return;
                   await deleteMeeting(selectedMeeting.id);
                   setSelectedMeetingId('');
                   await load();
@@ -213,15 +239,17 @@ export const MeetingsView: React.FC = () => {
               <MinutesPreviewCard meeting={selectedMeeting} notes={notes} onOpenMinutes={() => setMinutesMeeting(selectedMeeting)} />
             </>
           ) : (
-            <div className="h-full rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center text-sm font-bold text-slate-400">회의를 선택해 주세요.</div>
+            <EmptyState text="회의를 선택해 주세요." variant="dashed" className="pm-meeting-empty-fill" />
           )}
         </main>
 
-        <aside className="flex flex-col gap-4 min-w-0 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/30 p-3">
+        <aside className="pm-meeting-aside">
           {selectedMeeting && (
-            <div className="px-1">
-              <p className="text-[11px] font-black uppercase text-toss-blue">회의 보조 정보</p>
-              <p className="text-xs font-bold text-slate-500 mt-1">{selectedMeeting.title} 기준</p>
+            <div className="pm-meeting-section-head">
+              <div>
+                <p className="pm-meeting-section-head__eyebrow">회의 보조 정보</p>
+                <p className="pm-meeting-section-head__sub">{selectedMeeting.title} 기준</p>
+              </div>
             </div>
           )}
           <ParticipantsCard meeting={selectedMeeting} usersById={usersById} users={users} />
@@ -252,7 +280,8 @@ export const MeetingsView: React.FC = () => {
           }}
         />
       )}
-    </div>
+      </PageBody>
+    </Page>
   );
 };
 
@@ -268,17 +297,17 @@ interface SummaryCardProps {
 }
 
 const SummaryCard: React.FC<SummaryCardProps> = ({ title, value, sub, badge, avatars = [], usersById, prominent, danger }) => (
-  <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 min-h-[126px] flex flex-col justify-between shadow-sm">
-    <div className="flex items-start justify-between gap-3">
+  <Panel flush className="pm-meeting-summary">
+    <div className="pm-meeting-summary__header">
       <div className="min-w-0">
-        <p className="text-xs font-black text-slate-500">{title}</p>
-        <h3 className={`${prominent ? 'text-base' : 'text-3xl'} font-black text-slate-950 dark:text-slate-100 mt-2 truncate`}>{value}</h3>
-        <p className={`text-xs font-bold mt-2 ${danger ? 'text-red-500' : 'text-slate-500'}`}>{sub}</p>
+        <p className="pm-meeting-summary__label">{title}</p>
+        <h3 className={`pm-meeting-summary__value ${prominent ? 'pm-meeting-summary__value--prominent' : 'pm-meeting-summary__value--metric'}`}>{value}</h3>
+        <p className={`pm-meeting-summary__sub ${danger ? 'pm-meeting-summary__sub--danger' : ''}`}>{sub}</p>
       </div>
-      {badge && <span className="px-3 py-2 rounded-full bg-blue-50 text-toss-blue text-xs font-black shrink-0">{badge}</span>}
+      {badge && <Badge tone="task">{badge}</Badge>}
     </div>
     {avatars.length > 0 && <AvatarStack ids={avatars} usersById={usersById || new Map()} />}
-  </section>
+  </Panel>
 );
 
 interface MeetingSchedulePanelProps {
@@ -335,62 +364,41 @@ const MeetingSchedulePanel: React.FC<MeetingSchedulePanelProps> = ({ meetings, s
   }, [selectedDate, weekStartStr, weekEndStr]);
 
   return (
-    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden flex flex-col shadow-sm">
-      <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-        <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">회의 일정</h3>
-        <button onClick={onCreate} className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-black flex items-center gap-1.5 cursor-pointer">
-          <Plus className="w-3.5 h-3.5" />
+    <Panel className="pm-meeting-schedule">
+      <div className="pm-meeting-schedule__header">
+        <h3 className="pm-meeting-schedule__title">회의 일정</h3>
+        <Button variant="secondary" size="sm" icon={<Plus className="w-3.5 h-3.5" />} onClick={onCreate}>
           회의 생성
-        </button>
+        </Button>
       </div>
-      <div className="px-4 pt-3">
-        <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 dark:bg-slate-850 p-1">
+      <div className="pm-meeting-schedule__tabs">
+        <div className="pm-segmented pm-segmented--4">
           {tabItems.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setStatusFilter(tab.key)}
-              className={`py-1.5 rounded-lg text-[11px] font-black cursor-pointer transition-all ${
-                statusFilter === tab.key
-                  ? 'bg-white dark:bg-slate-900 text-toss-blue shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
+              className={`pm-segmented__button ${statusFilter === tab.key ? 'pm-segmented__button--active' : ''}`}
             >
               {tab.label} {tab.count}
             </button>
           ))}
         </div>
       </div>
-      <div className="p-4 border-b border-slate-100 dark:border-slate-800">
-        <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-3">
+      <div className="pm-meeting-schedule__section">
+        <div className="pm-meeting-week__top">
           <span>{formatKoreanMonth(weekStart)} · {weekStart.getDate()}일 - {weekDays[6].getDate()}일</span>
-          <div className="flex gap-1">
-            <button
-              onClick={() => setWeekStart((prev) => addDays(prev, -7))}
-              className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-850"
-              aria-label="이전 주"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setWeekStart((prev) => addDays(prev, 7))}
-              className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-850"
-              aria-label="다음 주"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+          <div className="pm-meeting-week__nav">
+            <IconButton label="이전 주" icon={<ChevronLeft className="w-4 h-4" />} onClick={() => setWeekStart((prev) => addDays(prev, -7))} />
+            <IconButton label="다음 주" icon={<ChevronRight className="w-4 h-4" />} onClick={() => setWeekStart((prev) => addDays(prev, 7))} />
           </div>
         </div>
-        <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 dark:bg-slate-850 p-1">
+        <div className="pm-segmented pm-segmented--2 pm-meeting-range-tabs">
           <button
             onClick={() => {
               setSelectedDate(null);
               setRangeFilter('all');
             }}
-            className={`py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-              selectedDate === null && rangeFilter === 'all'
-                ? 'bg-white dark:bg-slate-900 text-toss-blue shadow-sm'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
+            className={`pm-segmented__button ${selectedDate === null && rangeFilter === 'all' ? 'pm-segmented__button--active' : ''}`}
           >
             전체 기간 {filteredMeetings.length}
           </button>
@@ -399,16 +407,12 @@ const MeetingSchedulePanel: React.FC<MeetingSchedulePanelProps> = ({ meetings, s
               setSelectedDate(null);
               setRangeFilter('week');
             }}
-            className={`py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-              selectedDate === null && rangeFilter === 'week'
-                ? 'bg-white dark:bg-slate-900 text-toss-blue shadow-sm'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
+            className={`pm-segmented__button ${selectedDate === null && rangeFilter === 'week' ? 'pm-segmented__button--active' : ''}`}
           >
             이번 주 {weekMeetings.length}
           </button>
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center">
+        <div className="pm-meeting-week__days">
           {weekDays.map((date) => {
             const dateStr = formatDateKey(date);
             const dayMeetings = meetingsByDate[dateStr] || [];
@@ -421,57 +425,53 @@ const MeetingSchedulePanel: React.FC<MeetingSchedulePanelProps> = ({ meetings, s
                   setSelectedDate(dateStr);
                   setRangeFilter('week');
                 }}
-                className={`relative h-12 rounded-full border flex flex-col items-center justify-center transition-all cursor-pointer ${
-                  active
-                    ? 'border-toss-blue bg-blue-50/80 dark:bg-blue-950/20'
-                    : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850'
-                }`}
+                className={`pm-meeting-day ${active ? 'pm-meeting-day--active' : ''}`}
               >
-                <span className="text-[10px] font-black text-slate-400 leading-none">{['일', '월', '화', '수', '목', '금', '토'][date.getDay()]}</span>
-                <span className={`mt-1 text-xs font-black leading-none ${today ? 'text-toss-blue' : active ? 'text-toss-blue' : 'text-slate-700 dark:text-slate-200'}`}>
+                <span className="pm-meeting-day__name">{['일', '월', '화', '수', '목', '금', '토'][date.getDay()]}</span>
+                <span className={`pm-meeting-day__number ${today || active ? 'pm-meeting-day__number--active' : ''}`}>
                   {date.getDate()}
                 </span>
                 {dayMeetings.length > 0 && (
-                  <span className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-toss-blue" />
+                  <span className="pm-meeting-day__dot" />
                 )}
               </button>
             );
           })}
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-        <div className="px-1 flex items-center justify-between">
-          <p className="text-xs font-black text-slate-800 dark:text-slate-100">{visibleRangeLabel}</p>
-          <span className="text-[10px] font-black text-slate-400">{visibleMeetings.length}건</span>
+      <div className="pm-meeting-list">
+        <div className="pm-meeting-list__header">
+          <p className="pm-meeting-list__title">{visibleRangeLabel}</p>
+          <Badge tone="neutral">{visibleMeetings.length}건</Badge>
         </div>
         {visibleMeetings.length === 0 ? (
-          <div className="py-14 text-center text-xs font-bold text-slate-400">{emptyRangeLabel}</div>
+          <EmptyState text={emptyRangeLabel} />
         ) : visibleMeetings.map((meeting) => {
           const selected = meeting.id === selectedId;
           return (
             <button
               key={meeting.id}
               onClick={() => onSelect(meeting)}
-              className={`text-left rounded-xl border p-3 transition-all cursor-pointer ${selected ? 'border-toss-blue bg-blue-50/80 dark:bg-blue-950/20' : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850'}`}
+              className={`pm-meeting-card ${selected ? 'pm-meeting-card--selected' : ''}`}
             >
-              <div className="flex items-start justify-between gap-2">
+              <div className="pm-meeting-card__head">
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">{meeting.title}</p>
-                  <p className="text-[11px] font-bold text-slate-500 mt-1">
+                  <p className="pm-meeting-card__title">{meeting.title}</p>
+                  <p className="pm-meeting-card__time">
                     {selectedDate ? '' : `${meeting.start_date} · `}{meeting.start_time} ~ {meeting.end_time}
                   </p>
                 </div>
-                <span className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 text-[10px] font-black text-toss-blue">{dDayLabel(meeting.start_date)}</span>
+                <Badge tone="task">{dDayLabel(meeting.start_date)}</Badge>
               </div>
-              <div className="mt-2 flex items-center justify-between">
+              <div className="pm-meeting-card__footer">
                 <AvatarStack ids={meeting.attendees} usersById={usersById} compact />
-                <span className="text-[10px] font-black text-slate-400">{getMeetingStatusLabel(meeting)}</span>
+                <Badge tone="meeting">{getMeetingStatusLabel(meeting)}</Badge>
               </div>
             </button>
           );
         })}
       </div>
-    </section>
+    </Panel>
   );
 };
 
@@ -486,63 +486,63 @@ interface MeetingDetailCardProps {
 const MeetingDetailCard: React.FC<MeetingDetailCardProps> = ({ meeting, currentUserId, onDelete, onRespond, onOpenMinutes }) => {
   const myResponse = meeting.responses?.[currentUserId] || 'pending';
   return (
-    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-black text-slate-950 dark:text-slate-100 truncate">{meeting.title}</h2>
-            <span className="px-2 py-1 rounded-full bg-blue-50 dark:bg-blue-950/30 text-toss-blue text-[10px] font-black">{getMeetingStatusLabel(meeting)}</span>
+    <Panel className="pm-meeting-detail">
+      <div className="pm-meeting-detail__top">
+        <div className="pm-meeting-detail__content">
+          <div className="pm-meeting-detail__title-row">
+            <h2 className="pm-meeting-detail__title">{meeting.title}</h2>
+            <Badge tone="meeting">{getMeetingStatusLabel(meeting)}</Badge>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 text-xs font-bold text-slate-600 dark:text-slate-300">
+          <div className="pm-meeting-detail__meta-grid">
             <MetaLine icon={<CalendarClock className="w-4 h-4" />} text={`${meeting.start_date} ${meeting.start_time} ~ ${meeting.end_time}`} />
             <MetaLine icon={<MapPin className="w-4 h-4" />} text={meeting.location || '장소 미정'} />
             <MetaLine icon={<Clock className="w-4 h-4" />} text={dDayLabel(meeting.start_date)} />
             <MetaLine icon={<Users className="w-4 h-4" />} text={`${meeting.attendees.length}명 참여 대상`} />
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button onClick={onOpenMinutes} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-black cursor-pointer">회의록</button>
+        <div className="pm-meeting-detail__actions">
+          <Button variant="secondary" size="sm" onClick={onOpenMinutes}>회의록</Button>
           {!isFinished(meeting) && (
-            <button onClick={() => onRespond('accepted')} className={`px-3 py-2 rounded-lg text-xs font-black cursor-pointer ${myResponse === 'accepted' ? 'bg-toss-blue text-white' : 'bg-toss-blue text-white'}`}>
+            <Button variant="primary" size="sm" onClick={() => onRespond('accepted')} data-response={myResponse}>
               참석
-            </button>
+            </Button>
           )}
-          <button onClick={onDelete} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
-          <MoreHorizontal className="w-4 h-4 text-slate-400" />
+          <IconButton label="?뚯쓽 ??젣" icon={<Trash2 className="w-4 h-4" />} onClick={onDelete} />
+          <IconButton label="?뷀꽣蹂닿린" icon={<MoreHorizontal className="w-4 h-4" />} />
         </div>
       </div>
       {meeting.meeting_url && (
-        <a href={meeting.meeting_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1.5 text-xs font-black text-toss-blue">
+        <a href={meeting.meeting_url} target="_blank" rel="noreferrer" className="pm-meeting-detail__link">
           <Link className="w-3.5 h-3.5" />
           회의 링크 열기
         </a>
       )}
-    </section>
+    </Panel>
   );
 };
 
 const MetaLine = ({ icon, text }: { icon: React.ReactNode; text: string }) => (
-  <div className="flex items-center gap-2 min-w-0 text-slate-500">
+  <div className="pm-meeting-meta-line">
     {icon}
-    <span className="truncate">{text}</span>
+    <span>{text}</span>
   </div>
 );
 
 const AgendaCard = ({ meeting, onOpenMinutes }: { meeting: Meeting; onOpenMinutes: () => void }) => {
   const agenda = getAgendaItems(meeting);
   return (
-    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">안건 ({agenda.length})</h3>
-        <button onClick={onOpenMinutes} className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-black cursor-pointer">안건 메모</button>
+    <section className="pm-panel pm-meeting-info-card">
+      <div className="pm-meeting-card-head">
+        <h3 className="pm-meeting-card-head__title">안건 ({agenda.length})</h3>
+        <Button variant="secondary" size="sm" onClick={onOpenMinutes}>안건 메모</Button>
       </div>
-      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+      <div className="pm-meeting-agenda-list">
         {agenda.length === 0 ? (
-          <p className="py-4 text-xs font-bold text-slate-400">등록된 안건이 없습니다.</p>
+          <p className="pm-meeting-empty-text">등록된 안건이 없습니다.</p>
         ) : agenda.map((item, index) => (
-          <div key={item.id} className="py-2.5 flex items-center gap-3">
-            <span className="w-6 h-6 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center text-xs font-black text-slate-500">{index + 1}</span>
-            <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.title}</span>
+          <div key={item.id} className="pm-meeting-agenda-item">
+            <span className="pm-meeting-agenda-item__index">{index + 1}</span>
+            <span className="pm-meeting-agenda-item__title">{item.title}</span>
           </div>
         ))}
       </div>
@@ -553,18 +553,17 @@ const AgendaCard = ({ meeting, onOpenMinutes }: { meeting: Meeting; onOpenMinute
 const MinutesPreviewCard = ({ meeting, notes, onOpenMinutes }: { meeting: Meeting; notes: MeetingNote[]; onOpenMinutes: () => void }) => {
   const fallback = notes.slice(0, 4).map((note) => `- ${note.note_time} ${note.content}`).join('\n');
   return (
-    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm flex flex-col gap-3 h-[340px] min-h-0">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">회의록</h3>
-        <button onClick={onOpenMinutes} className="px-3 py-1.5 rounded-lg bg-slate-950 dark:bg-white text-white dark:text-slate-950 text-xs font-black cursor-pointer flex items-center gap-1.5">
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    <section className="pm-panel pm-meeting-minutes-preview">
+      <div className="pm-meeting-card-head">
+        <h3 className="pm-meeting-card-head__title">회의록</h3>
+        <Button variant="primary" size="sm" onClick={onOpenMinutes}>
           메모하기
-        </button>
+        </Button>
       </div>
-      <div className="rounded-xl border border-slate-200 dark:border-slate-800 flex-1 min-h-0 overflow-y-auto p-4 text-sm font-semibold text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+      <div className="pm-meeting-minutes-preview__body">
         {meeting.notes?.trim() || fallback || '회의 중 메모를 남기면 회의록 초안이 이곳에 표시됩니다.'}
       </div>
-      <p className="text-[11px] font-bold text-slate-400">저장됨 {meeting.updated_at || '-'}</p>
+      <p className="pm-meeting-muted">저장됨 {meeting.updated_at || '-'}</p>
     </section>
   );
 };
@@ -572,21 +571,21 @@ const MinutesPreviewCard = ({ meeting, notes, onOpenMinutes }: { meeting: Meetin
 const ParticipantsCard = ({ meeting, usersById, users }: { meeting: Meeting | null; usersById: Map<string, User>; users: User[] }) => {
   const ids = meeting?.attendees || [];
   return (
-    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-      <div className="flex items-center justify-between mb-3">
+    <section className="pm-panel pm-meeting-side-card">
+      <div className="pm-meeting-card-head">
         <div>
-          <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">참여 인력 ({ids.length})</h3>
-          <p className="text-[10px] font-bold text-slate-400 mt-0.5">{meeting?.title || '선택 회의'} 참여자</p>
+          <h3 className="pm-meeting-card-head__title">참여 인력 ({ids.length})</h3>
+          <p className="pm-meeting-muted">{meeting?.title || '선택 회의'} 참여자</p>
         </div>
-        <button className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-black cursor-pointer">초대</button>
+        <Button variant="secondary" size="sm">초대</Button>
       </div>
-      <div className="flex flex-col gap-3">
+      <div className="pm-meeting-person-list">
         {(ids.length ? ids.map((id) => usersById.get(id)).filter(Boolean) : users.slice(0, 5)).map((person) => (
-          <div key={person!.id} className="flex items-center gap-3">
+          <div key={person!.id} className="pm-meeting-person">
             <Avatar name={person!.name} profileImage={person!.profile_image} className="w-9 h-9 text-xs" />
-            <div className="min-w-0">
-              <p className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">{person!.name}</p>
-              <p className="text-[11px] font-bold text-slate-400 truncate">{[person!.position, person!.department].filter(Boolean).join(' · ') || '프로젝트 멤버'}</p>
+            <div className="pm-meeting-person__content">
+              <p className="pm-meeting-person__name">{person!.name}</p>
+              <p className="pm-meeting-person__meta">{[person!.position, person!.department].filter(Boolean).join(' · ') || '프로젝트 멤버'}</p>
             </div>
           </div>
         ))}
@@ -611,20 +610,20 @@ const FollowUpCandidatesCard = ({ meeting, notes, usersById }: { meeting: Meetin
     due: meeting ? `D${dayDiff(meeting.start_date) >= 0 ? '-' + dayDiff(meeting.start_date) : '+' + Math.abs(dayDiff(meeting.start_date))}` : '-',
   }));
   return (
-    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-      <div className="mb-3">
-        <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">후속 작업 후보 ({items.length})</h3>
-        <p className="text-[10px] font-bold text-slate-400 mt-0.5">안건과 회의 메모에서 작업으로 전환할 만한 항목입니다.</p>
+    <section className="pm-panel pm-meeting-side-card">
+      <div className="pm-meeting-card-head pm-meeting-card-head--stacked">
+        <h3 className="pm-meeting-card-head__title">후속 작업 후보 ({items.length})</h3>
+        <p className="pm-meeting-muted">안건과 회의 메모에서 작업으로 전환할 만한 항목입니다.</p>
       </div>
-      <div className="flex flex-col gap-3">
-        {items.length === 0 ? <p className="text-xs font-bold text-slate-400">안건이나 결정성 메모가 있으면 후속 작업 후보가 표시됩니다.</p> : items.map((item) => (
-          <div key={item.title} className="grid grid-cols-[54px_1fr_auto] gap-2 items-center text-xs">
+      <div className="pm-meeting-follow-list">
+        {items.length === 0 ? <p className="pm-meeting-empty-text">안건이나 결정성 메모가 있으면 후속 작업 후보가 표시됩니다.</p> : items.map((item) => (
+          <div key={item.title} className="pm-meeting-follow-item">
             <span className={`px-2 py-1 rounded-full text-[10px] font-black text-center ${item.priority === '높음' ? 'bg-red-50 text-red-500' : item.priority === '중간' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>{item.priority}</span>
-            <div className="min-w-0">
-              <p className="font-black text-slate-700 dark:text-slate-200 truncate">{item.title}</p>
-              <p className="text-[10px] font-bold text-slate-400 truncate">{item.owner?.name || '담당 미정'}</p>
+            <div className="pm-meeting-follow-item__content">
+              <p className="pm-meeting-follow-item__title">{item.title}</p>
+              <p className="pm-meeting-follow-item__owner">{item.owner?.name || '담당 미정'}</p>
             </div>
-            <span className="text-[11px] font-bold text-slate-400">{item.due}</span>
+            <span className="pm-meeting-muted">{item.due}</span>
           </div>
         ))}
       </div>
@@ -634,23 +633,23 @@ const FollowUpCandidatesCard = ({ meeting, notes, usersById }: { meeting: Meetin
 
 const CommentsCard = ({ meeting, notes }: { meeting: Meeting | null; notes: MeetingNote[] }) => {
   return (
-  <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm flex flex-col gap-3">
+  <section className="pm-panel pm-meeting-side-card pm-meeting-comments">
     <div>
-      <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">댓글/메모 ({notes.length})</h3>
-      <p className="text-[10px] font-bold text-slate-400 mt-0.5">{meeting?.title || '선택 회의'}에서 작성된 기록</p>
+      <h3 className="pm-meeting-card-head__title">댓글/메모 ({notes.length})</h3>
+      <p className="pm-meeting-muted">{meeting?.title || '선택 회의'}에서 작성된 기록</p>
     </div>
-    <div className="flex flex-col gap-3 max-h-52 overflow-y-auto">
-      {notes.length === 0 ? <p className="text-xs font-bold text-slate-400">아직 회의 메모가 없습니다.</p> : notes.slice(-4).reverse().map((note) => (
-        <div key={note.id} className="flex items-start gap-3">
+    <div className="pm-meeting-comments__list">
+      {notes.length === 0 ? <p className="pm-meeting-empty-text">아직 회의 메모가 없습니다.</p> : notes.slice(-4).reverse().map((note) => (
+        <div key={note.id} className="pm-meeting-comment">
           <Avatar name={note.author_name || 'Me'} className="w-8 h-8 text-[10px]" />
-          <div className="min-w-0">
-            <p className="text-xs font-black text-slate-800 dark:text-slate-100">{note.author_name || 'Me'} <span className="text-[10px] font-bold text-slate-400">{note.note_time}</span></p>
-            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{note.content}</p>
+          <div className="pm-meeting-comment__content">
+            <p className="pm-meeting-comment__author">{note.author_name || 'Me'} <span>{note.note_time}</span></p>
+            <p className="pm-meeting-comment__text">{note.content}</p>
           </div>
         </div>
       ))}
     </div>
-    <div className="mt-1 rounded-xl border border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center gap-2 text-xs font-bold text-slate-400">
+    <div className="pm-meeting-comment-input">
       댓글을 입력하세요...
       <Send className="w-4 h-4 ml-auto text-slate-300" />
     </div>
@@ -723,38 +722,41 @@ const MeetingCreateModal: React.FC<MeetingCreateModalProps> = ({ projectId, user
 
   return (
     <ModalOverlay onClose={onClose} zIndex={9000}>
-      <form onSubmit={submit} onClick={(e) => e.stopPropagation()} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-toss-lg max-w-2xl w-full flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-black">회의 추가</h3>
-          <button type="button" onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-4 h-4" /></button>
+      <form onSubmit={submit} onClick={(e) => e.stopPropagation()} className="pm-meeting-create">
+        <div className="pm-meeting-create__header">
+          <h3 className="pm-meeting-create__title">회의 추가</h3>
+          <IconButton label="닫기" icon={<X className="w-4 h-4" />} onClick={onClose} />
         </div>
-        <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="회의 제목" className="px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-850 text-sm font-bold outline-none" />
-        <div className="grid grid-cols-3 gap-3">
+        <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="회의 제목" className="pm-input" />
+        <div className="pm-meeting-create__grid pm-meeting-create__grid--3">
           <CustomDatePicker value={form.start_date} onChange={(value) => setForm({ ...form, start_date: value })} />
           <CustomTimePicker value={form.start_time} onChange={(value) => setForm({ ...form, start_time: value })} positionDirection="down" />
           <CustomTimePicker value={form.end_time} onChange={(value) => setForm({ ...form, end_time: value })} positionDirection="down" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="장소" className="px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-850 text-sm font-bold outline-none" />
-          <input value={form.meeting_url} onChange={(e) => setForm({ ...form, meeting_url: e.target.value })} placeholder="온라인 링크" className="px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-850 text-sm font-bold outline-none" />
+        <div className="pm-meeting-create__grid pm-meeting-create__grid--2">
+          <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="장소" className="pm-input" />
+          <input value={form.meeting_url} onChange={(e) => setForm({ ...form, meeting_url: e.target.value })} placeholder="온라인 링크" className="pm-input" />
         </div>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-black text-slate-500">안건</span>
-            <button type="button" onClick={() => setForm({ ...form, agendaItems: [...form.agendaItems, { id: `agenda-${Date.now()}-${form.agendaItems.length}`, title: '' }] })} className="text-xs font-black text-toss-blue cursor-pointer">안건 추가</button>
+        <div className="pm-meeting-create__agenda">
+          <div className="pm-meeting-create__section-head">
+            <span>안건</span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setForm({ ...form, agendaItems: [...form.agendaItems, { id: `agenda-${Date.now()}-${form.agendaItems.length}`, title: '' }] })}>안건 추가</Button>
           </div>
           {form.agendaItems.map((item, index) => (
-            <div key={item.id} className="flex items-center gap-2">
-              <span className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-black text-slate-500 flex items-center justify-center shrink-0">{index + 1}</span>
-              <input value={item.title} onChange={(e) => setForm((prev) => ({ ...prev, agendaItems: prev.agendaItems.map((agenda) => agenda.id === item.id ? { ...agenda, title: e.target.value } : agenda) }))} placeholder="논의할 안건" className="flex-1 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-850 text-sm font-semibold outline-none" />
+            <div key={item.id} className="pm-meeting-create__agenda-row">
+              <span className="pm-meeting-create__agenda-index">{index + 1}</span>
+              <input value={item.title} onChange={(e) => setForm((prev) => ({ ...prev, agendaItems: prev.agendaItems.map((agenda) => agenda.id === item.id ? { ...agenda, title: e.target.value } : agenda) }))} placeholder="논의할 안건" className="pm-input" />
               {form.agendaItems.length > 1 && (
-                <button type="button" onClick={() => setForm({ ...form, agendaItems: form.agendaItems.filter((agenda) => agenda.id !== item.id) })} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 cursor-pointer"><X className="w-4 h-4" /></button>
+                <IconButton label="안건 삭제" icon={<X className="w-4 h-4" />} onClick={() => setForm({ ...form, agendaItems: form.agendaItems.filter((agenda) => agenda.id !== item.id) })} />
               )}
             </div>
           ))}
         </div>
         <UserMultiSelect users={users} selectedIds={form.attendees} onChange={(ids, names) => setForm({ ...form, attendees: ids, attendeeNames: names })} placeholder="참석 인력 선택" />
-        <button type="submit" disabled={saving} className="px-4 py-2.5 rounded-xl bg-toss-blue text-white text-xs font-black cursor-pointer disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button>
+        <div className="pm-meeting-create__footer">
+          <Button type="button" variant="secondary" onClick={onClose}>취소</Button>
+          <Button type="submit" variant="primary" disabled={saving}>{saving ? '저장 중...' : '저장'}</Button>
+        </div>
       </form>
     </ModalOverlay>
   );

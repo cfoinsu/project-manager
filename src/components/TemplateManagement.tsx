@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { TempConfig, TempProcess } from '../types';
 import { CustomSelect } from './CustomSelect';
+import { requestDeleteConfirmation } from '../utils/deleteConfirm';
 
 export const TemplateManagement: React.FC = () => {
   const { templates, addTemplateAction } = useProjectStore();
@@ -45,6 +46,11 @@ export const TemplateManagement: React.FC = () => {
   };
 
   const handleRemoveProcess = (pIdx: number) => {
+    if (!requestDeleteConfirmation({
+      title: '템플릿 프로세스 삭제',
+      targetName: processes[pIdx]?.name,
+      description: '프로세스 안의 작업과 필수 문서 항목도 함께 삭제됩니다.',
+    })) return;
     setProcesses(processes.filter((_, idx) => idx !== pIdx));
   };
 
@@ -68,6 +74,11 @@ export const TemplateManagement: React.FC = () => {
   };
 
   const handleRemoveTask = (pIdx: number, tIdx: number) => {
+    if (!requestDeleteConfirmation({
+      title: '템플릿 작업 삭제',
+      targetName: processes[pIdx]?.tasks[tIdx]?.title,
+      description: '삭제한 템플릿 작업 항목은 복구할 수 없습니다.',
+    })) return;
     const next = [...processes];
     next[pIdx].tasks = next[pIdx].tasks.filter((_, idx) => idx !== tIdx);
     setProcesses(next);
@@ -93,6 +104,11 @@ export const TemplateManagement: React.FC = () => {
   };
 
   const handleRemoveDoc = (pIdx: number, dIdx: number) => {
+    if (!requestDeleteConfirmation({
+      title: '템플릿 문서 항목 삭제',
+      targetName: processes[pIdx]?.required_docs[dIdx]?.name,
+      description: '삭제한 템플릿 문서 항목은 복구할 수 없습니다.',
+    })) return;
     const next = [...processes];
     next[pIdx].required_docs = next[pIdx].required_docs.filter((_, idx) => idx !== dIdx);
     setProcesses(next);

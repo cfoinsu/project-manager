@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import * as api from '../utils/api';
 import { useAuthStore } from '../store/authStore';
 import type { User } from '../types';
+import { requestDeleteConfirmation } from '../utils/deleteConfirm';
 import { 
   Trash2, UserPlus, Shield, Search, Mail, UserCheck, AlertCircle, 
   Settings2, UserCog, KeyRound, Laptop, Key, RefreshCw, Layers, Phone 
@@ -255,7 +256,13 @@ export const UserManagementView: React.FC = () => {
   };
 
   const handleDeleteOrgItem = async (type: 'departments' | 'positions' | 'job-roles', id: string) => {
-    if (!confirm('정말로 이 항목을 삭제하시겠습니까? 관련 사용자 정보에는 영향이 없지만 더 이상 연동 선택이 불가능해집니다.')) {
+    const source = type === 'departments' ? orgInfo.departments : type === 'positions' ? orgInfo.positions : orgInfo.jobRoles;
+    const target = source.find((item) => item.id === id);
+    if (!requestDeleteConfirmation({
+      title: '조직 기준 항목 삭제',
+      targetName: target?.name,
+      description: '관련 사용자 정보에는 영향이 없지만 더 이상 연동 선택이 불가능해집니다.',
+    })) {
       return;
     }
 

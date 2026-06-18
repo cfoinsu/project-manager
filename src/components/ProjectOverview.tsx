@@ -11,7 +11,7 @@ import { ModalOverlay } from './ModalOverlay';
 import { RegionPickerModal } from './RegionPickerModal';
 import { openInExplorer } from '../utils/tauriBridge';
 import { PROJECT_RISK_UPDATED_EVENT, readProjectRisksByProjectId, type ProjectRiskItem } from '../utils/projectRiskStore';
-import { Badge, Button, DashboardGrid, DashboardGridItem, EmptyState, Page, PageBody, PageHeader, Panel } from './ui';
+import { Badge, Button, DashboardGrid, DashboardGridItem, EmptyState, Page, PageBody, PageHeader, Panel, Progress, SelectInput, TextareaInput, TextInput } from './ui';
 
 export const ProjectOverview: React.FC = () => {
   const REGION_CODES = getRegionCodes();
@@ -582,9 +582,9 @@ export const ProjectOverview: React.FC = () => {
                 <SelectField label="중요도" value={editImportance} onChange={setEditImportance} options={['Critical', 'High', 'Medium', 'Low']} />
                 <SelectField label="우선순위" value={editPriority} onChange={setEditPriority} options={['P1', 'P2', 'P3', 'P4']} />
                 <TextField label="발주처명" value={editClientName} onChange={setEditClientName} />
-                <button type="button" onClick={() => setIsRegionPickerOpen(true)} className="flex flex-col gap-1.5 text-left">
-                  <span className="text-xs font-bold text-slate-400">지역</span>
-                  <span className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-800 dark:text-slate-100">{editClientRegion || '지역 선택'}</span>
+                <button type="button" onClick={() => setIsRegionPickerOpen(true)} className="pm-field-button">
+                  <span className="pm-field__label">지역</span>
+                  <span className="pm-field-button__value">{editClientRegion || '지역 선택'}</span>
                 </button>
                 <TextField label="담당 부서" value={editClientDepartment} onChange={setEditClientDepartment} />
                 <TextField label="담당자" value={editClientContactName} onChange={setEditClientContactName} />
@@ -659,9 +659,7 @@ const InfoRow = ({ label, value, accent, progress }: { label: string; value: Rea
     <span className="pm-info-row__label">{label}</span>
     <div className="pm-info-row__value-wrap">
       {typeof progress === 'number' && (
-        <div className="pm-info-row__progress">
-          <div className="pm-info-row__progress-fill" style={{ width: `${progress}%` }} />
-        </div>
+        <Progress value={progress} showValue={false} className="pm-info-row__progress" />
       )}
       <span className={`pm-info-row__value ${accent ? `pm-info-row__value--${accent}` : ''}`}>
         {value}
@@ -670,17 +668,17 @@ const InfoRow = ({ label, value, accent, progress }: { label: string; value: Rea
   </div>
 );
 
-const RiskProgress = ({ label, value, className }: { label: string; value: number; className: string }) => (
-  <div>
-    <div className="mb-1 flex items-center justify-between text-[11px] font-black">
-      <span className="text-slate-500 dark:text-slate-400">{label}</span>
-      <span className="text-slate-800 dark:text-slate-200">{value}%</span>
-    </div>
-    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-      <div className={`h-full rounded-full ${className}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
-    </div>
-  </div>
-);
+const RiskProgress = ({ label, value, className }: { label: string; value: number; className: string }) => {
+  const tone = className.includes('rose')
+    ? 'danger'
+    : className.includes('amber')
+      ? 'warning'
+      : className.includes('emerald')
+        ? 'success'
+        : 'neutral';
+
+  return <Progress label={label} value={value} tone={tone} />;
+};
 
 const NarrativeBlock = ({ title, value, empty }: { title: string; value?: string; empty: string }) => (
   <div className="pm-overview-narrative">
@@ -709,24 +707,13 @@ const CompactList = ({ items, empty, danger = false }: { items: { title: string;
 };
 
 const TextField = ({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; type?: string }) => (
-  <label className="flex flex-col gap-1.5">
-    <span className="text-xs font-bold text-slate-400">{label}</span>
-    <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-toss-blue/15 text-slate-800 dark:text-slate-100" />
-  </label>
+  <TextInput label={label} value={value} onChange={onChange} type={type} />
 );
 
 const SelectField = ({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) => (
-  <label className="flex flex-col gap-1.5">
-    <span className="text-xs font-bold text-slate-400">{label}</span>
-    <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full text-xs font-bold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-toss-blue/15 text-slate-800 dark:text-slate-100">
-      {options.map((option) => <option key={option} value={option}>{option}</option>)}
-    </select>
-  </label>
+  <SelectInput label={label} value={value} onChange={onChange} options={options} />
 );
 
 const TextareaField = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => (
-  <label className="flex flex-col gap-1.5">
-    <span className="text-xs font-bold text-slate-400">{label}</span>
-    <textarea value={value} onChange={(event) => onChange(event.target.value)} rows={3} className="w-full text-xs font-semibold bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-toss-blue/15 resize-none text-slate-800 dark:text-slate-100" />
-  </label>
+  <TextareaInput label={label} value={value} onChange={onChange} rows={3} />
 );

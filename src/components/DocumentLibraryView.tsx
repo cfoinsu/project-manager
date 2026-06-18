@@ -7,6 +7,7 @@ import {
   deleteDocument,
   type DocTemplate
 } from '../utils/api';
+import { requestDeleteConfirmation } from '../utils/deleteConfirm';
 import { useAuthStore } from '../store/authStore';
 import {
   Upload, Search, Download, Trash2, Edit2, X,
@@ -414,7 +415,11 @@ export const DocumentLibraryView: React.FC = () => {
   };
 
   const handleDelete = async (doc: DocTemplate) => {
-    if (!confirm(`"${doc.original_name}" 파일을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+    if (!requestDeleteConfirmation({
+      title: '문서 파일 삭제',
+      targetName: doc.original_name,
+      description: '이 작업은 되돌릴 수 없습니다.',
+    })) return;
     try {
       await deleteDocument(doc.id);
       setDocuments(prev => prev.filter(d => d.id !== doc.id));
@@ -452,7 +457,11 @@ export const DocumentLibraryView: React.FC = () => {
       alert('이 그룹에 속해있는 서류 양식이 있습니다. 문서 정보를 먼저 다른 그룹으로 이동시킨 후 삭제가 가능합니다.');
       return;
     }
-    if (!confirm(`"${catToDelete}" 그룹을 삭제하시겠습니까?`)) return;
+    if (!requestDeleteConfirmation({
+      title: '문서 그룹 삭제',
+      targetName: catToDelete,
+      description: '삭제한 그룹은 다시 만들어야 복구할 수 있습니다.',
+    })) return;
     const updated = categories.filter((c) => c !== catToDelete);
     setCategories(updated);
     localStorage.setItem('pa_document_categories', JSON.stringify(updated));

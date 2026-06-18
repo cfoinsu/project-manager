@@ -1,0 +1,74 @@
+.pm-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--pm-space-2);
+  text-align: left;
+}
+
+.pm-field__label {
+  color: var(--pm-color-text-muted);
+  font-size: var(--pm-font-size-sm);
+  font-weight: 800;
+}
+
+.pm-input,
+.pm-select,
+.pm-textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--pm-color-border);
+  border-radius: var(--pm-radius-lg);
+  outline: none;
+  background: var(--pm-color-surface-muted);
+  color: var(--pm-color-text-primary);
+  font-size: var(--pm-font-size-sm);
+  font-weight: 800;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.pm-input,
+.pm-select {
+  min-height: 38px;
+  padding: 0 var(--pm-space-3);
+}
+
+.pm-textarea {
+  min-height: 88px;
+  padding: var(--pm-space-3);
+  resize: none;
+  line-height: var(--pm-line-height-base);
+}
+
+.pm-input:focus,
+.pm-select:focus,
+.pm-textarea:focus {
+  border-color: color-mix(in srgb, var(--pm-color-primary) 60%, var(--pm-color-border));
+  background: var(--pm-color-surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pm-color-primary) 14%, transparent);
+}
+
+.pm-field-button {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--pm-space-2);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pm-field-button__value {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  border: 1px solid var(--pm-color-border);
+  border-radius: var(--pm-radius-lg);
+  background: var(--pm-color-surface-muted);
+  color: var(--pm-color-text-primary);
+  font-size: var(--pm-font-size-sm);
+  font-weight: 800;
+  padding: 0 var(--pm-space-3);
+}

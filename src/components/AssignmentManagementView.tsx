@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import * as api from '../utils/api';
 import * as db from '../utils/db';
+import { requestDeleteConfirmation } from '../utils/deleteConfirm';
 import { useAuthStore } from '../store/authStore';
 import { useProjectStore } from '../store/projectStore';
 import type { Assignment, User, Workload } from '../types';
@@ -259,7 +260,12 @@ export const AssignmentManagementView: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('정말로 이 인력 배정 내역을 해제하시겠습니까?')) {
+    const target = assignments.find((assignment) => assignment.id === id);
+    if (!requestDeleteConfirmation({
+      title: '인력 배정 해제',
+      targetName: target?.user_name || target?.role,
+      description: '해제한 인력 배정 내역은 다시 추가해야 복구할 수 있습니다.',
+    })) {
       return;
     }
     setError(null);

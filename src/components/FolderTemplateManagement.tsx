@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { FolderTemplateNode } from '../types';
 import { getDocuments, type DocTemplate } from '../utils/api';
+import { requestDeleteConfirmation } from '../utils/deleteConfirm';
 
 // Recursive Folder Tree Node Editor Component
 interface TreeNodeEditorProps {
@@ -350,6 +351,18 @@ export const FolderTemplateManagement: React.FC = () => {
   }, []);
 
   const handleDeleteNode = useCallback((path: number[]) => {
+    const findNode = (nodeList: FolderTemplateNode[], p: number[]): FolderTemplateNode | undefined => {
+      const node = nodeList[p[0]];
+      if (!node || p.length === 1) return node;
+      return findNode(node.children || [], p.slice(1));
+    };
+    const target = findNode(structure, path);
+    if (!requestDeleteConfirmation({
+      title: '폴더 양식 항목 삭제',
+      targetName: target?.name,
+      description: '하위 폴더와 연결된 문서 항목도 함께 삭제됩니다.',
+    })) return;
+
     setStructure(prev => {
       const deleteRecurse = (nodeList: FolderTemplateNode[], p: number[]): FolderTemplateNode[] => {
         const copy = [...nodeList];
@@ -366,7 +379,7 @@ export const FolderTemplateManagement: React.FC = () => {
       };
       return deleteRecurse(prev, path);
     });
-  }, []);
+  }, [structure]);
 
   const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -398,7 +411,12 @@ export const FolderTemplateManagement: React.FC = () => {
   };
 
   const handleDeleteTemplate = async (id: string) => {
-    if (confirm('이 폴더 양식을 삭제하시겠습니까?')) {
+    const target = folderTemplates.find((template) => template.id === id);
+    if (requestDeleteConfirmation({
+      title: '폴더 양식 삭제',
+      targetName: target?.name,
+      description: '삭제한 폴더 양식은 다시 만들어야 복구할 수 있습니다.',
+    })) {
       await removeFolderTemplateAction(id);
       setSelectedTemplateId(null);
     }

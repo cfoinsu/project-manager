@@ -25,6 +25,7 @@ import { isTauri } from '../utils/tauriBridge';
 import { useProjectStore } from '../store/projectStore';
 import { useBrandStore } from '../store/brandStore';
 import { getApiBaseUrl, normalizeServerUrl, syncGlobalServerUrl, updateGlobalServerUrl } from '../utils/api';
+import { requestDeleteConfirmation } from '../utils/deleteConfirm';
 import { getKoreaRegions, PROJECT_TYPE_CODES } from '../types';
 import type { RegionGroup } from '../types';
 
@@ -172,7 +173,11 @@ export const SettingsView: React.FC = () => {
       return;
     }
 
-    if (!confirm('정말 이 지역 코드를 삭제하시겠습니까?')) {
+    if (!requestDeleteConfirmation({
+      title: '지역 코드 삭제',
+      targetName: code,
+      description: '삭제한 지역 코드는 다시 추가해야 복구할 수 있습니다.',
+    })) {
       return;
     }
 
@@ -283,7 +288,10 @@ export const SettingsView: React.FC = () => {
   }, [projects]);
 
   const handleResetData = () => {
-    if (window.confirm('정말 전체 데이터를 초기화하시겠습니까?\n프로젝트 내역 및 생성된 커스텀 템플릿이 모두 삭제됩니다.')) {
+    if (requestDeleteConfirmation({
+      title: '전체 데이터 초기화',
+      description: '프로젝트 내역 및 생성된 커스텀 템플릿이 모두 삭제됩니다.',
+    })) {
       localStorage.clear();
       window.location.reload();
     }

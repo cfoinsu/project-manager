@@ -16,21 +16,106 @@ import {
   Trash2,
   CheckCircle2,
   X,
-  MoreVertical
+  MoreVertical,
+  Search,
+  Star,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 import type { Project } from '../types';
-import { getRegionCodes, PROJECT_TYPE_CODES } from '../types';
+import { getKoreaRegions, getRegionCodes, PROJECT_TYPE_CODES } from '../types';
 import { selectFolderNative, isTauri } from '../utils/tauriBridge';
 import { generateProjectCode, getProcesses } from '../utils/db';
 import { RangeDatePicker } from './RangeDatePicker';
 import { CustomSelect } from './CustomSelect';
 import { RegionPickerModal } from './RegionPickerModal';
+import { ModalOverlay } from './ModalOverlay';
+
+type ProjectQuickFilter = 'all' | 'active' | 'pending' | 'completed' | 'important' | 'risk' | 'due';
+type ProjectSortMode = 'recent' | 'updated' | 'created' | 'due' | 'health' | 'progress' | 'amount' | 'importance';
+type ProjectViewMode = 'card' | 'list';
+type ProjectPeriodPreset = 'all' | 'thisMonth' | 'lastMonth' | 'recent3Months' | 'thisYear' | 'custom';
+type ProjectAmountFilter = 'all' | 'under10m' | '10to50m' | '50to100m' | 'over100m';
+type ProjectHealthFilter = 'all' | 'excellent' | 'normal' | 'risk';
+
+interface ProjectAccessMeta {
+  pinnedIds: string[];
+  recent: Array<{ id: string; at: number }>;
+}
+
+const PROJECT_ACCESS_META_KEY = 'pa_project_access_meta';
+
+const readProjectAccessMeta = (): ProjectAccessMeta => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PROJECT_ACCESS_META_KEY) || '{}');
+    return {
+      pinnedIds: Array.isArray(parsed.pinnedIds) ? parsed.pinnedIds : [],
+      recent: Array.isArray(parsed.recent) ? parsed.recent : [],
+    };
+  } catch {
+    return { pinnedIds: [], recent: [] };
+  }
+};
+
+const writeProjectAccessMeta = (meta: ProjectAccessMeta) => {
+  localStorage.setItem(PROJECT_ACCESS_META_KEY, JSON.stringify(meta));
+};
+
+const dateDistance = (date?: string) => {
+  if (!date) return Number.POSITIVE_INFINITY;
+  return Math.abs(new Date(date).getTime() - Date.now());
+};
+
+const toDateInput = (date: Date) => {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const parseMoneyAmount = (value?: string) => {
+  if (!value) return 0;
+  return Number(String(value).replace(/[^\d]/g, '')) || 0;
+};
+
+const getImportanceScore = (project: Project) => {
+  const importanceRank: Record<string, number> = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+  const priorityRank: Record<string, number> = { P1: 4, P2: 3, P3: 2, P4: 1 };
+  return Math.max(importanceRank[project.importance || ''] || 0, priorityRank[project.priority || ''] || 0);
+};
+
+const getProjectDDay = (date?: string) => {
+  if (!date) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  return Math.ceil((target.getTime() - today.getTime()) / 86400000);
+};
 
 export const DashboardView: React.FC = () => {
   const REGION_CODES = getRegionCodes();
   const { projects, templates, folderTemplates, addProject, removeProject, updateProjectInfo, selectProject, setView, setPendingTab } = useProjectStore();
   const [modalOpen, setModalOpen] = useState(false);
-  const [projectStatusFilter, setProjectStatusFilter] = useState<'전체' | '대기' | '진행중' | '완료'>('전체');
+  const [projectSearch, setProjectSearch] = useState('');
+  const [projectQuickFilter, setProjectQuickFilter] = useState<ProjectQuickFilter>('all');
+  const [projectProvinceFilter, setProjectProvinceFilter] = useState('all');
+  const [projectSubRegionFilter, setProjectSubRegionFilter] = useState('all');
+  const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
+  const [projectPeriodPreset, setProjectPeriodPreset] = useState<ProjectPeriodPreset>('all');
+  const [projectPeriodStart, setProjectPeriodStart] = useState('');
+  const [projectPeriodEnd, setProjectPeriodEnd] = useState('');
+  const [projectManagerFilter, setProjectManagerFilter] = useState('');
+  const [projectAmountFilter, setProjectAmountFilter] = useState<ProjectAmountFilter>('all');
+  const [projectTypeFilter, setProjectTypeFilter] = useState('all');
+  const [projectHealthFilter, setProjectHealthFilter] = useState<ProjectHealthFilter>('all');
+  const [projectPriorityFilter, setProjectPriorityFilter] = useState('all');
+  const [projectClientFilter, setProjectClientFilter] = useState('');
+  const [projectSortMode, setProjectSortMode] = useState<ProjectSortMode>('recent');
+  const [projectViewMode, setProjectViewMode] = useState<ProjectViewMode>('card');
+  const [projectAccessMeta, setProjectAccessMeta] = useState<ProjectAccessMeta>(() => readProjectAccessMeta());
+  const [showAllFavoriteProjects, setShowAllFavoriteProjects] = useState(false);
+  const regionGroups = useMemo(() => getKoreaRegions(), []);
 
   const [isRegionPickerOpen, setIsRegionPickerOpen] = useState(false);
   const [regionPickerTarget, setRegionPickerTarget] = useState<'create' | 'edit'>('create');
@@ -70,6 +155,69 @@ export const DashboardView: React.FC = () => {
     const typeChar = code.charAt(4);
     const found = PROJECT_TYPE_CODES.find(t => t.code === typeChar);
     return found ? found.name : '기타';
+  };
+
+  const getProjectRegionPath = (project: Project) => {
+    const codeMatch = regionGroups
+      .flatMap((group) => group.subRegions.map((subRegion) => ({ province: group.name, subRegion })))
+      .sort((a, b) => b.subRegion.code.length - a.subRegion.code.length)
+      .find((item) => project.code?.startsWith(item.subRegion.code));
+
+    if (codeMatch) {
+      return {
+        province: codeMatch.province,
+        subRegion: codeMatch.subRegion.name,
+        subRegionCode: codeMatch.subRegion.code,
+      };
+    }
+
+    const regionText = project.client_region || '';
+    const provinceMatch = regionGroups.find((group) => regionText.includes(group.name));
+    if (provinceMatch) {
+      const subMatch = provinceMatch.subRegions.find((subRegion) => regionText.includes(subRegion.name));
+      return {
+        province: provinceMatch.name,
+        subRegion: subMatch?.name || '시군 미지정',
+        subRegionCode: subMatch?.code || '',
+      };
+    }
+
+    return { province: '지역 미지정', subRegion: '시군 미지정', subRegionCode: '' };
+  };
+
+  const projectPeriodRange = useMemo(() => {
+    const today = new Date();
+    let start = '';
+    let end = '';
+
+    if (projectPeriodPreset === 'thisMonth') {
+      start = toDateInput(new Date(today.getFullYear(), today.getMonth(), 1));
+      end = toDateInput(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+    } else if (projectPeriodPreset === 'lastMonth') {
+      start = toDateInput(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+      end = toDateInput(new Date(today.getFullYear(), today.getMonth(), 0));
+    } else if (projectPeriodPreset === 'recent3Months') {
+      start = toDateInput(new Date(today.getFullYear(), today.getMonth() - 2, 1));
+      end = toDateInput(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+    } else if (projectPeriodPreset === 'thisYear') {
+      start = toDateInput(new Date(today.getFullYear(), 0, 1));
+      end = toDateInput(new Date(today.getFullYear(), 11, 31));
+    } else if (projectPeriodPreset === 'custom') {
+      start = projectPeriodStart;
+      end = projectPeriodEnd;
+    }
+
+    return { start, end };
+  }, [projectPeriodEnd, projectPeriodPreset, projectPeriodStart]);
+
+  const isProjectInPeriod = (project: Project) => {
+    if (!projectPeriodRange.start && !projectPeriodRange.end) return true;
+    if (!project.start_date && !project.end_date) return false;
+    const start = project.start_date || project.end_date || '';
+    const end = project.end_date || project.start_date || '';
+    if (projectPeriodRange.start && end < projectPeriodRange.start) return false;
+    if (projectPeriodRange.end && start > projectPeriodRange.end) return false;
+    return true;
   };
   
   // 금주의 날짜들 계산 (일~토)
@@ -154,12 +302,185 @@ export const DashboardView: React.FC = () => {
     return Math.max(...weekProjects.map(wp => wp.lane)) + 1;
   }, [weekProjects]);
 
-  const filteredProjects = useMemo(() => {
-    return projects.filter(p => {
-      if (projectStatusFilter === '전체') return true;
-      return (p.status || '진행중') === projectStatusFilter;
+  const recentRankMap = useMemo(() => new Map(projectAccessMeta.recent.map((item, index) => [item.id, index])), [projectAccessMeta.recent]);
+  const recentAtMap = useMemo(() => new Map(projectAccessMeta.recent.map((item) => [item.id, item.at])), [projectAccessMeta.recent]);
+  const pinnedIdSet = useMemo(() => new Set(projectAccessMeta.pinnedIds), [projectAccessMeta.pinnedIds]);
+
+  const pinnedProjects = useMemo(() => {
+    return projectAccessMeta.pinnedIds
+      .map((id) => projects.find((project) => project.id === id))
+      .filter(Boolean) as Project[];
+  }, [projectAccessMeta.pinnedIds, projects]);
+
+  const dueSoonProjects = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const limit = new Date(now);
+    limit.setDate(limit.getDate() + 14);
+    return projects.filter((project) => {
+      if (!project.end_date || project.status === '완료') return false;
+      const end = new Date(project.end_date);
+      return end >= now && end <= limit;
     });
-  }, [projects, projectStatusFilter]);
+  }, [projects]);
+
+  const riskProjects = useMemo(() => {
+    return projects.filter((project) => project.status !== '완료' && (project.health_score < 70 || project.importance === 'Critical'));
+  }, [projects]);
+
+  const regionTreeSummaries = useMemo(() => {
+    const provinceCounts = new Map<string, number>();
+    const subRegionCounts = new Map<string, Map<string, number>>();
+    projects.forEach((project) => {
+      const region = getProjectRegionPath(project);
+      provinceCounts.set(region.province, (provinceCounts.get(region.province) || 0) + 1);
+      const childMap = subRegionCounts.get(region.province) || new Map<string, number>();
+      childMap.set(region.subRegion, (childMap.get(region.subRegion) || 0) + 1);
+      subRegionCounts.set(region.province, childMap);
+    });
+    return Array.from(provinceCounts.entries())
+      .map(([name, count]) => ({
+        name,
+        count,
+        subRegions: Array.from(subRegionCounts.get(name)?.entries() || [])
+          .map(([subName, subCount]) => ({ name: subName, count: subCount }))
+          .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ko')),
+      }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ko'));
+  }, [projects]);
+
+  const projectTypeOptions = useMemo(() => {
+    return Array.from(new Set(projects.map((project) => getProjectTypeName(project.code)).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'));
+  }, [projects]);
+
+  const quickFilterCounts = useMemo(() => {
+    return {
+      all: projects.length,
+      active: projects.filter((project) => (project.status || '진행중') === '진행중').length,
+      pending: projects.filter((project) => (project.status || '진행중') === '대기').length,
+      completed: projects.filter((project) => (project.status || '진행중') === '완료').length,
+      important: projects.filter((project) => getImportanceScore(project) >= 3).length,
+      risk: riskProjects.length,
+      due: dueSoonProjects.length,
+    } satisfies Record<ProjectQuickFilter, number>;
+  }, [dueSoonProjects.length, projects, riskProjects.length]);
+
+  const appliedProjectFilterCount = useMemo(() => {
+    return [
+      projectSearch.trim(),
+      projectQuickFilter !== 'all',
+      projectProvinceFilter !== 'all',
+      projectSubRegionFilter !== 'all',
+      projectPeriodPreset !== 'all',
+      projectManagerFilter.trim(),
+      projectAmountFilter !== 'all',
+      projectTypeFilter !== 'all',
+      projectHealthFilter !== 'all',
+      projectPriorityFilter !== 'all',
+      projectClientFilter.trim(),
+    ].filter(Boolean).length;
+  }, [projectAmountFilter, projectClientFilter, projectHealthFilter, projectManagerFilter, projectPeriodPreset, projectPriorityFilter, projectProvinceFilter, projectQuickFilter, projectSearch, projectSubRegionFilter, projectTypeFilter]);
+
+  const resetProjectFilters = () => {
+    setProjectSearch('');
+    setProjectQuickFilter('all');
+    setProjectProvinceFilter('all');
+    setProjectSubRegionFilter('all');
+    setProjectPeriodPreset('all');
+    setProjectPeriodStart('');
+    setProjectPeriodEnd('');
+    setProjectManagerFilter('');
+    setProjectAmountFilter('all');
+    setProjectTypeFilter('all');
+    setProjectHealthFilter('all');
+    setProjectPriorityFilter('all');
+    setProjectClientFilter('');
+  };
+
+  const filteredProjects = useMemo(() => {
+    const normalizedQuery = projectSearch.trim().toLowerCase();
+
+    return projects
+      .filter((project) => {
+        const region = getProjectRegionPath(project);
+        if (projectProvinceFilter !== 'all' && region.province !== projectProvinceFilter) return false;
+        if (projectSubRegionFilter !== 'all' && region.subRegion !== projectSubRegionFilter) return false;
+        if (!isProjectInPeriod(project)) return false;
+
+        const status = project.status || '진행중';
+        if (projectQuickFilter === 'active' && status !== '진행중') return false;
+        if (projectQuickFilter === 'pending' && status !== '대기') return false;
+        if (projectQuickFilter === 'completed' && status !== '완료') return false;
+        if (projectQuickFilter === 'important' && getImportanceScore(project) < 3) return false;
+        if (projectQuickFilter === 'risk' && !riskProjects.some((item) => item.id === project.id)) return false;
+        if (projectQuickFilter === 'due' && !dueSoonProjects.some((item) => item.id === project.id)) return false;
+
+        if (projectManagerFilter.trim() && !String(project.client_contact_name || '').toLowerCase().includes(projectManagerFilter.trim().toLowerCase())) return false;
+        if (projectClientFilter.trim() && !String(project.client_name || '').toLowerCase().includes(projectClientFilter.trim().toLowerCase())) return false;
+        if (projectTypeFilter !== 'all' && getProjectTypeName(project.code) !== projectTypeFilter) return false;
+        if (projectPriorityFilter !== 'all' && (project.priority || project.importance || '미지정') !== projectPriorityFilter) return false;
+
+        const health = project.health_score || 0;
+        if (projectHealthFilter === 'excellent' && health < 90) return false;
+        if (projectHealthFilter === 'normal' && (health < 70 || health >= 90)) return false;
+        if (projectHealthFilter === 'risk' && health >= 70) return false;
+
+        const amount = parseMoneyAmount(project.contract_amount);
+        if (projectAmountFilter === 'under10m' && amount > 10000000) return false;
+        if (projectAmountFilter === '10to50m' && (amount < 10000000 || amount > 50000000)) return false;
+        if (projectAmountFilter === '50to100m' && (amount < 50000000 || amount > 100000000)) return false;
+        if (projectAmountFilter === 'over100m' && amount < 100000000) return false;
+
+        if (!normalizedQuery) return true;
+
+        const haystack = [
+          project.name,
+          project.code,
+          project.path,
+          project.status,
+          project.client_name,
+          project.client_region,
+          project.client_department,
+          project.client_contact_name,
+          region.province,
+          region.subRegion,
+          getProjectTypeName(project.code),
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        return haystack.includes(normalizedQuery);
+      })
+      .sort((a, b) => {
+        if (pinnedIdSet.has(a.id) !== pinnedIdSet.has(b.id)) {
+          return pinnedIdSet.has(a.id) ? -1 : 1;
+        }
+
+        if (projectSortMode === 'recent') {
+          return (recentRankMap.get(a.id) ?? 9999) - (recentRankMap.get(b.id) ?? 9999);
+        }
+        if (projectSortMode === 'updated') {
+          return new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime();
+        }
+        if (projectSortMode === 'due') {
+          return dateDistance(a.end_date) - dateDistance(b.end_date);
+        }
+        if (projectSortMode === 'health') {
+          return (a.health_score || 0) - (b.health_score || 0);
+        }
+        if (projectSortMode === 'progress') {
+          return (projectProgressMap[b.id] || 0) - (projectProgressMap[a.id] || 0);
+        }
+        if (projectSortMode === 'amount') {
+          return parseMoneyAmount(b.contract_amount) - parseMoneyAmount(a.contract_amount);
+        }
+        if (projectSortMode === 'importance') {
+          return getImportanceScore(b) - getImportanceScore(a);
+        }
+        if (projectSortMode === 'created') {
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        }
+        return 0;
+      });
+  }, [dueSoonProjects, pinnedIdSet, projectAmountFilter, projectClientFilter, projectHealthFilter, projectManagerFilter, projectPriorityFilter, projectProgressMap, projectProvinceFilter, projectQuickFilter, projectSearch, projectSortMode, projectSubRegionFilter, projectTypeFilter, projects, recentRankMap, riskProjects, projectPeriodRange]);
 
 
   
@@ -249,6 +570,17 @@ export const DashboardView: React.FC = () => {
     setModalOpen(false);
     
     // Select the new project and view overview
+    setProjectAccessMeta(prev => {
+      const next: ProjectAccessMeta = {
+        pinnedIds: prev.pinnedIds,
+        recent: [
+          { id: project.id, at: Date.now() },
+          ...prev.recent.filter((item) => item.id !== project.id),
+        ].slice(0, 12),
+      };
+      writeProjectAccessMeta(next);
+      return next;
+    });
     selectProject(project);
     setView('projects_overview');
     } catch (error: any) {
@@ -258,8 +590,31 @@ export const DashboardView: React.FC = () => {
 
   const handleSelectRecent = (project: Project) => {
     if (openMenuId) return; // 메뉴 열린 상태에서는 클릭 무시
+    setProjectAccessMeta(prev => {
+      const next: ProjectAccessMeta = {
+        pinnedIds: prev.pinnedIds,
+        recent: [
+          { id: project.id, at: Date.now() },
+          ...prev.recent.filter((item) => item.id !== project.id),
+        ].slice(0, 12),
+      };
+      writeProjectAccessMeta(next);
+      return next;
+    });
     selectProject(project);
     setView('projects_overview');
+  };
+
+  const handleTogglePinProject = (project: Project, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setProjectAccessMeta(prev => {
+      const pinned = prev.pinnedIds.includes(project.id)
+        ? prev.pinnedIds.filter((id) => id !== project.id)
+        : [project.id, ...prev.pinnedIds].slice(0, 12);
+      const next = { ...prev, pinnedIds: pinned };
+      writeProjectAccessMeta(next);
+      return next;
+    });
   };
 
   const handleSelectFolder = async () => {
@@ -514,45 +869,301 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* ━━━ 메인 2단 레이아웃 ━━━ */}
-      <div className="flex gap-6 items-start flex-1 min-h-0">
+      {/* ━━━ 메인 레이아웃 ━━━ */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-5 items-start flex-1 min-h-0">
 
-        {/* ─── 왼쪽: 프로젝트 목록 ─── */}
-        <div className="flex-[3] flex flex-col gap-4 min-w-0">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-extrabold text-toss-gray-800 dark:text-slate-200">
-              프로젝트 목록 <span className="text-sm font-bold text-slate-400 ml-1">({projects.length})</span>
-            </h2>
-            {/* 탭 필터 */}
-            <div className="flex gap-0.5 bg-toss-gray-100 dark:bg-slate-800/80 p-0.5 rounded-xl select-none">
-              {(['전체', '대기', '진행중', '완료'] as const).map(tab => (
+        <div className="toss-card grid grid-cols-1 2xl:grid-cols-[270px_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+
+        {/* ─── 왼쪽: 지역 탐색 ─── */}
+        <div className="flex flex-col gap-4 p-4 min-w-0 border-b 2xl:border-b-0 2xl:border-r border-slate-100 dark:border-slate-800">
+          <div>
+            <h2 className="text-base font-black text-toss-gray-900 dark:text-slate-100">지역별 보기</h2>
+            <p className="text-xs font-bold text-slate-400 mt-1">도 단위에서 시군으로 좁혀 탐색합니다.</p>
+          </div>
+
+          <div className="rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 p-2">
+            <button
+              onClick={() => {
+                setProjectProvinceFilter('all');
+                setProjectSubRegionFilter('all');
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-extrabold cursor-pointer ${projectProvinceFilter === 'all' ? 'bg-white dark:bg-slate-900 text-toss-blue shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+            >
+              <span>전체 프로젝트</span>
+              <span>{projects.length}</span>
+            </button>
+            <div className="mt-1 flex max-h-[420px] flex-col gap-1 overflow-y-auto pr-1">
+              {regionTreeSummaries.map(region => (
+                <div key={region.name}>
+                  <button
+                    onClick={() => {
+                      setProjectProvinceFilter(region.name);
+                      setProjectSubRegionFilter('all');
+                    }}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-extrabold cursor-pointer ${projectProvinceFilter === region.name && projectSubRegionFilter === 'all' ? 'bg-white dark:bg-slate-900 text-toss-blue shadow-sm' : 'text-slate-500 hover:bg-white/70 dark:hover:bg-slate-900/70 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                  >
+                    <span className="truncate">{region.name}</span>
+                    <span className="shrink-0">{region.count}</span>
+                  </button>
+                  {projectProvinceFilter === region.name && (
+                    <div className="mt-1 ml-3 flex flex-col gap-1 border-l border-slate-200 dark:border-slate-800 pl-2">
+                      {region.subRegions.map(subRegion => (
+                        <button
+                          key={subRegion.name}
+                          onClick={() => setProjectSubRegionFilter(subRegion.name)}
+                          className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${projectSubRegionFilter === subRegion.name ? 'bg-white dark:bg-slate-900 text-toss-blue shadow-sm' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                        >
+                          <span className="truncate">{subRegion.name}</span>
+                          <span className="shrink-0">{subRegion.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-3 dark:border-amber-900/40 dark:bg-amber-950/20">
+            <div className="flex items-center justify-between gap-2 text-[11px] font-extrabold text-amber-600 mb-2">
+              <span className="flex items-center gap-1.5">
+                <Star className="w-3.5 h-3.5 fill-amber-400" /> 즐겨찾기 프로젝트
+              </span>
+              <span>{pinnedProjects.length}</span>
+            </div>
+            {pinnedProjects.length === 0 ? (
+              <p className="text-[11px] font-bold text-amber-600/70 py-2">카드의 별을 눌러 자주 보는 프로젝트를 모아보세요.</p>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {(showAllFavoriteProjects ? pinnedProjects : pinnedProjects.slice(0, 5)).map(project => (
+                  <button key={project.id} onClick={() => handleSelectRecent(project)} className="rounded-xl px-2 py-1.5 text-left text-xs font-bold text-slate-700 hover:bg-white/70 hover:text-toss-blue dark:text-slate-200 dark:hover:bg-slate-900/60">
+                    <span className="block truncate">★ {project.name}</span>
+                    <span className="mt-0.5 block truncate text-[10px] font-extrabold text-slate-400">
+                      {project.code || '코드 없음'} · {getProjectTypeName(project.code)}
+                    </span>
+                  </button>
+                ))}
+                {pinnedProjects.length > 5 && (
+                  <button onClick={() => setShowAllFavoriteProjects((value) => !value)} className="mt-1 text-left text-[11px] font-extrabold text-amber-600 hover:text-amber-700">
+                    {showAllFavoriteProjects ? '접기' : '전체 보기'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 p-3">
+            <div className="text-[11px] font-extrabold text-slate-500 mb-2">전체 요약</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400">진행중</p>
+                <p className="text-lg font-black text-toss-blue">{quickFilterCounts.active}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400">위험</p>
+                <p className="text-lg font-black text-rose-500">{quickFilterCounts.risk}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400">마감임박</p>
+                <p className="text-lg font-black text-orange-500">{quickFilterCounts.due}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400">완료</p>
+                <p className="text-lg font-black text-emerald-500">{quickFilterCounts.completed}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ─── 가운데: 프로젝트 목록 ─── */}
+        <div className="flex flex-col gap-4 min-w-0">
+          <div className="flex flex-col gap-3 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-extrabold text-toss-gray-800 dark:text-slate-200">
+                  프로젝트 목록
+                </h2>
+                <p className="text-xs font-bold text-slate-400 mt-1">
+                  {filteredProjects.length}개 표시 / 전체 {projects.length}개
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1 bg-toss-gray-100 dark:bg-slate-800/80 p-1 rounded-xl select-none">
+                  <button
+                    onClick={() => setProjectViewMode('card')}
+                    className={`p-2 rounded-lg cursor-pointer ${projectViewMode === 'card' ? 'bg-white dark:bg-slate-900 text-toss-blue shadow-sm' : 'text-slate-400'}`}
+                    title="카드 보기"
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setProjectViewMode('list')}
+                    className={`p-2 rounded-lg cursor-pointer ${projectViewMode === 'list' ? 'bg-white dark:bg-slate-900 text-toss-blue shadow-sm' : 'text-slate-400'}`}
+                    title="리스트 보기"
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                </div>
+                <select value={projectSortMode} onChange={(event) => setProjectSortMode(event.target.value as ProjectSortMode)} className="h-10 px-3 rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-100 dark:border-slate-800 text-xs font-extrabold text-slate-600 dark:text-slate-300 outline-none">
+                  <option value="recent">최근 접근순</option>
+                  <option value="updated">최근 수정순</option>
+                  <option value="created">최근 생성순</option>
+                  <option value="due">마감일 가까운 순</option>
+                  <option value="health">건강도 낮은 순</option>
+                  <option value="progress">진행률 높은 순</option>
+                  <option value="amount">계약금액 높은 순</option>
+                  <option value="importance">중요도 높은 순</option>
+                </select>
                 <button
-                  key={tab}
-                  onClick={() => setProjectStatusFilter(tab)}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    projectStatusFilter === tab
-                      ? 'bg-white dark:bg-slate-900 text-toss-blue dark:text-sky-400 shadow-sm'
-                      : 'text-toss-gray-455 hover:text-toss-gray-800 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
+                  onClick={() => setAdvancedFilterOpen((value) => !value)}
+                  className={`h-10 px-3 rounded-xl text-xs font-extrabold border cursor-pointer ${advancedFilterOpen ? 'bg-toss-blue text-white border-toss-blue shadow-sm' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-toss-blue'}`}
                 >
-                  {tab}
+                  고급 필터
+                </button>
+              </div>
+            </div>
+
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={projectSearch}
+                onChange={(event) => setProjectSearch(event.target.value)}
+                placeholder="프로젝트명, 코드, 발주처 검색"
+                className="w-full h-12 pl-11 pr-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50 border border-slate-100 dark:border-slate-800 text-sm font-bold outline-none focus:border-toss-blue/50"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {([
+                ['all', `전체 ${quickFilterCounts.all}`],
+                ['active', `진행중 ${quickFilterCounts.active}`],
+                ['pending', `대기 ${quickFilterCounts.pending}`],
+                ['completed', `완료 ${quickFilterCounts.completed}`],
+                ['important', `중요 ${quickFilterCounts.important}`],
+                ['risk', `위험 ${quickFilterCounts.risk}`],
+                ['due', `마감임박 ${quickFilterCounts.due}`],
+              ] as Array<[ProjectQuickFilter, string]>).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setProjectQuickFilter(key)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${projectQuickFilter === key ? 'bg-toss-blue text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                >
+                  {label}
                 </button>
               ))}
             </div>
+
+            {appliedProjectFilterCount > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-extrabold text-slate-400 mr-1">적용 필터:</span>
+                {projectProvinceFilter !== 'all' && (
+                  <button onClick={() => { setProjectProvinceFilter('all'); setProjectSubRegionFilter('all'); }} className="px-2.5 py-1 rounded-full bg-sky-50 text-toss-blue border border-sky-100 text-[11px] font-extrabold"> {projectProvinceFilter} ×</button>
+                )}
+                {projectSubRegionFilter !== 'all' && (
+                  <button onClick={() => setProjectSubRegionFilter('all')} className="px-2.5 py-1 rounded-full bg-sky-50 text-toss-blue border border-sky-100 text-[11px] font-extrabold"> {projectSubRegionFilter} ×</button>
+                )}
+                {projectQuickFilter !== 'all' && (
+                  <button onClick={() => setProjectQuickFilter('all')} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-extrabold">빠른 필터 ×</button>
+                )}
+                {projectSearch.trim() && (
+                  <button onClick={() => setProjectSearch('')} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-extrabold">검색어 ×</button>
+                )}
+                {projectPeriodPreset !== 'all' && (
+                  <button onClick={() => { setProjectPeriodPreset('all'); setProjectPeriodStart(''); setProjectPeriodEnd(''); }} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-extrabold">기간 ×</button>
+                )}
+                {projectManagerFilter.trim() && <button onClick={() => setProjectManagerFilter('')} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-extrabold">담당자 ×</button>}
+                {projectAmountFilter !== 'all' && <button onClick={() => setProjectAmountFilter('all')} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-extrabold">금액 ×</button>}
+                {projectTypeFilter !== 'all' && <button onClick={() => setProjectTypeFilter('all')} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-extrabold">유형 ×</button>}
+                {projectHealthFilter !== 'all' && <button onClick={() => setProjectHealthFilter('all')} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-extrabold">건강도 ×</button>}
+                {projectPriorityFilter !== 'all' && <button onClick={() => setProjectPriorityFilter('all')} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-extrabold">우선순위 ×</button>}
+                {projectClientFilter.trim() && <button onClick={() => setProjectClientFilter('')} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-extrabold">발주처 ×</button>}
+                {appliedProjectFilterCount >= 2 && (
+                  <button onClick={resetProjectFilters} className="ml-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-500 border border-rose-100 text-[11px] font-extrabold">필터 초기화</button>
+                )}
+              </div>
+            ) : (
+              <p className="text-[11px] font-bold text-slate-400">전체 프로젝트 표시 중</p>
+            )}
           </div>
 
           {projects.length === 0 ? (
             <div className="toss-card flex flex-col items-center justify-center py-16 text-center bg-white/70 dark:bg-slate-900/70 border border-dashed border-gray-200 dark:border-slate-800 gap-3">
               <FolderOpen className="w-12 h-12 text-toss-gray-300" />
               <p className="text-sm font-semibold text-toss-gray-455 dark:text-slate-400">등록된 프로젝트가 없습니다.</p>
-              <button onClick={() => setModalOpen(true)} className="toss-btn toss-btn-primary px-5 py-2.5 rounded-xl text-xs font-extrabold">
-                첫 프로젝트 만들기
-              </button>
             </div>
           ) : filteredProjects.length === 0 ? (
             <div className="toss-card flex flex-col items-center justify-center py-10 text-center border border-dashed border-gray-200 dark:border-slate-800 gap-2">
               <FolderOpen className="w-8 h-8 text-toss-gray-300" />
-              <p className="text-xs font-semibold text-slate-400">'{projectStatusFilter}' 상태의 프로젝트가 없습니다.</p>
+              <p className="text-xs font-semibold text-slate-400">현재 검색/필터 조건에 맞는 프로젝트가 없습니다.</p>
+            </div>
+          ) : projectViewMode === 'card' ? (
+            <div className="grid grid-cols-1 2xl:grid-cols-2 gap-3">
+              {filteredProjects.map((proj) => {
+                const isCompleted = proj.status === '완료';
+                const isPending = proj.status === '대기';
+                const typeName = getProjectTypeName(proj.code);
+                const progressPercent = projectProgressMap[proj.id] || 0;
+                const isPinned = pinnedIdSet.has(proj.id);
+                const isRisk = proj.status !== '완료' && (proj.health_score < 70 || proj.importance === 'Critical');
+                const dDay = getProjectDDay(proj.end_date);
+                const isDueSoon = dDay !== null && dDay >= 0 && dDay <= 14 && proj.status !== '완료';
+                const healthTone = proj.health_score >= 90
+                  ? 'text-emerald-600 bg-emerald-50 border-emerald-200'
+                  : proj.health_score >= 70
+                  ? 'text-amber-600 bg-amber-50 border-amber-200'
+                  : 'text-rose-600 bg-rose-50 border-rose-200';
+                const statusTone = isCompleted
+                  ? 'text-emerald-600 bg-emerald-50 border-emerald-200'
+                  : isPending
+                  ? 'text-slate-500 bg-slate-100 border-slate-200'
+                  : 'text-toss-blue bg-sky-50 border-sky-200';
+                const progressTone = isCompleted ? 'bg-emerald-500' : isPending ? 'bg-slate-300' : 'bg-toss-blue';
+
+                return (
+                  <div
+                    key={proj.id}
+                    onClick={() => handleSelectRecent(proj)}
+                    className={`toss-card p-4 cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 ${isRisk ? 'border-l-4 border-l-rose-500' : ''} ${isCompleted ? 'opacity-80' : isPending ? 'opacity-90' : ''}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {proj.code && <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 font-mono border border-slate-200/50">{proj.code}</span>}
+                          <h3 className="text-sm font-extrabold text-slate-900 dark:text-slate-100 truncate">{proj.name}</h3>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-medium truncate mt-1">{proj.client_name || proj.path}</p>
+                      </div>
+                      <button onClick={(event) => handleTogglePinProject(proj, event)} className={`p-1.5 rounded-lg cursor-pointer ${isPinned ? 'text-amber-400 bg-amber-50' : 'text-slate-300 hover:text-amber-400 hover:bg-amber-50'}`} title={isPinned ? '즐겨찾기 해제' : '즐겨찾기 추가'}>
+                        <Star className={`w-4 h-4 ${isPinned ? 'fill-amber-400' : ''}`} />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs font-bold border border-slate-200/40">{typeName}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${statusTone}`}>{isCompleted ? '완료 ✓' : proj.status || '진행중'}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${healthTone}`}>{proj.health_score}점</span>
+                      {(proj.priority || proj.importance) && (
+                        <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 text-xs font-bold border border-violet-100">{proj.priority || proj.importance}</span>
+                      )}
+                      {isDueSoon && (
+                        <span className="px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 text-xs font-bold border border-orange-100">D-{dDay}</span>
+                      )}
+                    </div>
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 mb-1">
+                        <span>진행도</span>
+                        <span>{progressPercent}%</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${progressTone}`} style={{ width: `${progressPercent}%` }} />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-3 text-[11px] font-bold text-slate-400">
+                      <span className="truncate">{proj.start_date || '시작일 미정'} ~ {proj.end_date || '종료일 미정'}</span>
+                      {recentAtMap.has(proj.id) && <span>최근 열람</span>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="flex flex-col gap-0 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900 shadow-sm">
@@ -627,6 +1238,9 @@ export const DashboardView: React.FC = () => {
 
                     {/* 건강도 + 메뉴 */}
                     <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                      <button onClick={(event) => handleTogglePinProject(proj, event)} className={`p-1 rounded-lg cursor-pointer ${pinnedIdSet.has(proj.id) ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400'}`} title={pinnedIdSet.has(proj.id) ? '즐겨찾기 해제' : '즐겨찾기 추가'}>
+                        <Star className={`w-3.5 h-3.5 ${pinnedIdSet.has(proj.id) ? 'fill-amber-400' : ''}`} />
+                      </button>
                       <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${healthColor}`}>
                         {proj.health_score}점
                       </span>
@@ -660,9 +1274,10 @@ export const DashboardView: React.FC = () => {
             </div>
           )}
         </div>
+        </div>
 
         {/* ─── 오른쪽: 3단 스택 ─── */}
-        <div className="flex-[2] flex flex-col gap-4 min-w-0">
+        <div className="flex flex-col gap-4 min-w-0">
 
           {/* 1) 프로젝트 간소 캘린더 (주간 간트) */}
           <div className="toss-card flex flex-col gap-3 py-4 px-5">
@@ -836,6 +1451,156 @@ export const DashboardView: React.FC = () => {
 
         </div>
       </div>
+
+
+      {/* ─── Advanced Project Filter Modal ─── */}
+      {advancedFilterOpen && (
+        <ModalOverlay onClose={() => setAdvancedFilterOpen(false)} zIndex={80}>
+          <div
+            className="bg-white/95 dark:bg-slate-900/95 border border-gray-100 dark:border-slate-800 rounded-[28px] p-6 shadow-toss-lg max-w-3xl w-full text-left animate-scale-in flex flex-col gap-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-extrabold text-toss-gray-900 dark:text-slate-100">고급 필터</h3>
+                <p className="text-xs font-bold text-slate-400 mt-1">필요할 때만 세부 조건을 조합해 프로젝트를 좁힙니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdvancedFilterOpen(false)}
+                className="p-2 rounded-xl hover:bg-toss-gray-100 dark:hover:bg-slate-800 text-toss-gray-400 transition-colors cursor-pointer"
+                aria-label="고급 필터 닫기"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">기간</span>
+                <CustomSelect
+                  value={projectPeriodPreset}
+                  onChange={(event) => setProjectPeriodPreset(event.target.value as ProjectPeriodPreset)}
+                  className="text-xs px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-toss-blue/15 transition-all font-bold cursor-pointer"
+                >
+                  <option value="all">전체 기간</option>
+                  <option value="thisMonth">이번 달</option>
+                  <option value="lastMonth">지난 달</option>
+                  <option value="recent3Months">최근 3개월</option>
+                  <option value="thisYear">올해</option>
+                  <option value="custom">직접 선택</option>
+                </CustomSelect>
+              </label>
+
+              {projectPeriodPreset === 'custom' && (
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">직접 선택 기간</span>
+                  <RangeDatePicker
+                    startDate={projectPeriodStart}
+                    endDate={projectPeriodEnd}
+                    onChange={(start, end) => {
+                      setProjectPeriodStart(start);
+                      setProjectPeriodEnd(end);
+                    }}
+                    placeholder="시작일 ~ 종료일"
+                    className="w-full"
+                  />
+                </label>
+              )}
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">담당자</span>
+                <input
+                  value={projectManagerFilter}
+                  onChange={(event) => setProjectManagerFilter(event.target.value)}
+                  placeholder="담당자명"
+                  className="toss-input text-xs"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">계약금액</span>
+                <CustomSelect
+                  value={projectAmountFilter}
+                  onChange={(event) => setProjectAmountFilter(event.target.value as ProjectAmountFilter)}
+                  className="text-xs px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-toss-blue/15 transition-all font-bold cursor-pointer"
+                >
+                  <option value="all">전체 금액</option>
+                  <option value="under10m">1천만원 이하</option>
+                  <option value="10to50m">1천만원 ~ 5천만원</option>
+                  <option value="50to100m">5천만원 ~ 1억원</option>
+                  <option value="over100m">1억원 이상</option>
+                </CustomSelect>
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">프로젝트 유형</span>
+                <CustomSelect
+                  value={projectTypeFilter}
+                  onChange={(event) => setProjectTypeFilter(event.target.value)}
+                  className="text-xs px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-toss-blue/15 transition-all font-bold cursor-pointer"
+                >
+                  <option value="all">전체 유형</option>
+                  {projectTypeOptions.map((typeName) => <option key={typeName} value={typeName}>{typeName}</option>)}
+                </CustomSelect>
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">건강도</span>
+                <CustomSelect
+                  value={projectHealthFilter}
+                  onChange={(event) => setProjectHealthFilter(event.target.value as ProjectHealthFilter)}
+                  className="text-xs px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-toss-blue/15 transition-all font-bold cursor-pointer"
+                >
+                  <option value="all">전체</option>
+                  <option value="excellent">우수</option>
+                  <option value="normal">보통</option>
+                  <option value="risk">위험</option>
+                </CustomSelect>
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">우선순위</span>
+                <CustomSelect
+                  value={projectPriorityFilter}
+                  onChange={(event) => setProjectPriorityFilter(event.target.value)}
+                  className="text-xs px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-toss-blue/15 transition-all font-bold cursor-pointer"
+                >
+                  <option value="all">전체 우선순위</option>
+                  {['P1', 'P2', 'P3', 'P4', 'Critical', 'High', 'Medium', 'Low'].map((value) => <option key={value} value={value}>{value}</option>)}
+                </CustomSelect>
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-bold text-toss-gray-455 dark:text-slate-400">발주처</span>
+                <input
+                  value={projectClientFilter}
+                  onChange={(event) => setProjectClientFilter(event.target.value)}
+                  placeholder="발주처명"
+                  className="toss-input text-xs"
+                />
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={resetProjectFilters}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                필터 초기화
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdvancedFilterOpen(false)}
+                className="toss-btn toss-btn-primary px-5 py-2.5 rounded-xl text-xs font-extrabold"
+              >
+                적용하기
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
 
 
       {/* ─── New Project Registration Modal ─── */}
