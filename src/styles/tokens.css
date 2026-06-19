@@ -1,0 +1,94 @@
+:root {
+  color-scheme: light;
+
+  --pm-font-sans: 'IBM Plex Sans', 'Pretendard', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  --pm-color-primary: #3182f6;
+  --pm-color-primary-hover: #1b64da;
+  --pm-color-primary-soft: #e8f3ff;
+
+  --pm-color-surface: #ffffff;
+  --pm-color-surface-muted: #f8fafc;
+  --pm-color-surface-subtle: #f2f4f6;
+  --pm-color-border: #e5e8eb;
+  --pm-color-border-strong: #d1d6db;
+
+  --pm-color-text-primary: #191f28;
+  --pm-color-text-secondary: #4e5968;
+  --pm-color-text-muted: #8b95a1;
+  --pm-color-text-disabled: #b0b8c1;
+
+  --pm-color-success: #00b06c;
+  --pm-color-success-soft: #e6f8f1;
+  --pm-color-warning: #ffad0d;
+  --pm-color-warning-soft: #fff6e6;
+  --pm-color-danger: #f04452;
+  --pm-color-danger-soft: #feecee;
+
+  --pm-color-task: #3182f6;
+  --pm-color-task-soft: #e8f3ff;
+  --pm-color-meeting: #7c3aed;
+  --pm-color-meeting-soft: #f3e8ff;
+  --pm-color-assignment: #059669;
+  --pm-color-assignment-soft: #ecfdf5;
+  --pm-color-risk: #e11d48;
+  --pm-color-risk-soft: #fff1f2;
+
+  --pm-space-1: 4px;
+  --pm-space-2: 8px;
+  --pm-space-3: 12px;
+  --pm-space-4: 16px;
+  --pm-space-5: 20px;
+  --pm-space-6: 24px;
+  --pm-space-8: 32px;
+  --pm-space-10: 40px;
+  --pm-space-12: 48px;
+
+  --pm-radius-xs: 4px;
+  --pm-radius-sm: 6px;
+  --pm-radius-md: 8px;
+  --pm-radius-lg: 12px;
+  --pm-radius-xl: 16px;
+  --pm-radius-full: 999px;
+
+  --pm-shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.04);
+  --pm-shadow-md: 0 10px 30px rgba(15, 23, 42, 0.06);
+  --pm-shadow-lg: 0 18px 48px rgba(15, 23, 42, 0.10);
+
+  --pm-font-size-2xs: 10px;
+  --pm-font-size-xs: 11px;
+  --pm-font-size-sm: 12px;
+  --pm-font-size-md: 14px;
+  --pm-font-size-lg: 16px;
+  --pm-font-size-xl: 20px;
+  --pm-font-size-2xl: 24px;
+
+  --pm-line-height-tight: 1.2;
+  --pm-line-height-base: 1.5;
+  --pm-line-height-relaxed: 1.7;
+
+  --pm-z-dropdown: 50;
+  --pm-z-popover: 60;
+  --pm-z-modal-dim: 100;
+  --pm-z-modal: 110;
+  --pm-z-toast: 130;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --pm-color-surface: #0f172a;
+  --pm-color-surface-muted: #111827;
+  --pm-color-surface-subtle: #1e293b;
+  --pm-color-border: #334155;
+  --pm-color-border-strong: #475569;
+
+  --pm-color-text-primary: #f8fafc;
+  --pm-color-text-secondary: #cbd5e1;
+  --pm-color-text-muted: #94a3b8;
+  --pm-color-text-disabled: #64748b;
+
+  --pm-shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.20);
+  --pm-shadow-md: 0 10px 30px rgba(0, 0, 0, 0.28);
+  --pm-shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.38);
+}

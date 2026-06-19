@@ -1,0 +1,16 @@
+/* Scoped reset for new design-system surfaces. Existing screens keep their current reset. */
+.pm-root,
+.pm-root * {
+  box-sizing: border-box;
+}
+
+.pm-root button,
+.pm-root input,
+.pm-root textarea,
+.pm-root select {
+  font: inherit;
+}
+
+.pm-root button {
+  border: 0;
+}

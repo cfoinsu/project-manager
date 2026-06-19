@@ -1,0 +1,3 @@
+최고 관리자 (Admin)	admin	admin123
+프로젝트 매니저 (Manager)	manager	manager123
+일반 개발원 (Member)	member	member123
