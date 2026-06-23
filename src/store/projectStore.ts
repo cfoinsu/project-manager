@@ -1,9 +1,32 @@
 import { create } from 'zustand';
-import type { Project, Process, Task, Document, Template, FolderNode, FolderTemplate, FolderTemplateNode } from '../types';
+import type { Project, Process, Task, Document, Template, FolderNode, FolderTemplate, FolderTemplateNode, DiscoveredFile } from '../types';
 import * as db from '../utils/db';
 import { scanDirectory, createDirectory, writeFileBytes } from '../utils/tauriBridge';
 import { downloadDocumentBytes, createWorkLog } from '../utils/api';
 import { useAuthStore } from './authStore';
+
+// ── 자동 문서 발견(Auto-discovery) 설정 ──────────────────────────────
+// 산출물로 취급할 문서성 파일 확장자. (소스코드/바이너리 잡파일은 제외)
+const DISCOVERABLE_DOC_EXTS = new Set([
+  'doc', 'docx', 'hwp', 'hwpx', 'pdf', 'txt', 'md', 'rtf',
+  'xls', 'xlsx', 'csv', 'ppt', 'pptx',
+  'psd', 'ai', 'sketch', 'fig', 'xd', 'png', 'jpg', 'jpeg', 'gif', 'svg',
+  'dwg', 'zip'
+]);
+// 발견 대상에서 제외할 폴더명(빌드/캐시/버전관리 등 노이즈 폴더).
+const DISCOVERY_IGNORE_DIRS = new Set([
+  'node_modules', '.git', '.svn', 'dist', 'build', 'out', 'target',
+  '.next', '.nuxt', '.cache', '.turbo', 'coverage', '__pycache__',
+  'venv', '.venv', '.idea', '.vscode'
+]);
+
+const getExt = (name: string): string => {
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+};
+// 경로에 제외 대상 폴더 세그먼트가 포함돼 있는지 검사 (Windows \\ 및 / 모두 대응)
+const isInIgnoredDir = (path: string): boolean =>
+  path.split(/[\\/]/).some(seg => DISCOVERY_IGNORE_DIRS.has(seg.toLowerCase()));
 
 interface ProjectState {
   projects: Project[];
@@ -19,7 +42,8 @@ interface ProjectState {
   emptyFoldersList: FolderNode[];
   duplicateFilesList: string[];
   largeFilesList: FolderNode[];
-  
+  discoveredDocs: DiscoveredFile[]; // 폴더 스캔으로 자동 발견된 문서 후보 (비영속)
+
   // Actions
   loadProjects: () => Promise<void>;
   loadTemplates: () => Promise<void>;
@@ -42,6 +66,7 @@ interface ProjectState {
   
   // Sync & Analysis Actions
   scanAndSync: () => Promise<void>;
+  promoteDiscoveredDoc: (file: DiscoveredFile) => Promise<void>;
   addTemplateAction: (name: string, description: string, configJson: string) => Promise<void>;
   addFolderTemplateAction: (name: string, description: string, structureJson: string) => Promise<void>;
   removeFolderTemplateAction: (id: string) => Promise<void>;
@@ -65,6 +90,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   emptyFoldersList: [],
   duplicateFilesList: [],
   largeFilesList: [],
+  discoveredDocs: [],
   pendingTab: null,
 
   setPendingTab: (tab) => set({ pendingTab: tab }),
@@ -103,7 +129,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   selectProject: async (project) => {
     if (!project) {
-      set({ activeProject: null, processes: [], tasks: {}, documents: [], rootNode: null, emptyFoldersList: [], duplicateFilesList: [], largeFilesList: [] });
+      set({ activeProject: null, processes: [], tasks: {}, documents: [], rootNode: null, emptyFoldersList: [], duplicateFilesList: [], largeFilesList: [], discoveredDocs: [] });
       return;
     }
 
@@ -264,7 +290,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       await db.deleteProject(id);
       const { activeProject } = get();
       if (activeProject && activeProject.id === id) {
-        set({ activeProject: null, processes: [], tasks: {}, documents: [], rootNode: null });
+        set({ activeProject: null, processes: [], tasks: {}, documents: [], rootNode: null, discoveredDocs: [] });
       }
       await get().loadProjects();
     } finally {
@@ -479,6 +505,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const duplicateCountMap = new Map<string, number>();
       const duplicates: string[] = [];
       const largeFiles: FolderNode[] = [];
+      // 자동 발견 후보: 문서성 파일이면서 노이즈 폴더에 있지 않은 파일 (이름 소문자 기준 중복 제거)
+      const discoveredMap = new Map<string, DiscoveredFile>();
 
       const traverse = (n: FolderNode) => {
         if (n.is_dir) {
@@ -503,6 +531,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           // Large files check (>100MB)
           if (n.size > 100 * 1024 * 1024) {
             largeFiles.push(n);
+          }
+
+          // 자동 발견: 문서성 확장자 + 노이즈 폴더 제외
+          const ext = getExt(n.name);
+          if (DISCOVERABLE_DOC_EXTS.has(ext) && !isInIgnoredDir(n.path) && !discoveredMap.has(lowerName)) {
+            const segs = n.path.split(/[\\/]/);
+            discoveredMap.set(lowerName, {
+              name: n.name,
+              path: n.path,
+              size: n.size,
+              type: ext,
+              folder: segs.length > 1 ? segs[segs.length - 2] : '',
+              modified: n.modified
+            });
           }
         }
       };
@@ -530,6 +572,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
       // Save documents to db
       await db.saveDocuments(updatedDocuments);
+
+      // 3-b. 자동 발견 문서 목록 산출: 이미 필수 산출물로 등록된 파일명은 제외한다.
+      // (DB에 저장하지 않고 매 스캔마다 폴더에서 실시간 재계산 → 헬스 점수에 영향 없음)
+      const registeredNames = new Set(documents.map(d => d.name.toLowerCase()));
+      const discoveredDocs: DiscoveredFile[] = Array.from(discoveredMap.values())
+        .filter(f => !registeredNames.has(f.name.toLowerCase()))
+        .sort((a, b) => a.folder.localeCompare(b.folder) || a.name.localeCompare(b.name));
 
       // 4. Update Process Progress & Statuses
       const updatedProcesses = processes.map(proc => {
@@ -597,12 +646,45 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         emptyFoldersList: emptyFolders,
         duplicateFilesList: duplicates,
         largeFilesList: largeFiles,
+        discoveredDocs,
         projects,
         activeProject: activeProjectUpdated
       });
     } catch (e) {
       console.error('Scan and Sync failed:', e);
     }
+  },
+
+  // 자동 발견된 파일을 프로젝트 필수 산출물로 등록(승격)한다.
+  promoteDiscoveredDoc: async (file) => {
+    const { activeProject, documents, discoveredDocs } = get();
+    if (!activeProject) return;
+
+    // 이미 같은 이름이 등록돼 있으면 중복 생성하지 않는다.
+    if (documents.some(d => d.name.toLowerCase() === file.name.toLowerCase())) {
+      set({ discoveredDocs: discoveredDocs.filter(d => d.path !== file.path) });
+      return;
+    }
+
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const newDoc: Document = {
+      id: 'doc-' + Math.random().toString(36).substr(2, 9),
+      project_id: activeProject.id,
+      name: file.name,
+      path: file.path,
+      type: file.type,
+      size: file.size,
+      page_count: 0,
+      updated_at: nowStr
+    };
+
+    await db.saveDocuments([newDoc]);
+    // 등록 즉시 UI 반영 후, 재스캔으로 헬스 점수/발견 목록을 정합화한다.
+    set({
+      documents: [...documents, newDoc],
+      discoveredDocs: discoveredDocs.filter(d => d.path !== file.path)
+    });
+    await get().scanAndSync();
   },
 
   addTemplateAction: async (name, description, configJson) => {

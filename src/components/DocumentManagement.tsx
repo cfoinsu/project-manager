@@ -12,14 +12,18 @@ import {
   SlidersHorizontal,
   FileCode,
   Info,
-  Clock
+  Clock,
+  Sparkles,
+  Plus,
+  FolderSearch
 } from 'lucide-react';
 import { openFile, openInExplorer } from '../utils/tauriBridge';
 
 export const DocumentManagement: React.FC = () => {
-  const { activeProject, documents } = useProjectStore();
+  const { activeProject, documents, discoveredDocs, promoteDiscoveredDoc } = useProjectStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [registering, setRegistering] = useState<string | null>(null);
   
   if (!activeProject) {
     return (
@@ -87,6 +91,29 @@ export const DocumentManagement: React.FC = () => {
       await openInExplorer(dirPath || activeProject.path);
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // 자동 발견된 파일 1건을 필수 산출물로 등록
+  const handlePromote = async (file: typeof discoveredDocs[number]) => {
+    setRegistering(file.path);
+    try {
+      await promoteDiscoveredDoc(file);
+    } finally {
+      setRegistering(null);
+    }
+  };
+
+  // 자동 발견된 파일 전체를 한 번에 등록
+  const handlePromoteAll = async () => {
+    setRegistering('__all__');
+    try {
+      // 스냅샷을 떠서 순차 등록 (각 등록 후 목록이 갱신되므로)
+      for (const file of [...discoveredDocs]) {
+        await promoteDiscoveredDoc(file);
+      }
+    } finally {
+      setRegistering(null);
     }
   };
 
@@ -161,6 +188,70 @@ export const DocumentManagement: React.FC = () => {
             <SlidersHorizontal className="w-4 h-4" />
           </button>
         </div>
+
+        {/* 자동 발견 문서 (폴더 스캔으로 찾은, 아직 등록 안 된 문서 후보) */}
+        {discoveredDocs.length > 0 && (
+          <div className="toss-card bg-gradient-to-br from-toss-blue-light/30 to-white dark:from-toss-blue/10 dark:to-slate-900 border border-toss-blue/30 dark:border-toss-blue/20 rounded-3xl p-5 shrink-0 select-none">
+            <div className="flex items-center justify-between mb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-toss-blue/15 flex items-center justify-center text-toss-blue">
+                  <FolderSearch className="w-5 h-5" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-sm font-extrabold text-toss-gray-800 dark:text-slate-100 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-toss-blue" />
+                    폴더에서 자동 발견된 문서
+                  </span>
+                  <span className="text-[11px] font-semibold text-toss-gray-450 dark:text-slate-500">
+                    프로젝트 폴더에 실제로 존재하지만 아직 산출물로 등록되지 않은 파일 {discoveredDocs.length}건
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={handlePromoteAll}
+                disabled={registering !== null}
+                className="inline-flex items-center gap-1.5 text-xs font-extrabold text-white bg-toss-blue hover:bg-toss-blue/90 disabled:opacity-50 px-3.5 py-2 rounded-xl transition-colors cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {registering === '__all__' ? '등록 중...' : '전체 등록'}
+              </button>
+            </div>
+            <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
+              {discoveredDocs.map((file) => (
+                <div
+                  key={file.path}
+                  className="flex items-center gap-3 bg-white/70 dark:bg-slate-900/50 border border-toss-gray-150 dark:border-slate-800/70 rounded-xl px-3.5 py-2.5"
+                >
+                  {getFileIcon(file.type)}
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="text-sm font-bold text-toss-gray-800 dark:text-slate-200 truncate" title={file.path}>
+                      {file.name}
+                    </span>
+                    <span className="text-[11px] font-semibold text-toss-gray-400 dark:text-slate-500 truncate">
+                      {file.folder ? `📁 ${file.folder}` : ''} · {file.type.toUpperCase()} · {formatBytes(file.size)}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleOpenFile(file.path)}
+                    className="p-2 rounded-lg text-toss-gray-500 bg-toss-gray-100 hover:bg-toss-gray-200 dark:text-slate-400 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors cursor-pointer shrink-0"
+                    title="파일 열기"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handlePromote(file)}
+                    disabled={registering !== null}
+                    className="inline-flex items-center gap-1 text-xs font-extrabold text-toss-blue bg-toss-blue-light/60 dark:bg-toss-blue/15 hover:bg-toss-blue-light dark:hover:bg-toss-blue/25 disabled:opacity-50 px-3 py-2 rounded-lg transition-colors cursor-pointer shrink-0"
+                    title="필수 산출물로 등록"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    {registering === file.path ? '등록 중' : '필수 등록'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Documents Table List */}
         <div className="toss-card bg-white dark:bg-slate-900 border border-toss-gray-200/50 dark:border-slate-800/80 rounded-3xl overflow-hidden shadow-sm flex flex-col flex-1 min-h-[300px]">

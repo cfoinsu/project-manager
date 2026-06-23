@@ -528,6 +528,17 @@ export interface Document {
   updated_at: string;
 }
 
+// 폴더 스캔으로 자동 발견된 파일(아직 필수 산출물로 등록되지 않은 문서 후보).
+// DB에 저장하지 않고 매 스캔마다 실시간으로 재계산한다.
+export interface DiscoveredFile {
+  name: string;
+  path: string;
+  size: number;
+  type: string;   // 확장자 (소문자)
+  folder: string; // 파일이 위치한 상위 폴더명
+  modified?: number;
+}
+
 export interface Template {
   id: string;
   name: string;
