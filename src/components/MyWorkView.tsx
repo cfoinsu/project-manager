@@ -238,6 +238,32 @@ export const MyWorkView: React.FC = () => {
   const completionRate = Math.min(100, Math.round((allDoneTodos.length / goalTotal) * 100));
   const todoTotal = Math.max(visibleTodos.length, 1);
   const todoCompletionRate = Math.min(100, Math.round((doneTodos.length / todoTotal) * 100));
+  const focusQueue = [
+    ...activeTasks.slice(0, 2).map((task) => ({
+      id: `task-${task.id}`,
+      type: '작업',
+      title: task.title,
+      sub: task.project?.name || task.process_name || '프로젝트 작업',
+      tone: dayDiff(task.end_date) <= 0 ? 'danger' : 'task',
+      onClick: () => openTask(task),
+    })),
+    ...upcomingMeetings.slice(0, 1).map((meeting) => ({
+      id: `meeting-${meeting.id}`,
+      type: '회의',
+      title: meeting.title,
+      sub: `${formatDateLabel(meeting.start_date)} ${meeting.start_time}`,
+      tone: 'meeting',
+      onClick: () => openMeeting(meeting),
+    })),
+    ...urgentTodos.slice(0, 2).map((todo) => ({
+      id: `todo-${todo.id}`,
+      type: '투두',
+      title: todo.title,
+      sub: formatDateLabel(todo.due_date),
+      tone: 'todo',
+      onClick: () => moveTodo(todo, 'done'),
+    })),
+  ].slice(0, 4);
 
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -330,6 +356,44 @@ export const MyWorkView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">오늘의 실행 큐</h3>
+            <p className="mt-1 text-[11px] font-bold text-slate-400">마감 작업, 다음 회의, 오늘 처리할 투두를 한 줄 흐름으로 모았습니다.</p>
+          </div>
+          <button onClick={load} className="text-xs font-black text-toss-blue cursor-pointer">동기화</button>
+        </div>
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
+          {focusQueue.length === 0 ? (
+            <div className="md:col-span-2 xl:col-span-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-5 text-center text-xs font-bold text-slate-400">
+              지금 바로 처리할 항목이 없습니다.
+            </div>
+          ) : focusQueue.map((item) => (
+            <button
+              key={item.id}
+              onClick={item.onClick}
+              className={`rounded-xl border p-3 text-left transition-all cursor-pointer hover:-translate-y-0.5 ${
+                item.tone === 'danger'
+                  ? 'border-rose-200 bg-rose-50/70 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300'
+                  : item.tone === 'meeting'
+                  ? 'border-emerald-200 bg-emerald-50/70 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300'
+                  : item.tone === 'todo'
+                  ? 'border-teal-200 bg-teal-50/70 text-teal-700 dark:border-teal-900/60 dark:bg-teal-950/20 dark:text-teal-300'
+                  : 'border-blue-200 bg-blue-50/70 text-toss-blue dark:border-blue-900/60 dark:bg-blue-950/20'
+              }`}
+            >
+              <span className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-black">{item.type}</span>
+                <ChevronRight className="w-4 h-4 opacity-70" />
+              </span>
+              <span className="mt-2 block text-xs font-black truncate">{item.title}</span>
+              <span className="mt-1 block text-[11px] font-bold opacity-75 truncate">{item.sub}</span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
         <SummaryMetric icon={<ListTodo className="w-5 h-5" />} title="내 업무" value={activeTasks.length} sub="진행 중인 업무">

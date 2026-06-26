@@ -2,12 +2,12 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
-    "devPath": "http://192.168.0.155:5174/",
+    "devPath": "http://localhost:5174/",
     "distDir": "../dist"
   },
   "package": {
     "productName": "Folder Atlas",
-    "version": "0.2.0"
+    "version": "0.2.3"
   },
   "tauri": {
     "allowlist": {

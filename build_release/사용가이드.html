@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Folder Atlas 사용 가이드 (v0.2.2)</title>
+<style>
+  :root{
+    --blue:#2563eb; --blue-light:#eff6ff; --ink:#1e293b; --gray:#64748b;
+    --line:#e2e8f0; --bg:#f8fafc; --card:#ffffff; --green:#10b981; --red:#ef4444;
+    --amber:#f59e0b; --radius:18px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Pretendard","Malgun Gothic","맑은 고딕","Apple SD Gothic Neo",-apple-system,
+      BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:15px; line-height:1.7; letter-spacing:-0.01em;
+  }
+  a{color:var(--blue); text-decoration:none;}
+  /* Layout */
+  .wrap{display:flex; max-width:1180px; margin:0 auto; gap:28px; padding:0 20px;}
+  nav.toc{
+    position:sticky; top:0; align-self:flex-start; height:100vh; overflow-y:auto;
+    width:248px; flex:0 0 248px; padding:28px 0 40px; border-right:1px solid var(--line);
+  }
+  nav.toc .brand{font-weight:800; font-size:18px; padding:0 16px 4px;}
+  nav.toc .ver{font-size:12px; color:var(--gray); padding:0 16px 18px;}
+  nav.toc a{
+    display:block; padding:8px 16px; color:var(--gray); font-weight:600; font-size:13.5px;
+    border-left:3px solid transparent;
+  }
+  nav.toc a:hover{color:var(--ink); background:#fff;}
+  nav.toc a.active{color:var(--blue); border-left-color:var(--blue); background:var(--blue-light);}
+  main{flex:1 1 auto; min-width:0; padding:34px 0 90px;}
+  /* Hero */
+  header.hero{
+    background:linear-gradient(135deg,#1e3a8a,#2563eb); color:#fff; border-radius:24px;
+    padding:38px 36px; margin-bottom:34px;
+  }
+  header.hero h1{margin:0 0 8px; font-size:30px; font-weight:800; letter-spacing:-0.02em;}
+  header.hero p{margin:0; opacity:.92; font-size:15px;}
+  header.hero .pill{
+    display:inline-block; margin-top:16px; background:rgba(255,255,255,.18);
+    padding:6px 14px; border-radius:999px; font-size:12.5px; font-weight:700;
+  }
+  /* Sections */
+  section{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:28px 30px; margin-bottom:22px; scroll-margin-top:18px;
+  }
+  section > h2{
+    margin:0 0 6px; font-size:21px; font-weight:800; display:flex; align-items:center; gap:10px;
+  }
+  section > h2 .num{
+    flex:0 0 auto; width:30px; height:30px; border-radius:9px; background:var(--blue);
+    color:#fff; font-size:14px; display:inline-flex; align-items:center; justify-content:center;
+  }
+  section .lead{color:var(--gray); margin:0 0 18px; font-size:14px;}
+  h3{font-size:16px; font-weight:700; margin:24px 0 10px;}
+  /* Step list */
+  ol.steps{counter-reset:s; list-style:none; margin:0; padding:0;}
+  ol.steps > li{
+    counter-increment:s; position:relative; padding:10px 0 10px 42px; border-bottom:1px dashed var(--line);
+  }
+  ol.steps > li:last-child{border-bottom:none;}
+  ol.steps > li::before{
+    content:counter(s); position:absolute; left:0; top:9px; width:26px; height:26px;
+    background:var(--blue-light); color:var(--blue); border-radius:8px; font-weight:800; font-size:13px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  /* Button chip = literal UI label */
+  .btn{
+    display:inline-block; background:#1e293b; color:#fff; padding:1px 9px; border-radius:7px;
+    font-size:12.5px; font-weight:700; margin:0 1px; white-space:nowrap; vertical-align:1px;
+  }
+  .btn.blue{background:var(--blue);}
+  .btn.green{background:var(--green);}
+  .btn.red{background:var(--red);}
+  .btn.ghost{background:#f1f5f9; color:#334155; border:1px solid var(--line);}
+  .menu{
+    display:inline-block; background:#f1f5f9; color:#334155; padding:1px 8px; border-radius:6px;
+    font-weight:700; font-size:12.5px; border:1px solid var(--line);
+  }
+  kbd{background:#f1f5f9;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;}
+  /* Callouts */
+  .note,.tip,.warn,.new{
+    border-radius:12px; padding:13px 16px; margin:16px 0; font-size:13.5px; border:1px solid;
+    display:flex; gap:10px;
+  }
+  .note{background:#f8fafc; border-color:var(--line);}
+  .tip{background:#ecfdf5; border-color:#a7f3d0;}
+  .warn{background:#fff7ed; border-color:#fed7aa;}
+  .new{background:var(--blue-light); border-color:#bfdbfe;}
+  .ic{flex:0 0 auto; font-weight:800;}
+  /* Tables */
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:13.5px;}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line);}
+  th{background:var(--bg); font-weight:700; color:#334155;}
+  td .btn,td .menu{margin:1px 0;}
+  .req{color:var(--red); font-weight:800;}
+  /* Cards grid */
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; margin:14px 0;}
+  .gcard{border:1px solid var(--line); border-radius:12px; padding:14px 16px; background:#fff;}
+  .gcard b{display:block; font-size:14px; margin-bottom:3px;}
+  .gcard span{font-size:12.5px; color:var(--gray);}
+  .badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700;}
+  .b-wait{background:#f1f5f9;color:#475569;}
+  .b-prog{background:#dbeafe;color:#1d4ed8;}
+  .b-rev{background:#fef3c7;color:#b45309;}
+  .b-done{background:#dcfce7;color:#15803d;}
+  footer{color:var(--gray); font-size:12.5px; text-align:center; padding:30px 0;}
+  @media (max-width:880px){
+    nav.toc{display:none;}
+    .wrap{padding:0 14px;}
+    section{padding:22px 18px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- ===== TOC ===== -->
+  <nav class="toc" id="toc">
+    <div class="brand">📁 Folder Atlas</div>
+    <div class="ver">사용 가이드 · v0.2.2</div>
+    <a href="#start">0. 설치와 로그인</a>
+    <a href="#layout">1. 화면 구성</a>
+    <a href="#roles">1.5 역할별 화면 ★</a>
+    <a href="#roi">1.6 역할별 작업·ROI ★</a>
+    <a href="#newproject">2. 새 프로젝트 만들기</a>
+    <a href="#example">2.5 실전 예제: 홈페이지 구축 ★</a>
+    <a href="#overview">3. 프로젝트 개요</a>
+    <a href="#process">4. 프로세스(공정) 관리</a>
+    <a href="#task">5. 작업(칸반) 관리</a>
+    <a href="#docs">6. 산출물 · 자동 발견 ★</a>
+    <a href="#analysis">7. 폴더 분석 · 건강도</a>
+    <a href="#assign">8. 인력 배정</a>
+    <a href="#report">9. 보고서</a>
+    <a href="#mywork">10. 나의 업무</a>
+    <a href="#settings">11. 설정 · 사용자 관리</a>
+    <a href="#faq">12. 자주 묻는 질문</a>
+  </nav>
+
+  <!-- ===== MAIN ===== -->
+  <main>
+    <header class="hero">
+      <h1>Folder Atlas 사용 가이드</h1>
+      <p>프로젝트 폴더를 분석해 진척·산출물·인력을 한 곳에서 관리하는 데스크톱 프로젝트 매니저입니다.<br/>
+         이 문서는 어떤 버튼을 어떻게 누르는지 화면 순서대로 설명합니다.</p>
+      <span class="pill">버전 0.2.2 · 설치 불필요(단독 실행) · 데이터는 내 PC에 저장</span>
+    </header>
+
+    <!-- 0 -->
+    <section id="start">
+      <h2><span class="num">0</span> 설치와 로그인</h2>
+      <p class="lead">새 노트북에 아무것도 설치돼 있지 않아도 됩니다. 실행 파일 하나로 동작합니다.</p>
+
+      <h3>실행하기</h3>
+      <ol class="steps">
+        <li>받은 <span class="btn ghost">Folder Atlas_0.2.2_Portable.exe</span> 를 더블클릭합니다. <span class="menu">설치 불필요</span></li>
+        <li>“Windows의 PC 보호” 파란 창이 뜨면 <span class="btn ghost">추가 정보</span> → <span class="btn">실행</span> 을 누릅니다.
+            <span style="color:var(--gray)">(사내용 미서명 앱이라 정상입니다.)</span></li>
+      </ol>
+      <div class="note"><span class="ic">ℹ️</span><div>정식 설치를 원하면 <b>setup.exe</b> 또는 <b>.msi</b> 파일을 더블클릭하세요. Windows 11은 별도 준비가 필요 없습니다.</div></div>
+
+      <h3>로그인</h3>
+      <ol class="steps">
+        <li><span class="menu">아이디 (또는 이메일)</span> 칸에 아이디를 입력합니다.</li>
+        <li><span class="menu">비밀번호</span> 칸에 비밀번호를 입력합니다.</li>
+        <li><span class="btn blue">로그인하기</span> 버튼을 클릭합니다.</li>
+        <li>처음 로그인하면 <b>“기기 등록 및 보안 동의”</b> 창이 뜹니다 → <span class="btn blue">동의 및 PC 등록</span> 클릭.
+            <span style="color:var(--gray)">(계정당 1대 PC만 등록됩니다.)</span></li>
+      </ol>
+
+      <h3>기본 계정</h3>
+      <table>
+        <tr><th>아이디</th><th>비밀번호</th><th>권한</th></tr>
+        <tr><td>admin</td><td>admin123</td><td>최고 관리자</td></tr>
+        <tr><td>manager</td><td>manager123</td><td>프로젝트 매니저</td></tr>
+        <tr><td>member</td><td>member123</td><td>일반 개발원</td></tr>
+      </table>
+      <div class="warn"><span class="ic">🔒</span><div>첫 로그인 후 <b>비밀번호를 반드시 변경</b>하세요. 최초/임시 계정은 <b>“비밀번호 변경 의무화”</b> 화면이 떠서 새 비밀번호(최소 6자)를 설정한 뒤 <span class="btn blue">비밀번호 설정 및 완료</span> → <span class="btn">시스템 시작하기</span> 로 진입합니다.</div></div>
+      <div class="tip"><span class="ic">⚡</span><div>로그인 화면 하단의 <span class="menu">빠른 계정 선택 (데모 테스트용)</span> 에서 <span class="btn ghost">Admin</span> / <span class="btn ghost">Manager</span> / <span class="btn ghost">Member</span> 를 누르면 해당 계정 정보가 자동 입력됩니다.</div></div>
+    </section>
+
+    <!-- 1 -->
+    <section id="layout">
+      <h2><span class="num">1</span> 화면 구성</h2>
+      <p class="lead">왼쪽 사이드바는 전역 메뉴, 프로젝트를 열면 상단에 프로젝트 전용 탭이 나타납니다.</p>
+
+      <h3>전역 메뉴 (왼쪽 사이드바)</h3>
+      <div class="grid">
+        <div class="gcard"><b>전체 대시보드</b><span>모든 프로젝트 목록·생성</span></div>
+        <div class="gcard"><b>스케줄 캘린더</b><span>일정 전체 보기</span></div>
+        <div class="gcard"><b>서류 양식 라이브러리</b><span>공용 빈 서식 보관</span></div>
+        <div class="gcard"><b>사용자 계정 관리</b><span>계정·조직 관리(관리자)</span></div>
+        <div class="gcard"><b>프로세스 템플릿 보관함</b><span>공정 템플릿</span></div>
+        <div class="gcard"><b>폴더 양식 라이브러리</b><span>폴더 구조 템플릿</span></div>
+        <div class="gcard"><b>환경 설정</b><span>서버·브랜드·DB 설정</span></div>
+      </div>
+
+      <h3>프로젝트 탭 (프로젝트를 열면 상단에 표시)</h3>
+      <p>
+        <span class="menu">개요</span> <span class="menu">일정</span>
+        <span class="menu">프로세스</span> <span class="menu">작업</span>
+        <span class="menu">이슈</span> <span class="menu">회의</span>
+        <span class="menu">폴더</span> <span class="menu">분석</span>
+        <span class="menu">보고서</span>
+      </p>
+      <div class="note"><span class="ic">ℹ️</span><div><span class="menu">프로세스</span> 탭은 관리자/매니저에게만 보입니다.</div></div>
+    </section>
+
+    <!-- 1.5 역할별 화면 -->
+    <section id="roles">
+      <h2><span class="num">1.5</span> 역할별로 보이는 화면 <span style="color:var(--blue)">★</span></h2>
+      <p class="lead">계정 권한(관리자 / 매니저 / 멤버)에 따라 보이는 메뉴와 할 수 있는 작업이 다릅니다. 같은 프로젝트라도 역할마다 화면이 조금씩 달라집니다.</p>
+
+      <table>
+        <tr><th>기능 / 메뉴</th><th>관리자<br/>admin</th><th>매니저<br/>manager</th><th>멤버<br/>member</th></tr>
+        <tr><td>전체 대시보드 · 내 업무 · 스케줄 캘린더</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>프로젝트 탭: 개요·일정·작업·이슈·회의·폴더·분석·보고서</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td><b>프로세스(공정) 탭</b> — 단계 추가/편집</td><td>✅</td><td>✅</td><td><span class="req">✗ 안 보임</span></td></tr>
+        <tr><td><b>작업(칸반)</b> — 카드 추가·이동·상태 변경</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>프로젝트 인력 배분 — 보기</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>프로젝트 인력 배분 — <b>배정 생성/수정</b></td><td>✅</td><td>✅</td><td><span class="req">✗ 보기만</span></td></tr>
+        <tr><td>서류 양식 라이브러리 — 보기/다운로드</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>서류 양식 라이브러리 — <b>업로드/편집</b></td><td>✅</td><td>✅</td><td><span class="req">✗ 보기만</span></td></tr>
+        <tr><td>프로세스 템플릿 · 폴더 양식 라이브러리</td><td>✅</td><td>✅</td><td><span class="req">✗ 안 보임</span></td></tr>
+        <tr><td><b>사용자 계정 관리</b> (계정 생성·권한·장치 초기화)</td><td>✅</td><td><span class="req">✗</span></td><td><span class="req">✗</span></td></tr>
+        <tr><td>환경 설정 — <b>서버 URL · 브랜드 · DB 초기화</b></td><td>✅</td><td><span class="req">✗ 보기만</span></td><td><span class="req">✗ 보기만</span></td></tr>
+      </table>
+
+      <div class="grid">
+        <div class="gcard"><b>👑 관리자 (admin)</b><span>모든 메뉴 사용. 계정 생성·권한 변경·장치 초기화, 서버 연동/브랜드/DB 설정, 템플릿 관리, 인력 배정까지 전부 가능. "시스템 전체를 세팅하는 사람".</span></div>
+        <div class="gcard"><b>🧭 매니저 (manager)</b><span>프로젝트 운영의 중심. 프로세스 설계, 인력 배정, 일정·산출물 관리, 양식/템플릿 관리 가능. 단, 사용자 계정 관리와 서버/브랜드/DB 등 시스템 설정은 불가.</span></div>
+        <div class="gcard"><b>🙋 멤버 (member)</b><span>실무 담당자. 자기 작업(칸반) 추가·이동·완료, 이슈·회의·산출물 작업, 보고서(작업자용) 작성 가능. 프로세스 설계·인력 배정·양식 업로드·시스템 설정은 불가(보기 위주).</span></div>
+      </div>
+      <div class="tip"><span class="ic">💡</span><div>요약: <b>관리자</b>=시스템 세팅, <b>매니저</b>=프로젝트 설계·운영, <b>멤버</b>=배정받은 작업 수행. 멤버도 <b>작업(칸반)은 직접 추가·이동</b>할 수 있어 실무 진행에는 막힘이 없습니다.</div></div>
+    </section>
+
+    <!-- 1.6 역할별 작업·확인·ROI -->
+    <section id="roi">
+      <h2><span class="num">1.6</span> 역할별 작업 · 확인 · 효용가치(ROI) <span style="color:var(--blue)">★</span></h2>
+      <p class="lead">이 도구의 목적은 <b>"정보를 찾고 취합하는 시간"을 줄여 그 시간을 실제 생산 업무로 돌리는 것</b>입니다. 역할마다 <b>무엇을 하고(작업) → 무엇을 보고 판단하며(확인) → 그것이 어떤 낭비를 줄이는지(ROI)</b>를 정리했습니다.</p>
+
+      <div class="new"><span class="ic">📐</span><div><b>ROI 공식</b> &nbsp;=&nbsp; ( 재작업·납품사고 비용 + 보고·취합 시간 + 유휴·과부하 인건비 + 문서 검색·입력 시간 ) 을 <b>자동화·가시화로 줄인 금액</b> &nbsp;−&nbsp; 도입 비용</div></div>
+
+      <!-- 관리자 -->
+      <h3>👑 관리자 (admin) — "시스템을 세팅해 조직 전체의 표준과 데이터를 통일한다"</h3>
+      <table>
+        <tr><th style="width:130px">구분</th><th>내용</th></tr>
+        <tr><td><b>하는 작업</b></td><td>계정·권한·기기 관리 / <span class="menu">사내 서버 연동</span>(데이터 공유) / 프로세스·폴더 <span class="menu">템플릿 표준화</span> / 브랜드·DB 설정</td></tr>
+        <tr><td><b>확인 포인트</b></td><td><span class="menu">전체 대시보드</span> KPI(진행중·완료 프로젝트, 평균 건강도, 전체 작업 완료율) / 사용자 활성·기기 등록 상태</td></tr>
+        <tr><td><b>효용가치<br/>(ROI)</b></td><td>
+          • <b>표준 템플릿 1회 정의 → 모든 프로젝트가 같은 체계로 시작</b> → 프로젝트마다 폴더·문서 체계를 새로 짜는 시간 제거<br/>
+          • <b>서버 공유로 데이터 단일화</b> → 파일 취합·버전 충돌·중복 입력 제거<br/>
+          • <b>전사 현황을 한 화면에</b> → 경영 보고 준비 시간 단축, 위험 프로젝트 조기 포착
+        </td></tr>
+      </table>
+
+      <!-- 매니저 -->
+      <h3>🧭 매니저 (manager) — "프로젝트를 설계·운영해 지연과 누락을 막는다"</h3>
+      <table>
+        <tr><th style="width:130px">구분</th><th>내용</th></tr>
+        <tr><td><b>하는 작업</b></td><td><span class="menu">프로세스</span> 단계 설계 / <span class="menu">작업</span> 분배 + <span class="btn ghost">담당자 선택</span> / <span class="menu">인력 배분</span>(투입률) / 산출물·일정 관리 / <span class="menu">보고서</span> 발행</td></tr>
+        <tr><td><b>확인 포인트</b></td><td>건강도·진행률 / <span class="menu">분석</span>의 일정 위험도(지연 GAP) / <b>누락 산출물</b> / <b>초과 배정 인원</b> / 단계별 진척</td></tr>
+        <tr><td><b>효용가치<br/>(ROI)</b></td><td>
+          • <b>산출물 누락 자동 진단</b> → 납품 직전 사고·재작업 방지 (품질 손실 비용 ↓)<br/>
+          • <b>투입률·초과배정 경고</b> → 번아웃/유휴 인건비 회수, 즉시 인력 재배분<br/>
+          • <b>일정 위험도(지연 GAP)</b> → 지연 조기 발견 → 납기 지연 패널티 ↓<br/>
+          • <b>보고서 자동 생성</b> → 주간보고·취합 회의 시간 ↓ <span style="color:var(--gray)">(가장 직접적인 시간 ROI)</span>
+        </td></tr>
+      </table>
+
+      <!-- 멤버 -->
+      <h3>🙋 멤버 (member) — "내 작업에 집중하고 산출물을 자동으로 남긴다"</h3>
+      <table>
+        <tr><th style="width:130px">구분</th><th>내용</th></tr>
+        <tr><td><b>하는 작업</b></td><td><span class="menu">내 업무</span> 확인 / <span class="menu">작업</span>(칸반)에서 자기 카드 대기→진행중→검토중→완료 이동 / 산출물 파일 저장 후 <span class="btn blue">＋ 필수 등록</span> / 이슈·회의 기록</td></tr>
+        <tr><td><b>확인 포인트</b></td><td><span class="menu">내 업무</span> 목록·마감 임박(D-Day) / 내가 맡은 단계의 산출물 <span class="badge b-done">있음</span> / <span class="badge" style="background:#fee2e2;color:#b91c1c;">누락</span></td></tr>
+        <tr><td><b>효용가치<br/>(ROI)</b></td><td>
+          • <b>내 업무가 한 곳에</b> → "뭘 해야 하지" 찾고 묻는 시간 ↓<br/>
+          • <b>산출물 자동 발견</b> → 문서명 수기 입력 0 → 행정 잡무 ↓, 실무 시간 회수<br/>
+          • <b>진척이 자동 반영</b> → 따로 진척 보고를 안 해도 됨 → 보고 부담 ↓
+        </td></tr>
+      </table>
+
+      <div class="tip"><span class="ic">✅</span><div><b>한 줄 요약:</b> 관리자는 <b>표준·데이터를 통일</b>해 중복을 없애고, 매니저는 <b>지연·누락을 미리 막아</b> 사고 비용을 줄이며, 멤버는 <b>잡무를 자동화</b>해 실무에 집중합니다. 세 역할의 절감 시간·비용이 합쳐진 것이 곧 이 도구의 ROI입니다.</div></div>
+    </section>
+
+    <!-- 2 -->
+    <section id="newproject">
+      <h2><span class="num">2</span> 새 프로젝트 만들기</h2>
+      <p class="lead">관리하려는 로컬 폴더를 지정하면, 그 폴더를 기준으로 진척·산출물을 분석합니다.</p>
+      <ol class="steps">
+        <li><span class="menu">전체 대시보드</span> 우측 상단의 <span class="btn blue">＋ 새 프로젝트 등록</span> 클릭.</li>
+        <li><span class="menu">지역 코드</span> 버튼을 눌러 광역시/도 → 시군구를 선택합니다. <span class="req">(필수)</span></li>
+        <li><span class="menu">프로젝트 유형</span> 드롭다운에서 유형을 고릅니다. <span style="color:var(--gray)">(선택)</span></li>
+        <li><span class="menu">프로젝트 명</span> 에 이름을 입력합니다. <span class="req">(필수)</span></li>
+        <li><span class="menu">프로젝트 기간</span> 달력에서 시작일~종료일을 선택합니다.</li>
+        <li><span class="menu">스캔할 로컬 폴더 경로</span> 옆 <span class="btn">폴더 선택</span> 클릭 → 폴더를 고르면 경로가 자동 입력됩니다. <span class="req">(필수)</span></li>
+        <li>필요하면 <span class="menu">적용할 폴더 양식</span>(폴더·서류 자동 생성), <span class="menu">적용할 프로세스 템플릿</span>(공정·일정 자동 설정)을 선택합니다. <span style="color:var(--gray)">(선택)</span></li>
+        <li><span class="btn blue">프로젝트 생성</span> 클릭. <span style="color:var(--gray)">(지역코드·프로젝트명·폴더경로가 모두 있어야 활성화됩니다.)</span></li>
+      </ol>
+      <div class="tip"><span class="ic">💡</span><div><b>폴더 양식</b>을 선택하면 표준 폴더 구조와 기본 문서 양식이 그 경로에 <b>실제로 생성</b>됩니다. <b>프로세스 템플릿</b>을 선택하면 단계별 작업과 <b>필수 산출물 체크리스트</b>가 자동으로 만들어집니다.</div></div>
+    </section>
+
+    <!-- 2.5 실전 예제 -->
+    <section id="example">
+      <h2><span class="num">2.5</span> 실전 예제: "회사 홈페이지 구축" 프로젝트 <span style="color:var(--blue)">★</span></h2>
+      <p class="lead">가상의 홈페이지 구축 프로젝트를 처음부터 끝까지 따라 하며, <b>폴더를 어떻게 만들고 어떻게 연결하는지</b>를 구체적으로 설명합니다. (시나리오: "우리회사 홈페이지 리뉴얼", 2026-07-01 ~ 2026-09-30)</p>
+
+      <h3>STEP 1. 먼저 로컬에 프로젝트 폴더를 만듭니다 (담당: 매니저/관리자)</h3>
+      <p>이 앱은 <b>실제 폴더를 스캔</b>해서 진척과 산출물을 관리합니다. 그래서 먼저 윈도우 탐색기에서 폴더를 만들어 둡니다. 표준 웹 개발 단계(기획→디자인→개발→산출물)에 맞춰 아래처럼 구성하면, 뒤에서 "폴더 구조 적합도" 점수가 올라갑니다.</p>
+      <pre style="background:#0f172a;color:#e2e8f0;padding:16px 18px;border-radius:12px;font-size:12.5px;line-height:1.6;overflow-x:auto;">C:\Projects\Homepage_Renewal\      ← 이 폴더를 앱에 연결합니다
+├── 01_기획\
+│   ├── 요구사항정의서.docx
+│   └── IA.xlsx               (메뉴 구조도)
+├── 02_디자인\
+│   ├── 디자인_시안.psd
+│   └── logo.png
+├── 03_개발\
+│   ├── index.html
+│   └── App.tsx
+└── 04_산출물\
+    ├── QA_보고서.pdf
+    ├── 설명서.txt
+    └── 버전관리.txt</pre>
+      <div class="note"><span class="ic">ℹ️</span><div>처음엔 폴더만 만들고 파일은 비어 있어도 됩니다. 작업이 진행되면서 실제 파일을 채워 넣으면, 앱이 자동으로 "있음/누락"을 추적합니다. <b>폴더명 앞의 <code style="font-family:inherit">01_ 02_ 03_ 04_</code> 숫자</b>는 단계 순서를 맞추는 데 도움이 됩니다.</div></div>
+      <div class="tip"><span class="ic">⚡</span><div>폴더를 손으로 안 만들고 싶다면? 새 프로젝트 등록 시 <span class="menu">적용할 폴더 양식</span>을 선택하면 위 구조가 <b>자동 생성</b>됩니다. (폴더 양식은 매니저/관리자가 <span class="menu">폴더 양식 라이브러리</span>에서 미리 정의)</div></div>
+
+      <h3>STEP 2. 앱에서 새 프로젝트 등록 + 폴더 연결 (담당: 매니저/관리자)</h3>
+      <ol class="steps">
+        <li><span class="menu">전체 대시보드</span> → <span class="btn blue">＋ 새 프로젝트 등록</span></li>
+        <li><span class="menu">지역 코드</span> 선택 (예: 서울 → 강남구) <span class="req">필수</span></li>
+        <li><span class="menu">프로젝트 유형</span> = <b>W - 웹구축</b> 선택 → 코드가 <code style="font-family:inherit">SG26W001</code> 처럼 자동 생성됨</li>
+        <li><span class="menu">프로젝트 명</span> = <b>우리회사 홈페이지 리뉴얼</b> 입력 <span class="req">필수</span></li>
+        <li><span class="menu">프로젝트 기간</span> = 2026-07-01 ~ 2026-09-30 선택</li>
+        <li><span class="menu">스캔할 로컬 폴더 경로</span> → <span class="btn">폴더 선택</span> → STEP 1에서 만든 <code style="font-family:inherit">C:\Projects\Homepage_Renewal</code> 선택 <span class="req">필수</span> <b>← 이게 "폴더 연결"입니다</b></li>
+        <li><span class="menu">적용할 프로세스 템플릿</span> = <b>표준 웹 개발 템플릿</b> 선택 → 기획/디자인/개발/산출물 단계와 <b>필수 산출물 체크리스트</b>(요구사항정의서.docx, 디자인_시안.psd 등)가 자동 생성됨</li>
+        <li><span class="btn blue">프로젝트 생성</span> 클릭</li>
+      </ol>
+      <div class="note"><span class="ic">🔗</span><div><b>"연결"이란?</b> 6번에서 고른 폴더 경로가 프로젝트에 저장되고, 앱이 그 폴더를 스캔합니다. 즉 <b>실제 폴더 ↔ 프로젝트 데이터</b>가 묶입니다. 서버 공유 모드라면 이 경로는 <b>모든 PC에서 같은 위치</b>(예: 공유 드라이브 <code style="font-family:inherit">\\서버\Projects\Homepage_Renewal</code>)여야 동료들도 같은 폴더를 봅니다.</div></div>
+
+      <h3>STEP 3. 연결 확인 & 첫 스캔 (담당: 매니저/관리자)</h3>
+      <ol class="steps">
+        <li>생성된 프로젝트를 클릭 → <span class="menu">개요</span> 탭으로 들어갑니다</li>
+        <li><span class="menu">빠른 작업</span>의 <span class="btn">폴더 구조 동기화</span> 클릭 → 폴더를 다시 스캔</li>
+        <li><span class="menu">분석</span> 탭에서 <b>건강도 100점</b>과 단계별 진척, 누락 항목을 확인</li>
+      </ol>
+
+      <h3>STEP 4. 산출물 채우기 — 자동 발견으로 등록 (담당: 멤버/매니저)</h3>
+      <p>실제 작업 파일(요구사항정의서.docx 등)을 폴더에 넣은 뒤:</p>
+      <ol class="steps">
+        <li>프로젝트의 <b>산출물</b> 화면으로 이동</li>
+        <li>상단 <span class="menu">📁 폴더에서 자동 발견된 문서</span> 카드에 폴더 속 파일이 자동으로 뜸</li>
+        <li>각 파일 <span class="btn blue">＋ 필수 등록</span> 또는 <span class="btn blue">＋ 전체 등록</span> → 필수 산출물로 등록</li>
+        <li>이제 카드에 <b>문서 완료율</b>이 올라가고, 빠진 문서는 "누락"으로 표시됨</li>
+      </ol>
+      <div class="warn"><span class="ic">⚠️</span><div>자동 발견 목록이 비어 있으면 <span class="menu">개요 → 폴더 구조 동기화</span>로 다시 스캔하세요. (docx/xlsx/pdf/hwp/png 등 문서성 파일만 대상)</div></div>
+
+      <h3>STEP 5. 단계·작업 분배와 진행 (역할별로 나뉨)</h3>
+      <div class="grid">
+        <div class="gcard"><b>매니저/관리자가 하는 일</b><span>① <span class="menu">프로세스</span> 탭에서 단계(기획/디자인/개발/산출물) 확인·조정 → ② <span class="menu">작업</span> 탭에서 작업 카드 추가 + <span class="btn ghost">담당자 선택</span>으로 멤버 지정 → ③ <span class="menu">프로젝트 인력 배분</span>에서 투입 비율 설정</span></div>
+        <div class="gcard"><b>멤버가 하는 일</b><span>① <span class="menu">내 업무</span>에서 자기 작업 확인 → ② <span class="menu">작업</span> 탭(칸반)에서 자기 카드를 <span class="btn ghost">다음 ▶</span>으로 대기→진행중→검토중→완료 이동 → ③ 산출물 파일 폴더에 저장 후 STEP 4로 등록</span></div>
+      </div>
+      <p style="margin-top:14px">작업이 완료될수록 단계 <b>진행률</b>과 프로젝트 <b>건강도</b>가 자동으로 다시 계산되고, <span class="menu">보고서</span> 탭에서 진단서·성과 보고서를 뽑을 수 있습니다.</p>
+
+      <div class="tip"><span class="ic">✅</span><div><b>한눈에 흐름:</b> 폴더 만들기(매니저) → 프로젝트 등록·폴더 연결(매니저) → 프로세스 템플릿 적용(매니저) → 작업 분배(매니저) → 멤버가 작업 수행 + 산출물 채우기 → 자동 발견으로 등록(멤버) → 진척·건강도 자동 갱신 → 보고서(매니저).</div></div>
+    </section>
+
+    <!-- 3 -->
+    <section id="overview">
+      <h2><span class="num">3</span> 프로젝트 개요</h2>
+      <p class="lead">프로젝트를 클릭하면 처음 보이는 종합 대시보드입니다. (<span class="menu">개요</span> 탭)</p>
+
+      <h3>핵심 지표(KPI) 카드</h3>
+      <div class="grid">
+        <div class="gcard"><b>건강도</b><span>100점 만점 종합 점수</span></div>
+        <div class="gcard"><b>진행률</b><span>공정 평균 진척</span></div>
+        <div class="gcard"><b>중요도 / 우선순위</b><span>Critical~Low / P1~P4</span></div>
+        <div class="gcard"><b>예산(계약금액)</b><span>집행률 표시</span></div>
+        <div class="gcard"><b>기간</b><span>D-Day 표시</span></div>
+        <div class="gcard"><b>투입 인력</b><span>배정 인원 현황판</span></div>
+      </div>
+
+      <h3>자주 쓰는 버튼</h3>
+      <ul>
+        <li><span class="btn">사업 정보 수정</span> — 계약금액·중요도·발주처·설명 등을 편집합니다.</li>
+        <li><span class="menu">빠른 작업</span> 의 <span class="btn">폴더 구조 동기화</span> — 폴더를 다시 스캔해 진척·산출물·건강도를 갱신합니다.</li>
+        <li><span class="btn">프로젝트 폴더 열기</span> — 윈도우 탐색기에서 해당 폴더를 엽니다.</li>
+        <li><span class="btn ghost">회의 보기</span> · <span class="btn ghost">이슈 관리</span> · <span class="btn ghost">분석 보기</span> — 관련 탭으로 이동합니다.</li>
+      </ul>
+    </section>
+
+    <!-- 4 -->
+    <section id="process">
+      <h2><span class="num">4</span> 프로세스(공정) 관리</h2>
+      <p class="lead">프로젝트의 단계(기획·디자인·개발·산출물 등)를 정의합니다. (<span class="menu">프로세스</span> 탭, 관리자/매니저)</p>
+      <h3>단계 추가</h3>
+      <ol class="steps">
+        <li>우측 상단 <span class="btn blue">신규 단계 추가</span> 클릭. <span style="color:var(--gray)">(단계가 없으면 <span class="btn ghost">프로세스 첫 단추 생성</span>)</span></li>
+        <li><span class="menu">단계 명칭</span> 입력 <span class="req">(필수, 예: 05_퍼블리싱)</span>, <span class="menu">상세 설명</span> 입력.</li>
+        <li><span class="btn blue">추가하기</span> 클릭.</li>
+      </ol>
+      <h3>단계 편집 · 정렬</h3>
+      <ul>
+        <li>카드의 <span class="btn ghost">편집</span>(연필) — <span class="menu">진행 상태</span>(대기/진행중/완료), <span class="menu">난이도</span>(낮음~매우높음), <span class="menu">진행률</span>, <span class="menu">프로세스 기간</span> 설정 후 <span class="btn blue">저장하기</span>.</li>
+        <li><span class="btn ghost">위로 이동</span> / <span class="btn ghost">아래로 이동</span> — 단계 순서 변경.</li>
+        <li><span class="btn ghost">단계 복제</span> / <span class="btn red">단계 삭제</span>.</li>
+      </ul>
+      <div class="note"><span class="ic">ℹ️</span><div>단계 폴더명이 실제 폴더 구조와 일치하면 건강도의 <b>폴더 구조 적합도</b> 점수가 올라갑니다.</div></div>
+    </section>
+
+    <!-- 5 -->
+    <section id="task">
+      <h2><span class="num">5</span> 작업(칸반) 관리</h2>
+      <p class="lead">단계별 세부 작업을 칸반 보드로 관리합니다. (<span class="menu">작업</span> 탭)</p>
+      <p>
+        칸반 컬럼:
+        <span class="badge b-wait">대기</span>
+        <span class="badge b-prog">진행중</span>
+        <span class="badge b-rev">검토중</span>
+        <span class="badge b-done">완료</span>
+      </p>
+      <h3>작업 추가하고 담당자 지정</h3>
+      <ol class="steps">
+        <li>상단에서 단계(프로세스) 탭을 먼저 선택합니다.</li>
+        <li><span class="btn blue">작업 카드 추가</span> 클릭.</li>
+        <li><span class="menu">작업 제목</span> 입력 <span class="req">(필수)</span>, <span class="menu">우선순위</span> 선택(낮음/보통/높음/긴급).</li>
+        <li><span class="btn ghost">담당자 선택</span> 클릭 → 검색해 사용자 선택 → <span class="btn blue">확인</span>.</li>
+        <li><span class="menu">작업 기간</span>·<span class="menu">시작 시간</span>·<span class="menu">종료 시간</span>·<span class="menu">설명</span> 입력.</li>
+        <li><span class="btn blue">등록하기</span> 클릭.</li>
+      </ol>
+      <h3>상태 옮기기</h3>
+      <ul>
+        <li>카드의 <span class="btn ghost">다음 ▶</span> / <span class="btn ghost">◀ 이전</span> 버튼으로 컬럼을 이동합니다. (대기→진행중→검토중→완료)</li>
+        <li>카드를 클릭하면 상세 패널이 열립니다 — <span class="menu">체크리스트</span> · <span class="menu">업무 이력</span> · <span class="menu">댓글</span> 탭. 상태 변경 내역은 <span class="menu">업무 이력</span>에 자동 기록됩니다.</li>
+        <li>상세 패널의 <span class="btn ghost">편집</span> 으로 내용을 고치고 <span class="btn blue">저장</span>.</li>
+      </ul>
+      <div class="tip"><span class="ic">💡</span><div>작업을 완료로 옮기면 상위 단계의 <b>진행률</b>과 프로젝트 <b>건강도</b>가 자동으로 다시 계산됩니다.</div></div>
+    </section>
+
+    <!-- 6 - NEW FEATURE -->
+    <section id="docs">
+      <h2><span class="num">6</span> 산출물 문서 · 자동 발견 <span style="color:var(--blue)">★</span></h2>
+      <p class="lead">프로젝트 폴더의 문서를 자동으로 찾아 <b>필수 산출물</b>로 관리합니다. (<span class="menu">작업</span> 옆 산출물 화면)</p>
+
+      <div class="new"><span class="ic">🆕</span><div><b>신규 기능 — 자동 발견(Auto-discovery).</b> 이제 문서명을 일일이 타이핑할 필요가 없습니다. 폴더에 실제로 있는 문서를 시스템이 찾아 목록에 올려줍니다.</div></div>
+
+      <h3>완료율 카드</h3>
+      <div class="grid">
+        <div class="gcard"><b>문서 완료율</b><span>있음 / 전체 비율</span></div>
+        <div class="gcard"><b>감지된 문서</b><span>폴더에 존재하는 필수 문서</span></div>
+        <div class="gcard"><b>누락된 문서</b><span>아직 없는 필수 문서</span></div>
+      </div>
+
+      <h3>폴더에서 자동 발견된 문서 등록하기</h3>
+      <ol class="steps">
+        <li>산출물 화면 상단의 <span class="menu">📁 폴더에서 자동 발견된 문서</span> 카드를 확인합니다.
+            <span style="color:var(--gray)">(프로젝트 폴더에 있지만 아직 등록되지 않은 문서가 자동으로 나열됩니다.)</span></li>
+        <li>각 파일 옆 <span class="btn blue">＋ 필수 등록</span> 을 누르면 해당 파일이 필수 산출물로 등록됩니다.</li>
+        <li>여러 개를 한 번에 올리려면 카드 우측 상단 <span class="btn blue">＋ 전체 등록</span> 을 누릅니다.</li>
+        <li>파일 옆 <span class="btn ghost">↗</span>(열기) 로 해당 문서를 바로 열어 확인할 수 있습니다.</li>
+      </ol>
+
+      <h3>등록된 문서 다루기</h3>
+      <ul>
+        <li>상태 배지로 <span class="badge b-done">있음</span> / <span class="badge" style="background:#fee2e2;color:#b91c1c;">누락됨</span> 을 한눈에 봅니다.</li>
+        <li><span class="btn ghost">파일 열기</span> · <span class="btn ghost">폴더 열기</span> 로 산출물에 즉시 접근합니다.</li>
+      </ul>
+
+      <div class="note"><span class="ic">ℹ️</span><div>
+        <b>두 가지 문서 메뉴가 있습니다.</b><br/>
+        • <span class="menu">서류 양식 라이브러리</span> (전역) — 전사 공용 <b>빈 서식</b>을 올려두는 곳(수동 업로드).<br/>
+        • <b>프로젝트 산출물</b> (프로젝트 내부) — 그 프로젝트 폴더의 <b>실제 문서</b>를 자동 발견·추적하는 곳. <b>자동 발견은 여기서 동작합니다.</b>
+      </div></div>
+      <div class="warn"><span class="ic">⚠️</span><div>자동 발견은 데스크톱 앱에서 <b>실제 폴더가 연결</b>돼 있을 때 동작합니다. 목록이 비어 있으면 <span class="menu">개요</span> → <span class="btn">폴더 구조 동기화</span> 로 다시 스캔하세요.</div></div>
+    </section>
+
+    <!-- 7 -->
+    <section id="analysis">
+      <h2><span class="num">7</span> 폴더 분석 · 건강도</h2>
+      <p class="lead">폴더 구조의 정합성과 일정 위험도를 진단합니다. (<span class="menu">분석</span> 탭)</p>
+      <h3>두 가지 분석</h3>
+      <ul>
+        <li><span class="menu">일정 진행 위험도 분석</span> — 단계별 <b>지연 GAP</b>과 <b>위험 지수</b>를 표로 보여줍니다. (원활/주의/경고/위험)</li>
+        <li><span class="menu">디렉토리 정합성/청결도</span> — <b>프로젝트 종합 건강도</b>와 항목별 점수.</li>
+      </ul>
+      <h3>건강도 100점 구성</h3>
+      <table>
+        <tr><th>항목</th><th>배점</th><th>의미</th></tr>
+        <tr><td>프로세스 완료도</td><td>40점</td><td>칸반 작업 완료 비율</td></tr>
+        <tr><td>필수 산출물 준수율</td><td>30점</td><td>필수 문서 존재 비율</td></tr>
+        <tr><td>폴더 구조 적합도</td><td>20점</td><td>단계명과 실제 폴더 일치</td></tr>
+        <tr><td>디렉토리 청결도</td><td>10점</td><td>빈 폴더·중복 파일 감점</td></tr>
+      </table>
+      <p>각 진단 카드에서 <span class="btn ghost">탐색기 열기</span> / <span class="btn ghost">탐색기에서 파일 위치 찾기</span> 로 문제 폴더·파일을 바로 확인합니다.</p>
+    </section>
+
+    <!-- 8 -->
+    <section id="assign">
+      <h2><span class="num">8</span> 인력 배정</h2>
+      <p class="lead">사람을 프로젝트에 투입하고 투입 비율(공수)을 관리합니다. (전역 배정 화면, 관리자/매니저)</p>
+      <h3>인력 배정하기</h3>
+      <ol class="steps">
+        <li><span class="btn blue">신규 인력 배정</span> 클릭.</li>
+        <li><span class="menu">투입 인력</span>(사람)과 <span class="menu">프로젝트</span>, <span class="menu">역할</span> 을 선택합니다.</li>
+        <li><span class="menu">투입 비율</span> 을 슬라이더/숫자로 설정합니다. (0·25·50·75·100% 프리셋)</li>
+        <li><span class="menu">배정 기간</span> 을 지정하고 <span class="btn blue">저장하기</span>.</li>
+      </ol>
+      <h3>간편 편입(빠른 추가)</h3>
+      <ol class="steps">
+        <li>가운데 <span class="menu">프로젝트 목록</span> 에서 프로젝트를 선택합니다.</li>
+        <li>오른쪽 <span class="menu">투입 인원 현황</span> → <span class="menu">간편 인력 편입</span> 에서 사람·역할·비율을 고릅니다.</li>
+        <li><span class="btn green">＋</span> 버튼으로 즉시 추가합니다.</li>
+      </ol>
+      <div class="warn"><span class="ic">⚠️</span><div>한 사람의 누적 투입률이 <b>100%를 넘으면</b> 빨간색 <b>초과 배정</b>으로 강조됩니다. 카드/목록 보기 상단의 <span class="menu">초과 배정 인원</span> 카드로 한눈에 확인하세요.</div></div>
+    </section>
+
+    <!-- 9 -->
+    <section id="report">
+      <h2><span class="num">9</span> 보고서</h2>
+      <p class="lead">진단서·성과·인수인계 문서를 자동 생성하고 인쇄/PDF로 저장합니다. (<span class="menu">보고서</span> 탭)</p>
+      <ul>
+        <li><span class="menu">프로젝트 운영 진단서</span> — 건강도·단계 진단을 종합한 리포트.</li>
+        <li><span class="menu">작업 성과 보고서</span> — <span class="menu">작업자용</span>/<span class="menu">관리자용</span> 선택, 기간 지정, 완료/계획/건의 내용을 직접 수정 가능.</li>
+        <li><span class="menu">업무 인수인계서</span> — 인계자/인수자 선택, 미결 업무·증적 문서 체크리스트 포함.</li>
+      </ul>
+      <p>우측 상단 <span class="btn">🖨 보고서 인쇄 / PDF 저장</span> 으로 출력합니다.</p>
+    </section>
+
+    <!-- 10 -->
+    <section id="mywork">
+      <h2><span class="num">10</span> 나의 업무</h2>
+      <p class="lead">개인에게 할당된 작업·회의·할 일·알림을 모은 개인 화면입니다.</p>
+      <ul>
+        <li><span class="menu">오늘 업무 흐름</span> — 오늘의 핵심 업무, 다가오는 회의, 오늘 일정.</li>
+        <li><span class="menu">개인 투두</span> — 입력란에 할 일을 적고 날짜 선택 후 <span class="btn green">＋</span>. 체크박스로 완료 처리, 우선순위 배지를 눌러 변경.</li>
+        <li><span class="menu">내 업무 알림</span> — <span class="btn ghost">모두 읽기</span>, <span class="btn ghost">알림 센터 전체 보기</span>(전체/멘션/업무/회의/시스템 필터).</li>
+      </ul>
+    </section>
+
+    <!-- 11 -->
+    <section id="settings">
+      <h2><span class="num">11</span> 설정 · 사용자 관리</h2>
+      <p class="lead">브랜드, 서버 연동, 계정을 관리합니다. (<span class="menu">환경 설정</span> / <span class="menu">사용자 계정 관리</span>)</p>
+
+      <h3>단독 사용 vs 데이터 공유 (중요)</h3>
+      <p>기본은 <b>각 PC가 독립적으로</b> 데이터를 저장하는 단독 모드입니다. 여러 명이 <b>같은 데이터를 공유</b>하려면 한 대가 서버를 띄우고 나머지가 그 주소를 입력합니다.</p>
+      <ol class="steps">
+        <li><span class="menu">환경 설정</span> → <span class="menu">사내 서버 연동 설정</span> 으로 이동합니다.</li>
+        <li><span class="menu">사내 백엔드 서버 URL</span> 에 서버 PC 주소를 입력합니다. <span style="color:var(--gray)">(예: http://192.168.0.50:5000)</span></li>
+        <li><span class="btn blue">저장 및 반영</span> 클릭 → 자동 새로고침됩니다.</li>
+      </ol>
+      <div class="note"><span class="ic">ℹ️</span><div>서버에 연결되면 자동으로 <b>서버 모드</b>, 연결이 안 되면 자동으로 <b>로컬 모드</b>로 동작합니다. (수동 전환 버튼은 없습니다.) 현재 모드는 <span class="menu">데이터 스토리지</span> 항목에서 확인할 수 있습니다.</div></div>
+
+      <h3>사용자 추가 (관리자)</h3>
+      <ol class="steps">
+        <li><span class="menu">사용자 계정 관리</span> → 우측 <span class="menu">신규 계정 등록</span> 카드.</li>
+        <li><span class="menu">사용자 이름</span>·<span class="menu">로그인 아이디</span>·<span class="menu">초기 비밀번호</span>(6자+)·<span class="menu">역할</span> 입력. (부서/직급/직무 선택 가능)</li>
+        <li><span class="btn blue">계정 등록하기</span> 클릭. 새 사용자는 첫 로그인 시 비밀번호를 바꿔야 합니다.</li>
+      </ol>
+
+      <h3>PC가 바뀐 사용자 — 장치 초기화</h3>
+      <ol class="steps">
+        <li>사용자 목록에서 해당 사용자의 <span class="btn ghost">상세/수정</span> 클릭.</li>
+        <li>보안 영역에서 <span class="btn">등록 PC 기기 강제 초기화</span> 클릭 → 관리자 비밀번호 2차 인증.</li>
+        <li>이후 그 사용자가 새 PC에서 로그인하면 기기가 다시 등록됩니다.</li>
+      </ol>
+    </section>
+
+    <!-- 12 -->
+    <section id="faq">
+      <h2><span class="num">12</span> 자주 묻는 질문</h2>
+      <h3>Q. 동료에게 어떻게 주나요?</h3>
+      <p>A. <b>Folder Atlas_0.2.2_Portable.exe</b> 파일 하나만 전달하면 됩니다. 받는 사람은 설치 없이 더블클릭만 하면 됩니다.</p>
+      <h3>Q. 내 데이터는 어디에 저장되나요?</h3>
+      <p>A. 단독 모드에서는 내 PC의 <span class="menu">AppData/Roaming/com.folder-atlas.app/</span> 안의 데이터베이스 파일에 저장됩니다. 다른 PC와 공유되지 않습니다.</p>
+      <h3>Q. 산출물 자동 발견 목록이 비어 있어요.</h3>
+      <p>A. 프로젝트 폴더 경로가 실제 폴더를 가리키는지 확인하고, <span class="menu">개요</span> 탭의 <span class="btn">폴더 구조 동기화</span> 를 눌러 다시 스캔하세요. 문서성 파일(docx/xlsx/pdf/hwp/png 등)만 발견 대상이며 node_modules 등 시스템 폴더는 제외됩니다.</p>
+      <h3>Q. 비밀번호를 잊었어요.</h3>
+      <p>A. 관리자(admin)가 <span class="menu">사용자 계정 관리</span> → <span class="btn ghost">상세/수정</span> → <span class="menu">임시 비밀번호 설정</span> 으로 초기화해 줄 수 있습니다.</p>
+      <h3>Q. 실행 시 보안 경고가 떠요.</h3>
+      <p>A. 사내 미서명 앱이라 정상입니다. <span class="btn ghost">추가 정보</span> → <span class="btn">실행</span> 을 누르세요.</p>
+    </section>
+
+    <footer>
+      Folder Atlas · 프로젝트 매니저 사용 가이드 · v0.2.2 — 이 문서는 오프라인에서 그대로 열립니다.
+    </footer>
+  </main>
+</div>
+
+<script>
+  // TOC active highlight on scroll
+  const links = Array.from(document.querySelectorAll('nav.toc a'));
+  const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+  const obs = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        links.forEach(l=>l.classList.remove('active'));
+        const a = map.get(e.target.id);
+        if(a) a.classList.add('active');
+      }
+    });
+  }, {rootMargin:'-10% 0px -75% 0px', threshold:0});
+  document.querySelectorAll('main section').forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>

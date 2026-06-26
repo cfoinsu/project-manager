@@ -487,6 +487,42 @@ export const CommentPanel: React.FC<CommentPanelProps> = ({
     fetchAllComments();
   }, [fetchAllComments, projectId]);
 
+  // ── 실시간 폴링 (서버 모드 전용) ──────────────────────────
+  // 서버는 순수 REST라 WebSocket/SSE가 없으므로, 서버 모드일 때
+  // 주기적으로 댓글을 다시 가져와 다른 사용자의 새 메시지를 반영한다.
+  // 화면 깜빡임을 막기 위해 setLoading을 건드리지 않고(silent),
+  // 아직 서버에 반영되지 않았을 수 있는 로컬 옵티미스틱 댓글은 보존하며 병합한다.
+  const pollComments = useCallback(async () => {
+    if (!projectId || !serverMode) return;
+    if (typeof document !== 'undefined' && document.hidden) return; // 백그라운드 탭은 폴링 생략
+    try {
+      const params = taskId ? { project_id: projectId, task_id: taskId } : { project_id: projectId };
+      const serverData = await api.getComments(serverMode, params);
+      setAllComments(prev => {
+        const serverIds = new Set(serverData.map((c: Comment) => c.id));
+        // 서버에 아직 없는 로컬 전용(직전 옵티미스틱) 댓글만 유지
+        const localOnly = prev.filter(c => !serverIds.has(c.id));
+        return [...localOnly, ...serverData];
+      });
+    } catch (err) {
+      // 폴링 실패는 조용히 무시 (다음 주기에 재시도)
+      console.debug('댓글 폴링 실패(무시):', err);
+    }
+  }, [projectId, serverMode, taskId]);
+
+  useEffect(() => {
+    if (!serverMode || !projectId) return;
+    const POLL_INTERVAL_MS = 4000;
+    const timer = window.setInterval(pollComments, POLL_INTERVAL_MS);
+    // 탭이 다시 활성화되면 즉시 한 번 동기화
+    const onVisible = () => { if (!document.hidden) pollComments(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [serverMode, projectId, pollComments]);
+
   // 활성 채널에 매핑되는 코멘트 필터링 및 시간순 정렬 (오래된 순 -> 최신 순)
   const filteredCommentsFlat = useMemo(() => {
     let filtered = allComments;

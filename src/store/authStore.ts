@@ -85,6 +85,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       } catch (err: any) {
         if (err.message.includes('Failed to fetch') || err.message.includes('Load failed') || err.message === 'SERVER_OFFLINE') {
           // Fallback to local mode (Tauri SQLite or LocalStorage)
+          // 로컬 모드로 전환됨을 즉시 반영한다. 그래야 이어지는 기기 등록(registerCurrentDevice)이
+          // 죽은 서버가 아니라 로컬 경로로 진행된다. (서버 세션이 localStorage에 남아 serverMode=true로
+          // 고착돼 있던 경우에도 단독 실행 로그인이 정상 동작하도록 보장)
+          localStorage.setItem('pa_server_mode', 'false');
+          set({ serverMode: false });
           if (isTauri()) {
             // A. Tauri SQLite Mode
             // @ts-ignore

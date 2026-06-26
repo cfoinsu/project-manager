@@ -230,7 +230,7 @@ export const initDatabase = async () => {
       'ALTER TABLE projects ADD COLUMN start_date TEXT DEFAULT ""',
       'ALTER TABLE projects ADD COLUMN end_date TEXT DEFAULT ""',
       'ALTER TABLE projects ADD COLUMN status TEXT DEFAULT "진행중"',
-      'ALTER TABLE projects ADD COLUMN health_score INTEGER DEFAULT 100',
+      'ALTER TABLE projects ADD COLUMN health_score INTEGER DEFAULT 0',
       'ALTER TABLE projects ADD COLUMN updated_at TEXT',
       'ALTER TABLE projects ADD COLUMN description TEXT DEFAULT ""',
       'ALTER TABLE projects ADD COLUMN contract_amount TEXT',
@@ -253,6 +253,7 @@ export const initDatabase = async () => {
         // Ignore errors (e.g. column already exists)
       }
     }
+    await dbRun("UPDATE projects SET health_score = 0 WHERE TRIM(COALESCE(path, '')) = ''");
 
     // 2.1 Create Brand Config Table
     await dbRun(`
@@ -366,6 +367,26 @@ export const initDatabase = async () => {
         mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
         uploaded_by TEXT NOT NULL,
         created_at TEXT NOT NULL,
+        FOREIGN KEY(uploaded_by) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 6.5 Create Project Assets Table (프로젝트별 디자인 이미지 / 퍼블 HTML 결과물)
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS project_assets (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'image',
+        original_name TEXT NOT NULL,
+        stored_name TEXT NOT NULL,
+        entry_path TEXT DEFAULT '',
+        title TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        file_size INTEGER NOT NULL DEFAULT 0,
+        mime_type TEXT DEFAULT '',
+        uploaded_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
         FOREIGN KEY(uploaded_by) REFERENCES users(id) ON DELETE CASCADE
       )
     `);

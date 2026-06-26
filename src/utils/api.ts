@@ -213,6 +213,53 @@ const getHeaders = (isJson = true) => {
   return headers;
 };
 
+// ─────────────────────────────────────────────────────────────
+// 세션/토큰 유효성 헬퍼
+// "mock-jwt-token-for-..." 는 서버 미연결(오프라인) 상태에서 로그인했을 때 저장되는 가짜 토큰이다.
+// 이 토큰이나 만료된 JWT를 서버로 보내면 서버가 401/403(유효하지 않은 토큰)을 돌려준다.
+// 이 경우 사용자에게 "다시 로그인" 을 명확히 안내하고 세션을 정리한다.
+// ─────────────────────────────────────────────────────────────
+export const SESSION_EXPIRED_MESSAGE = '세션이 만료되었거나 유효하지 않습니다. 다시 로그인해 주세요.';
+
+// 오프라인 로그인으로 발급된 가짜 토큰인지 여부
+export const isMockToken = (token: string | null): boolean =>
+  !!token && token.startsWith('mock-jwt-token-for-');
+
+// 서버가 토큰 무효(401 / 토큰 관련 403)를 반환하면 세션을 정리하고 재로그인을 유도한다.
+let _sessionExpiredInFlight = false;
+const handleSessionExpired = async (): Promise<void> => {
+  if (_sessionExpiredInFlight) return; // 동시 다발 요청에서 logout 중복 호출 방지
+  _sessionExpiredInFlight = true;
+  try {
+    const mod = await import('../store/authStore');
+    mod.useAuthStore.getState().logout();
+  } catch {
+    // authStore 로드 실패 시 최소한 토큰만 제거
+    localStorage.removeItem('pa_token');
+    localStorage.removeItem('pa_user');
+    localStorage.removeItem('pa_server_mode');
+  }
+  try {
+    window.dispatchEvent(new CustomEvent('pa:session-expired', { detail: { message: SESSION_EXPIRED_MESSAGE } }));
+  } catch { /* 브라우저 환경이 아닐 때 무시 */ }
+  setTimeout(() => { _sessionExpiredInFlight = false; }, 1500);
+};
+
+// 서버 응답이 인증 실패면 세션을 정리하고 명확한 메시지로 throw 한다.
+// 권한 부족(역할 관련 403)은 세션을 건드리지 않고 서버 메시지를 그대로 전달한다.
+export const assertAuthorized = async (response: Response): Promise<void> => {
+  if (response.ok) return;
+  const data = await response.json().catch(() => ({}));
+  const message: string = data?.message || '';
+  const tokenInvalid =
+    response.status === 401 || (response.status === 403 && /토큰|token/i.test(message));
+  if (tokenInvalid) {
+    await handleSessionExpired();
+    throw new Error(SESSION_EXPIRED_MESSAGE);
+  }
+  throw new Error(message || `요청 실패: ${response.status}`);
+};
+
 // Safe API Fetcher with Fallback check
 // If the backend Express server is offline or errors, we fall back to LocalStorage simulation.
 export const apiRequest = async (path: string, options: RequestInit = {}) => {
@@ -233,10 +280,8 @@ export const apiRequest = async (path: string, options: RequestInit = {}) => {
         continue;
       }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-      }
+      // 인증 실패(401 / 토큰 관련 403)면 세션 정리 후 재로그인 유도, 그 외 오류는 메시지 전달
+      await assertAuthorized(response);
 
       localStorage.setItem('pa_server_url', baseUrl);
       return await response.json();
@@ -1473,10 +1518,8 @@ export const uploadDocument = async (
       body: formData
     });
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.message || `업로드 실패: ${response.status}`);
-    }
+    // 인증 실패면 세션 정리 후 재로그인 유도
+    await assertAuthorized(response);
 
     const data = await response.json();
     return data.document;
@@ -1538,9 +1581,8 @@ export const getDocuments = async (params: {
       headers: getHeaders()
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    // 인증 실패면 세션 정리 후 재로그인 유도
+    await assertAuthorized(response);
 
     const data = await response.json();
     return data.documents || [];
@@ -1632,7 +1674,8 @@ export const downloadDocument = async (id: string, filename: string): Promise<vo
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
 
-    if (!response.ok) throw new Error('다운로드 실패');
+    // 인증 실패면 세션 정리 후 재로그인 유도
+    await assertAuthorized(response);
 
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
@@ -1688,7 +1731,8 @@ export const downloadDocumentBytes = async (id: string): Promise<Uint8Array> => 
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
 
-    if (!response.ok) throw new Error('다운로드 실패');
+    // 인증 실패면 세션 정리 후 재로그인 유도
+    await assertAuthorized(response);
 
     const arrayBuffer = await response.arrayBuffer();
     return new Uint8Array(arrayBuffer);
@@ -1712,6 +1756,70 @@ export const downloadDocumentBytes = async (id: string): Promise<Uint8Array> => 
       }
     }
     throw error;
+  }
+};
+
+// ─────────────────────────────────────────────
+// 프로젝트 자산 (디자인 이미지 / 퍼블 HTML 결과물)
+// 서버 모드 전용 (정적 호스팅이 필요하므로 오프라인 미지원)
+// ─────────────────────────────────────────────
+export interface ProjectAsset {
+  id: string;
+  project_id: string;
+  type: 'image' | 'site';
+  original_name: string;
+  stored_name: string;
+  entry_path: string;
+  title: string;
+  description: string;
+  file_size: number;
+  mime_type: string;
+  uploaded_by: string;
+  uploader_name?: string;
+  created_at: string;
+}
+
+// 자산 미리보기 URL (기존 /uploads 정적 서빙 경유)
+export const getProjectAssetUrl = (asset: ProjectAsset): string => {
+  const base = getApiBaseUrl();
+  if (asset.type === 'site') {
+    return `${base}/uploads/project_sites/${asset.stored_name}/${asset.entry_path}`;
+  }
+  return `${base}/uploads/project_assets/${asset.stored_name}`;
+};
+
+export const getProjectAssets = async (projectId: string): Promise<ProjectAsset[]> => {
+  const response = await fetch(`${getApiBaseUrl()}/project-assets?project_id=${encodeURIComponent(projectId)}`, {
+    headers: getHeaders()
+  });
+  await assertAuthorized(response);
+  if (!response.ok) throw new Error('자산 목록을 불러올 수 없습니다.');
+  const data = await response.json();
+  return data.assets || [];
+};
+
+export const uploadProjectAsset = async (formData: FormData): Promise<ProjectAsset> => {
+  const token = localStorage.getItem('pa_token');
+  const response = await fetch(`${getApiBaseUrl()}/project-assets/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData
+  });
+  await assertAuthorized(response);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || data.error || '업로드에 실패했습니다.');
+  return data.asset;
+};
+
+export const deleteProjectAsset = async (id: string): Promise<void> => {
+  const response = await fetch(`${getApiBaseUrl()}/project-assets/${id}`, {
+    method: 'DELETE',
+    headers: getHeaders()
+  });
+  await assertAuthorized(response);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.message || '삭제에 실패했습니다.');
   }
 };
 

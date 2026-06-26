@@ -1,6 +1,6 @@
 [package]
 name = "folder-atlas"
-version = "0.2.0"
+version = "0.2.2"
 description = "Folder Atlas - Windows Folder visual explorer"
 authors = ["Antigravity"]
 edition = "2021"

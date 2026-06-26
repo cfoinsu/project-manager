@@ -1371,6 +1371,7 @@ export const DepartmentTreeManager: React.FC<DepartmentTreeManagerProps> = ({
     </div>
   );
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const renderDepartmentNode = (node: DepartmentTreeNode, index: number) => {
     const members = getNodeMembers(node);
     const isEditing = editingItem?.type === 'departments' && editingItem.id === node.id;

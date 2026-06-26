@@ -52,6 +52,7 @@ interface ProjectState {
   refreshActiveProjectData: () => Promise<void>;
   setView: (view: string) => void;
   addProject: (name: string, path: string, code: string, templateId?: string, folderTemplateId?: string, startDate?: string, endDate?: string, description?: string) => Promise<Project>;
+  addProjectsBulk: (rows: db.BulkProjectRow[]) => Promise<db.BulkProjectResult>;
   removeProject: (id: string) => Promise<void>;
   updateProjectInfo: (id: string, updates: Partial<Project>) => Promise<void>;
   
@@ -284,6 +285,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
+  addProjectsBulk: async (rows) => {
+    set({ loading: true });
+    try {
+      const result = await db.createProjectsBulk(rows);
+      await get().loadProjects();
+      return result;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
   removeProject: async (id) => {
     set({ loading: true });
     try {
@@ -494,6 +506,21 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   scanAndSync: async () => {
     const { activeProject, processes, tasks, documents } = get();
     if (!activeProject) return;
+    if (!activeProject.path?.trim()) {
+      await db.updateProjectHealth(activeProject.id, 0);
+      const projects = await db.getProjects();
+      const activeProjectUpdated = projects.find(p => p.id === activeProject.id) || { ...activeProject, health_score: 0 };
+      set({
+        rootNode: null,
+        emptyFoldersList: [],
+        duplicateFilesList: [],
+        largeFilesList: [],
+        discoveredDocs: [],
+        projects,
+        activeProject: activeProjectUpdated
+      });
+      return;
+    }
 
     try {
       // 1. Filesystem scan (Tauri scan or Mock Generator fallback)

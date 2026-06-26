@@ -183,7 +183,7 @@ export const createProject = async (
       name,
       path,
       status: '진행중',
-      health_score: 100,
+      health_score: 0,
       created_at: nowStr,
       updated_at: nowStr,
       start_date: startDate || '',
@@ -290,6 +290,67 @@ export const deleteProject = async (id: string): Promise<void> => {
     localStorage.setItem('pa_documents', JSON.stringify(documents));
   }
 };
+// 엑셀 일괄 등록용 행 타입 (code 비우면 regionCode/typeCode로 서버에서 자동생성)
+export interface BulkProjectRow {
+  name: string;
+  code?: string;
+  regionCode?: string;
+  typeCode?: string;
+  path?: string;
+  start_date?: string;
+  end_date?: string;
+  description?: string;
+  contract_amount?: string;
+  importance?: string;
+  priority?: string;
+  client_name?: string;
+  client_region?: string;
+  client_department?: string;
+  client_contact_name?: string;
+  client_contact_phone?: string;
+  client_contact_email?: string;
+  business_purpose?: string;
+  major_scope?: string;
+  special_notes?: string;
+}
+
+export interface BulkProjectResult {
+  created: Project[];
+  errors: { row: number; message: string }[];
+}
+
+export const createProjectsBulk = async (rows: BulkProjectRow[]): Promise<BulkProjectResult> => {
+  if (getServerMode()) {
+    const data = await apiRequest('/projects/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ rows })
+    });
+    return { created: data.created || [], errors: data.errors || [] };
+  }
+  // 오프라인/Tauri 모드: 기본 컬럼만 순차 생성 (상세 컬럼은 서버 모드에서만 저장)
+  const created: Project[] = [];
+  const errors: { row: number; message: string }[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const rowNo = i + 2;
+    if (!r.name || !r.name.trim()) {
+      errors.push({ row: rowNo, message: '프로젝트명(name)이 비어 있습니다.' });
+      continue;
+    }
+    try {
+      const code = (r.code || '').trim() ||
+        `${(r.regionCode || 'XX').toUpperCase()}${new Date().getFullYear().toString().slice(-2)}${String(i + 1).padStart(3, '0')}`;
+      const project = await createProject(
+        r.name.trim(), r.path || '', code, undefined, r.start_date, r.end_date, r.description
+      );
+      created.push(project);
+    } catch (err: any) {
+      errors.push({ row: rowNo, message: err?.message || '생성 실패' });
+    }
+  }
+  return { created, errors };
+};
+
 export const getProcesses = async (projectId: string): Promise<Process[]> => {
   if (getServerMode()) {
     const data = await apiRequest(`/processes?project_id=${projectId}`);

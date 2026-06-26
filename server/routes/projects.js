@@ -190,6 +190,8 @@ router.post('/', verifyToken, checkRole(['admin', 'manager']), async (req, res) 
       ]
     );
 
+    await dbRun('UPDATE projects SET health_score = 0 WHERE id = ?', [projectId]);
+
     // If templateId is provided, look up template and seed processes, tasks, and document requirements
     if (templateId) {
       const template = await dbGet('SELECT config_json FROM templates WHERE id = ?', [templateId]);
@@ -273,6 +275,119 @@ router.post('/', verifyToken, checkRole(['admin', 'manager']), async (req, res) 
     console.error('Create project failed:', error);
     return res.status(500).json({ message: '서버 오류가 발생했습니다.' });
   }
+});
+
+// 3. POST /projects/bulk - 엑셀 일괄 등록 (admin, manager 가능)
+// rows: 프로젝트 객체 배열. code가 비어 있으면 regionCode+연도(+typeCode) 규칙으로 자동 생성.
+router.post('/bulk', verifyToken, checkRole(['admin', 'manager']), async (req, res) => {
+  const { rows } = req.body;
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return res.status(400).json({ message: '등록할 데이터(rows)가 없습니다.' });
+  }
+
+  // 코드 자동 생성을 위해 기존 코드 전부 로드 → prefix별 최대 시퀀스 캐시
+  const existingRows = await dbAll('SELECT code FROM projects', []);
+  const usedCodes = new Set(existingRows.map(r => r.code));
+  const yearStr = new Date().getFullYear().toString().slice(-2);
+
+  const nextCodeForPrefix = (prefix) => {
+    let seq = 0;
+    usedCodes.forEach(code => {
+      if (code && code.startsWith(prefix)) {
+        const num = parseInt(code.slice(prefix.length), 10);
+        if (!isNaN(num) && num > seq) seq = num;
+      }
+    });
+    let candidate;
+    do {
+      seq += 1;
+      candidate = `${prefix}${String(seq).padStart(3, '0')}`;
+    } while (usedCodes.has(candidate));
+    return candidate;
+  };
+
+  const created = [];
+  const errors = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i] || {};
+    const rowNo = i + 2; // 엑셀 헤더(1행) 다음부터
+    const name = (r.name || '').toString().trim();
+
+    if (!name) {
+      errors.push({ row: rowNo, message: '프로젝트명(name)이 비어 있습니다.' });
+      continue;
+    }
+
+    // 코드 결정: 직접 입력 우선, 없으면 지역코드+연도(+유형)로 자동생성
+    let code = (r.code || '').toString().trim();
+    if (code) {
+      if (usedCodes.has(code)) {
+        errors.push({ row: rowNo, message: `중복된 프로젝트 코드입니다: ${code}` });
+        continue;
+      }
+    } else {
+      const regionCode = (r.regionCode || r.client_region_code || '').toString().trim().toUpperCase();
+      if (!regionCode) {
+        errors.push({ row: rowNo, message: '코드가 비어 있고 자동생성용 지역코드도 없습니다.' });
+        continue;
+      }
+      const typeCode = (r.typeCode || '').toString().trim().toUpperCase();
+      const prefix = `${regionCode}${yearStr}${typeCode}`;
+      code = nextCodeForPrefix(prefix);
+    }
+    usedCodes.add(code);
+
+    const projectId = 'proj-' + Math.random().toString(36).substr(2, 9);
+    const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    try {
+      await dbRun(
+        `INSERT INTO projects (
+          id, name, code, path, status, health_score, created_at, updated_at,
+          start_date, end_date, description, contract_amount, importance, priority,
+          client_name, client_region, client_department, client_contact_name,
+          client_contact_phone, client_contact_email, business_purpose, major_scope, special_notes
+        ) VALUES (?, ?, ?, ?, '진행중', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          projectId,
+          name,
+          code,
+          (r.path || '').toString(),
+          nowStr,
+          nowStr,
+          (r.start_date || r.startDate || '').toString(),
+          (r.end_date || r.endDate || '').toString(),
+          (r.description || '').toString(),
+          (r.contract_amount || '').toString(),
+          (r.importance || '').toString(),
+          (r.priority || '').toString(),
+          (r.client_name || '').toString(),
+          (r.client_region || '').toString(),
+          (r.client_department || '').toString(),
+          (r.client_contact_name || '').toString(),
+          (r.client_contact_phone || '').toString(),
+          (r.client_contact_email || '').toString(),
+          (r.business_purpose || '').toString(),
+          (r.major_scope || '').toString(),
+          (r.special_notes || '').toString()
+        ]
+      );
+      const project = await dbGet('SELECT * FROM projects WHERE id = ?', [projectId]);
+      created.push(project);
+    } catch (err) {
+      console.error(`Bulk insert failed at row ${rowNo}:`, err);
+      errors.push({ row: rowNo, message: err.message || 'DB 저장 실패' });
+      usedCodes.delete(code);
+    }
+  }
+
+  return res.status(created.length > 0 ? 201 : 400).json({
+    message: `${created.length}건 등록 완료${errors.length ? `, ${errors.length}건 실패` : ''}`,
+    created,
+    errors
+  });
 });
 
 // 4. GET /projects/:projectId/documents - 프로젝트별 산출물 매핑 정보 조회

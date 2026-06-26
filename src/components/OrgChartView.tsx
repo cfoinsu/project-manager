@@ -156,7 +156,12 @@ export const OrgChartView: React.FC<OrgChartViewProps> = ({
     ? getSubtreeMembers(selectedDept)
     : users.filter((u) => u.department);
 
-  const toggleFav = (id: string) => setFavoriteDepts((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleFav = (id: string) => setFavoriteDepts((prev) => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id);
+    else n.add(id);
+    return n;
+  });
 
   const openAddModal = (type: 'department' | 'team', parentId: string | null, parentName?: string) =>
     setModal({ type, parentId, parentName });
@@ -337,7 +342,11 @@ export const OrgChartView: React.FC<OrgChartViewProps> = ({
                 <div key={dept.id}
                   draggable
                   onDragStart={(e) => { if ((e.target as HTMLElement).closest('[data-nodrag]')) return; setDraggingItem({ type: 'departments', id: dept.id }); }}
-                  onDragOver={(e) => { e.preventDefault(); draggingUserId ? setDragOverDepartmentId(dept.id) : setDragOverItem({ type: 'departments', id: dept.id }); }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (draggingUserId) setDragOverDepartmentId(dept.id);
+                    else setDragOverItem({ type: 'departments', id: dept.id });
+                  }}
                   onDragLeave={() => { if (dragOverDepartmentId === dept.id) setDragOverDepartmentId(null); if (dragOverItem?.id === dept.id) setDragOverItem(null); }}
                   onDrop={(e) => handleDropOnNode(e, dept)}
                   onDragEnd={cleanup}
@@ -424,7 +433,11 @@ export const OrgChartView: React.FC<OrgChartViewProps> = ({
                 <div key={team.id}
                   draggable
                   onDragStart={(e) => { if ((e.target as HTMLElement).closest('[data-nodrag]')) return; setDraggingItem({ type: 'departments', id: team.id }); }}
-                  onDragOver={(e) => { e.preventDefault(); draggingUserId ? setDragOverDepartmentId(team.id) : setDragOverItem({ type: 'departments', id: team.id }); }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (draggingUserId) setDragOverDepartmentId(team.id);
+                    else setDragOverItem({ type: 'departments', id: team.id });
+                  }}
                   onDragLeave={() => { if (dragOverDepartmentId === team.id) setDragOverDepartmentId(null); if (dragOverItem?.id === team.id) setDragOverItem(null); }}
                   onDrop={(e) => handleDropOnNode(e, team)}
                   onDragEnd={cleanup}

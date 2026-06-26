@@ -21,6 +21,7 @@ import { TaskManagement } from './components/TaskManagement';
 import { DocumentManagement } from './components/DocumentManagement';
 import { ProjectAnalysis } from './components/ProjectAnalysis';
 import { ProjectIssuesView } from './components/ProjectIssuesView';
+import { ProjectDesignView } from './components/ProjectDesignView';
 import { ReportGeneration } from './components/ReportGeneration';
 import { TemplateManagement } from './components/TemplateManagement';
 import { FolderTemplateManagement } from './components/FolderTemplateManagement';
@@ -72,6 +73,32 @@ function App() {
 
   useEffect(() => {
     checkSession();
+  }, []);
+
+  // 서버 세션 만료/무효(가짜 토큰·만료 JWT 등) 시 안내 토스트 표시.
+  // api.ts 의 assertAuthorized 가 자동 로그아웃 후 이 이벤트를 발생시킨다 → 로그인 화면으로 전환됨.
+  useEffect(() => {
+    const onSessionExpired = (e: Event) => {
+      const message = (e as CustomEvent<{ message?: string }>).detail?.message
+        || '세션이 만료되었거나 유효하지 않습니다. 다시 로그인해 주세요.';
+      const toast = document.createElement('div');
+      toast.textContent = `⚠️ ${message}`;
+      toast.style.cssText = `
+        position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+        background: #b91c1c; color: #fff; padding: 14px 22px;
+        border-radius: 12px; font-size: 14px; font-weight: 700;
+        z-index: 999999; box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+        max-width: 520px; text-align: center;
+      `;
+      document.body.appendChild(toast);
+      setTimeout(() => {
+        toast.style.transition = 'opacity 0.4s';
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 400);
+      }, 4000);
+    };
+    window.addEventListener('pa:session-expired', onSessionExpired);
+    return () => window.removeEventListener('pa:session-expired', onSessionExpired);
   }, []);
 
   useEffect(() => {
@@ -139,6 +166,7 @@ function App() {
     'projects_tasks',
     'projects_issues',
     'projects_documents',
+    'projects_design',
     'projects_structure',
     'projects_meetings',
     'projects_calendar',
@@ -151,6 +179,7 @@ function App() {
     { label: '프로세스', view: 'projects_process', managerOnly: true },
     { label: '작업', view: 'projects_tasks' },
     { label: '이슈', view: 'projects_issues' },
+    { label: '디자인', view: 'projects_design' },
     { label: '회의', view: 'projects_meetings' },
     { label: '폴더', view: 'projects_structure' },
     { label: '분석', view: 'projects_analysis' },
@@ -547,6 +576,8 @@ function App() {
         return <TaskManagement />;
       case 'projects_issues':
         return <ProjectIssuesView />;
+      case 'projects_design':
+        return <ProjectDesignView />;
       case 'projects_documents':
         return <DocumentManagement />;
       case 'projects_analysis':
@@ -902,6 +933,22 @@ function App() {
               <UserCog className="w-4 h-4" />
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setView('settings')}
+            className={`w-full rounded-xl border px-3 py-2 text-left transition-colors cursor-pointer ${
+              serverMode
+                ? 'bg-emerald-50/70 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-900/70'
+                : 'bg-amber-50/80 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-300 dark:border-amber-900/70'
+            }`}
+            title="저장 모드 설정 보기"
+          >
+            <span className="block text-[10px] font-black">{serverMode ? '서버 공유 모드' : '로컬 단독 모드'}</span>
+            <span className="mt-0.5 block truncate text-[10px] font-bold opacity-75">
+              {serverMode ? '중앙 서버에 저장 중' : '이 PC에만 저장 중'}
+            </span>
+          </button>
 
           <div className="flex items-center justify-between border-t border-toss-gray-100 dark:border-slate-800/60 pt-3">
             <div className="flex items-center gap-1">

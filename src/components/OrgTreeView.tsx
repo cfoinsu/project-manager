@@ -67,6 +67,10 @@ const COLORS = [
 const ICONS = [Code2, Flag, BarChart2, ShoppingBag, PenTool, Building2];
 const color = (i: number) => COLORS[i % COLORS.length];
 const icon  = (i: number) => ICONS[i % ICONS.length];
+const renderPaletteIcon = (i: number, className: string) => {
+  const Icon = icon(i);
+  return <Icon className={className} />;
+};
 
 // ─── 레이아웃 상수 ─────────────────────────────────────────────
 const ROOT_W  = 185;
@@ -197,7 +201,6 @@ const RootNode: React.FC<NodeProps> = () => (
 
 const DeptNodeCard: React.FC<NodeProps> = ({ data }) => {
   const { name, code, colorIdx, teamCount, memberCount, leaderName } = data;
-  const Icon = icon(colorIdx);
   const c    = color(colorIdx);
   return (
     <div
@@ -216,7 +219,7 @@ const DeptNodeCard: React.FC<NodeProps> = ({ data }) => {
           className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
           style={{ background: c.bg }}
         >
-          <Icon className="w-4 h-4 text-white" />
+          {renderPaletteIcon(colorIdx, 'w-4 h-4 text-white')}
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-black text-slate-800 truncate">{name}</p>

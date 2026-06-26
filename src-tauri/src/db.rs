@@ -475,7 +475,7 @@ pub fn init_db(db_path: &PathBuf) -> Result<()> {
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         conn.execute(
             "INSERT INTO users (id, username, name, email, password_hash, role, status, force_password_change, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            params!["user-admin-1", "admin", "최고 관리자 (Local)", "admin@atlas.com", "$2a$10$tM.yFskK8K58Vn7p7C85be/q/w0Rj3.BfD7bC05H5Hw/GZ.5yP7gG", "admin", "active", 0, now, now],
+            params!["user-admin-1", "admin", "최고 관리자 (Local)", "admin@atlas.com", "$2b$10$RvM05fmE1P8oaL6f2qyeIeZso9MHHN4ne29xBjkI/xDsVfVu0FebW", "admin", "active", 0, now, now],
         )?;
         conn.execute(
             "INSERT INTO users (id, username, name, email, password_hash, role, status, force_password_change, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -487,6 +487,11 @@ pub fn init_db(db_path: &PathBuf) -> Result<()> {
         )?;
     } else {
         // Automatically patch existing local databases containing mock password hashes
+        // admin: 이전 시드에 admin123과 일치하지 않는 잘못된 해시가 들어간 경우 복구 (변경된 비번은 보존)
+        let _ = conn.execute(
+            "UPDATE users SET password_hash = '$2b$10$RvM05fmE1P8oaL6f2qyeIeZso9MHHN4ne29xBjkI/xDsVfVu0FebW' WHERE username = 'admin' AND password_hash = '$2a$10$tM.yFskK8K58Vn7p7C85be/q/w0Rj3.BfD7bC05H5Hw/GZ.5yP7gG'",
+            []
+        );
         let _ = conn.execute(
             "UPDATE users SET password_hash = '$2a$10$kUa1CZ96vZbrdn0ierI0bexBwgZt8ZnWbUGmA6E0z.5Q.ErhJoAAa' WHERE username = 'manager' AND password_hash LIKE '%R1R1%'",
             []
@@ -591,7 +596,7 @@ pub fn db_create_project(
         name,
         path,
         status: "진행중".to_string(),
-        health_score: 100,
+        health_score: 0,
         created_at: now.clone(),
         updated_at: now.clone(),
         start_date: project_start,

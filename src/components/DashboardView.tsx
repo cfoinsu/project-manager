@@ -20,16 +20,20 @@ import {
   Search,
   Star,
   LayoutGrid,
-  List
+  List,
+  FileSpreadsheet
 } from 'lucide-react';
 import type { Project } from '../types';
 import { getKoreaRegions, getRegionCodes, PROJECT_TYPE_CODES } from '../types';
 import { selectFolderNative, isTauri } from '../utils/tauriBridge';
 import { generateProjectCode, getProcesses } from '../utils/db';
+import { getApiBaseUrl } from '../utils/api';
+import { useAuthStore } from '../store/authStore';
 import { RangeDatePicker } from './RangeDatePicker';
 import { CustomSelect } from './CustomSelect';
 import { RegionPickerModal } from './RegionPickerModal';
 import { ModalOverlay } from './ModalOverlay';
+import { ProjectBulkImportModal } from './ProjectBulkImportModal';
 
 type ProjectQuickFilter = 'all' | 'active' | 'pending' | 'completed' | 'important' | 'risk' | 'due';
 type ProjectSortMode = 'recent' | 'updated' | 'created' | 'due' | 'health' | 'progress' | 'amount' | 'importance';
@@ -96,7 +100,11 @@ const getProjectDDay = (date?: string) => {
 export const DashboardView: React.FC = () => {
   const REGION_CODES = getRegionCodes();
   const { projects, templates, folderTemplates, addProject, removeProject, updateProjectInfo, selectProject, setView, setPendingTab } = useProjectStore();
+  const { user: currentUser, serverMode } = useAuthStore();
   const [modalOpen, setModalOpen] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [bulkToast, setBulkToast] = useState<string | null>(null);
+  const [createStep, setCreateStep] = useState(0);
   const [projectSearch, setProjectSearch] = useState('');
   const [projectQuickFilter, setProjectQuickFilter] = useState<ProjectQuickFilter>('all');
   const [projectProvinceFilter, setProjectProvinceFilter] = useState('all');
@@ -532,6 +540,55 @@ export const DashboardView: React.FC = () => {
   const avgHealth = projects.length > 0 
     ? Math.round(projects.reduce((acc, p) => acc + p.health_score, 0) / projects.length) 
     : 100;
+  const isManagerLike = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  const storageModeLabel = serverMode ? '서버 공유 모드' : '로컬 단독 모드';
+  const storageModeSub = serverMode ? getApiBaseUrl() : '이 PC에만 저장됩니다';
+  const onboardingItems = [
+    {
+      label: '저장 모드 확인',
+      done: true,
+      detail: `${storageModeLabel} - ${storageModeSub}`,
+      action: '설정 보기',
+      onClick: () => setView('settings'),
+    },
+    {
+      label: '프로세스 템플릿 준비',
+      done: templates.length > 0,
+      detail: templates.length > 0 ? `${templates.length}개 등록됨` : '프로젝트 단계 표준을 먼저 만들어두면 생성 시간이 줄어듭니다',
+      action: '템플릿',
+      onClick: () => setView('templates'),
+      hidden: !isManagerLike,
+    },
+    {
+      label: '폴더 양식 준비',
+      done: folderTemplates.length > 0,
+      detail: folderTemplates.length > 0 ? `${folderTemplates.length}개 등록됨` : '표준 폴더와 기본 문서를 자동 생성할 수 있습니다',
+      action: '폴더 양식',
+      onClick: () => setView('folder_templates'),
+      hidden: !isManagerLike,
+    },
+    {
+      label: '첫 프로젝트 등록',
+      done: projects.length > 0,
+      detail: projects.length > 0 ? `${projects.length}개 프로젝트 운영 중` : '실제 업무 폴더를 연결해 시작하세요',
+      action: '새 프로젝트',
+      onClick: () => setModalOpen(true),
+    },
+    {
+      label: '나의 업무 확인',
+      done: projects.length > 0,
+      detail: '담당 작업, 회의, 개인 투두를 하루 업무판으로 모읍니다',
+      action: '열기',
+      onClick: () => setView('my_work'),
+    },
+  ].filter((item) => !item.hidden);
+  const onboardingDoneCount = onboardingItems.filter((item) => item.done).length;
+  const createSteps = [
+    { title: '기본 정보', ready: Boolean(regionCode && name) },
+    { title: '폴더 연결', ready: Boolean(path) },
+    { title: '양식 선택', ready: true },
+    { title: '생성 확인', ready: Boolean(regionCode && name && path) },
+  ];
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -715,6 +772,7 @@ export const DashboardView: React.FC = () => {
       setTypeCode('');
       setStartDate('');
       setEndDate('');
+      setCreateStep(0);
     }
   }, [modalOpen]);
 
@@ -808,16 +866,81 @@ export const DashboardView: React.FC = () => {
       <div className="flex justify-between items-center shrink-0">
         <div className="flex flex-col">
           <span className="text-xs font-bold text-toss-blue mb-1 uppercase tracking-wider font-mono">Project Operating System</span>
+          <span className="mt-1 inline-flex w-fit rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[10px] font-black text-slate-500 dark:text-slate-400">
+            {storageModeLabel}
+          </span>
           <h1 className="text-3xl font-extrabold text-toss-gray-900 dark:text-slate-100 tracking-tight">전체 대시보드</h1>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="toss-btn toss-btn-primary px-5 py-3 rounded-2xl flex items-center gap-1.5 font-bold shadow-md cursor-pointer hover:shadow-lg transition-all active:scale-95 animate-scale-in"
-        >
-          <Plus className="w-4.5 h-4.5" />
-          <span>새 프로젝트 등록</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          {isManagerLike && (
+            <button
+              onClick={() => setShowBulkImport(true)}
+              className="toss-btn toss-btn-secondary px-4 py-3 rounded-2xl flex items-center gap-1.5 font-bold cursor-pointer hover:shadow transition-all active:scale-95"
+              title="엑셀 양식으로 여러 프로젝트를 한 번에 등록"
+            >
+              <FileSpreadsheet className="w-4.5 h-4.5" />
+              <span>엑셀 일괄 등록</span>
+            </button>
+          )}
+          <button
+            onClick={() => setModalOpen(true)}
+            className="toss-btn toss-btn-primary px-5 py-3 rounded-2xl flex items-center gap-1.5 font-bold shadow-md cursor-pointer hover:shadow-lg transition-all active:scale-95 animate-scale-in"
+          >
+            <Plus className="w-4.5 h-4.5" />
+            <span>새 프로젝트 등록</span>
+          </button>
+        </div>
       </div>
+
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-toss-blue" />
+              <h2 className="text-sm font-black text-slate-900 dark:text-slate-100">처음 시작하기</h2>
+              <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/30 text-toss-blue text-[10px] font-black">
+                {onboardingDoneCount}/{onboardingItems.length}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] font-bold text-slate-400">
+              표준을 먼저 잡고, 실제 폴더를 연결한 뒤, 나의 업무에서 하루 작업을 처리하는 흐름입니다.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`px-3 py-2 rounded-xl text-xs font-black border ${
+              serverMode
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-900'
+                : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-900'
+            }`}>
+              {storageModeLabel}
+            </span>
+            <button onClick={() => setView('settings')} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-black text-slate-500 hover:text-toss-blue cursor-pointer">
+              저장 설정
+            </button>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
+          {onboardingItems.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={item.onClick}
+              className={`min-h-[92px] rounded-xl border p-3 text-left transition-all cursor-pointer ${
+                item.done
+                  ? 'border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/60 dark:bg-emerald-950/15'
+                  : 'border-slate-200 bg-slate-50/70 hover:border-toss-blue dark:border-slate-800 dark:bg-slate-850/40'
+              }`}
+            >
+              <span className="flex items-center justify-between gap-2">
+                <span className="text-xs font-black text-slate-800 dark:text-slate-100">{item.label}</span>
+                {item.done ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+              </span>
+              <span className="mt-2 block text-[11px] leading-relaxed font-bold text-slate-500 dark:text-slate-400">{item.detail}</span>
+              <span className="mt-2 inline-flex text-[11px] font-black text-toss-blue">{item.action}</span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* ━━━ KPI 행 (상단 전체 폭) ━━━ */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 shrink-0">
@@ -1603,6 +1726,25 @@ export const DashboardView: React.FC = () => {
       )}
 
 
+      {/* ─── 엑셀 일괄 등록 모달 ─── */}
+      {showBulkImport && (
+        <ProjectBulkImportModal
+          onClose={() => setShowBulkImport(false)}
+          onSuccess={(count) => {
+            setBulkToast(`${count}개 프로젝트가 일괄 등록되었습니다.`);
+            window.setTimeout(() => setBulkToast(null), 3500);
+          }}
+        />
+      )}
+
+      {/* 일괄 등록 토스트 */}
+      {bulkToast && (
+        <div className="fixed bottom-6 right-6 z-[200] px-5 py-3 bg-gray-900 text-white text-sm font-semibold rounded-2xl shadow-xl flex items-center gap-2.5 animate-fade-in">
+          <CheckCircle className="w-4 h-4 text-emerald-400" />
+          {bulkToast}
+        </div>
+      )}
+
       {/* ─── New Project Registration Modal ─── */}
       {modalOpen && (
         <div className="fixed inset-0 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setModalOpen(false)}>
@@ -1617,6 +1759,30 @@ export const DashboardView: React.FC = () => {
               )}
             </div>
             
+            <div className="grid grid-cols-4 gap-1.5">
+              {createSteps.map((step, index) => {
+                const active = createStep === index;
+                const done = step.ready && index < createStep;
+                return (
+                  <button
+                    key={step.title}
+                    type="button"
+                    onClick={() => setCreateStep(index)}
+                    className={`rounded-xl border px-2 py-2 text-left transition-all cursor-pointer ${
+                      active
+                        ? 'border-toss-blue bg-blue-50 dark:bg-blue-950/30 text-toss-blue'
+                        : done
+                        ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    <span className="block text-[10px] font-black">STEP {index + 1}</span>
+                    <span className="mt-0.5 block text-[11px] font-black truncate">{step.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+
             <form onSubmit={handleCreateProject} className="flex flex-col gap-4 overflow-y-auto max-h-[75vh] pr-1.5 scrollbar-thin">
               
               {/* ─── 1. Project Code Section ─── */}
@@ -1773,18 +1939,41 @@ export const DashboardView: React.FC = () => {
                 </CustomSelect>
               </div>
 
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-slate-800 dark:text-slate-100">현재 단계: {createSteps[createStep]?.title}</p>
+                    <p className="mt-1 text-[11px] font-bold text-slate-500 dark:text-slate-400 truncate">
+                      {generatedCode || '코드 미정'} · {name || '프로젝트명 미입력'} · {path || '폴더 미연결'}
+                    </p>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${regionCode && name && path ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {regionCode && name && path ? '생성 가능' : '필수값 필요'}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                  <span>폴더 양식: {selectedFolderTemplateId ? folderTemplates.find((item) => item.id === selectedFolderTemplateId)?.name || '선택됨' : '없음'}</span>
+                  <span>프로세스 템플릿: {selectedTemplateId ? templates.find((item) => item.id === selectedTemplateId)?.name || '선택됨' : '없음'}</span>
+                </div>
+              </div>
+
               {/* Submit Buttons */}
               <div className="flex gap-2.5 mt-3 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => createStep === 0 ? setModalOpen(false) : setCreateStep((step) => Math.max(0, step - 1))}
                   className="toss-btn toss-btn-secondary flex-1 py-3 font-bold rounded-xl cursor-pointer"
                 >
                   취소
                 </button>
                 <button
-                  type="submit"
-                  disabled={!regionCode || !name || !path}
+                  type={createStep < createSteps.length - 1 ? 'button' : 'submit'}
+                  onClick={() => {
+                    if (createStep < createSteps.length - 1) {
+                      setCreateStep((step) => Math.min(createSteps.length - 1, step + 1));
+                    }
+                  }}
+                  disabled={createStep === 0 ? !createSteps[0].ready : createStep === createSteps.length - 1 ? (!regionCode || !name || !path) : false}
                   className="toss-btn toss-btn-primary flex-1 py-3 font-bold rounded-xl cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   프로젝트 생성

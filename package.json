@@ -1,7 +1,7 @@
 {
   "name": "forder",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,6 +21,7 @@
     "reactflow": "^11.11.4",
     "recharts": "^3.8.1",
     "tailwindcss": "^4.3.0",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
